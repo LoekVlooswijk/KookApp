@@ -1,0 +1,320 @@
+import { useKeepAwake } from 'expo-keep-awake';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AppState,
+  type AppStateStatus,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+
+import { CookingChatPanel } from './CookingChatPanel';
+import { PortionScaler } from './PortionScaler';
+import { useAppTheme } from './ThemeContext';
+
+import {
+  effectiveBaseServings,
+  formatScaledIngredientLine,
+  servingFactor,
+} from '../lib/scaling';
+import type { FullRecipe } from '../lib/types';
+import { clearCookProgress, getFullRecipe } from '../lib/recipesRepo';
+import { formatStepTimerNl } from '../lib/timerFormat';
+import { showTimerFinishedAlert, stopTimerAlarmSoundIfPlaying } from '../lib/timerFinishedAlert';
+
+type Props = {
+  recipeId: number;
+};
+
+function formatRemain(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+type CheckState = { ing: number[]; step: number[] };
+
+/** stepId -> unix ms when the timer should ring (wall clock; survives background). */
+function remainingSecondsFromEnd(endMs: number): number {
+  return Math.max(0, Math.ceil((endMs - Date.now()) / 1000));
+}
+
+export function CookingView({ recipeId }: Props) {
+  useKeepAwake('cooking');
+  const theme = useAppTheme();
+
+  const [recipe, setRecipe] = useState<FullRecipe | null>(null);
+  const [checks, setChecks] = useState<CheckState>({ ing: [], step: [] });
+  const [servings, setServings] = useState(4);
+
+  const timerEndMsRef = useRef<Record<number, number>>({});
+  const [, tick] = useState(0);
+  const bump = useCallback(() => tick((x) => x + 1), []);
+
+  const syncTimersFromClock = useCallback((): number => {
+    const keys = Object.keys(timerEndMsRef.current);
+    if (keys.length === 0) return 0;
+    const now = Date.now();
+    let finished = 0;
+    const next = { ...timerEndMsRef.current };
+    for (const k of keys) {
+      const sid = Number(k);
+      if (next[sid] <= now) {
+        finished += 1;
+        delete next[sid];
+      }
+    }
+    timerEndMsRef.current = next;
+    return finished;
+  }, []);
+
+  const reload = useCallback(() => {
+    void (async () => {
+      const r = await getFullRecipe(recipeId);
+      setRecipe(r);
+      if (!r) return;
+      setServings(effectiveBaseServings(r.baseServings));
+      setChecks({ ing: [], step: [] });
+    })();
+  }, [recipeId]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  useEffect(() => {
+    return () => {
+      void clearCookProgress(recipeId);
+      void stopTimerAlarmSoundIfPlaying();
+    };
+  }, [recipeId]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (Object.keys(timerEndMsRef.current).length === 0) return;
+      const finished = syncTimersFromClock();
+      bump();
+      if (finished > 0) {
+        showTimerFinishedAlert(finished);
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [bump, syncTimersFromClock]);
+
+  useEffect(() => {
+    const onAppState = (state: AppStateStatus) => {
+      if (state !== 'active' || Object.keys(timerEndMsRef.current).length === 0) return;
+      const finished = syncTimersFromClock();
+      bump();
+      if (finished > 0) {
+        showTimerFinishedAlert(finished);
+      }
+    };
+    const sub = AppState.addEventListener('change', onAppState);
+    return () => sub.remove();
+  }, [bump, syncTimersFromClock]);
+
+  const toggleIng = useCallback(
+    (id: number) => {
+      setChecks((c) => {
+        const s = new Set(c.ing);
+        if (s.has(id)) s.delete(id);
+        else s.add(id);
+        const next = { ...c, ing: [...s] };
+        return next;
+      });
+    },
+    [recipeId]
+  );
+
+  const toggleStep = useCallback(
+    (id: number) => {
+      setChecks((c) => {
+        const s = new Set(c.step);
+        if (s.has(id)) s.delete(id);
+        else s.add(id);
+        const next = { ...c, step: [...s] };
+        return next;
+      });
+    },
+    [recipeId]
+  );
+
+  const startTimer = useCallback(
+    (stepId: number, seconds: number) => {
+      timerEndMsRef.current = { ...timerEndMsRef.current, [stepId]: Date.now() + seconds * 1000 };
+      bump();
+    },
+    [bump]
+  );
+
+  const stepNumberById = useMemo(() => {
+    const m = new Map<number, number>();
+    if (!recipe) return m;
+    let n = 0;
+    for (const s of recipe.stepSections) {
+      for (const st of s.steps) {
+        n += 1;
+        m.set(st.id, n);
+      }
+    }
+    return m;
+  }, [recipe]);
+
+  if (!recipe) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.muted}>Recept niet gevonden.</Text>
+      </View>
+    );
+  }
+
+  const ingChecked = new Set(checks.ing);
+  const stepChecked = new Set(checks.step);
+  const factor = servingFactor(servings, recipe.baseServings);
+
+  return (
+    <View style={[styles.wrap, { backgroundColor: theme.background }]}>
+      <ScrollView contentContainerStyle={styles.scroll} style={styles.scrollFlex} keyboardShouldPersistTaps="handled">
+      {recipe.imageUri ? (
+        <Image
+          source={{ uri: recipe.imageUri }}
+          style={styles.coverImage}
+          resizeMode="cover"
+          accessibilityLabel="Receptfoto"
+        />
+      ) : null}
+      <Text style={styles.title}>{recipe.title}</Text>
+      {recipe.description ? <Text style={styles.desc}>{recipe.description}</Text> : null}
+
+      <PortionScaler baseServings={recipe.baseServings} value={servings} onChange={setServings} />
+
+      <Text style={[styles.section, { color: theme.accent }]}>Ingrediënten</Text>
+      {recipe.ingredientGroups.map((g) => (
+        <View key={g.id} style={styles.block}>
+          {g.title ? <Text style={styles.subHeader}>{g.title}</Text> : null}
+          {g.ingredients.map((i) => {
+            const line = formatScaledIngredientLine(i.amount, i.unit, i.name, factor);
+            return (
+              <Pressable
+                key={i.id}
+                style={[styles.row, ingChecked.has(i.id) && styles.rowDone]}
+                onPress={() => toggleIng(i.id)}
+              >
+                <Text style={styles.check}>{ingChecked.has(i.id) ? '☑' : '☐'}</Text>
+                <Text style={[styles.rowText, ingChecked.has(i.id) && styles.rowTextDone]}>{line}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ))}
+
+      <Text style={[styles.section, { color: theme.accent }]}>Stappen</Text>
+      {recipe.stepSections.map((s) => (
+        <View key={s.id} style={styles.block}>
+          {s.title ? <Text style={styles.subHeader}>{s.title}</Text> : null}
+          {s.steps.map((st) => {
+            const endMs = timerEndMsRef.current[st.id];
+            const done = stepChecked.has(st.id);
+            const num = stepNumberById.get(st.id) ?? 0;
+            return (
+              <View key={st.id} style={styles.stepWrap}>
+                <Pressable
+                  style={[styles.row, done && styles.rowDone]}
+                  onPress={() => toggleStep(st.id)}
+                >
+                  <Text style={[styles.stepNum, !done && { color: theme.accent }, done && styles.stepNumDone]}>
+                    {num}.
+                  </Text>
+                  <Text style={[styles.rowText, done && styles.stepRowTextDone]}>{st.description}</Text>
+                </Pressable>
+                {st.timerSeconds != null && st.timerSeconds > 0 ? (
+                  <View style={[styles.timerRow, done && styles.timerRowDone]}>
+                    {endMs != null ? (
+                      <Text style={[styles.timerText, done && styles.timerTextDone]}>
+                        {formatRemain(remainingSecondsFromEnd(endMs))}
+                      </Text>
+                    ) : (
+                      <Pressable
+                        style={styles.timerBtn}
+                        onPress={() => startTimer(st.id, st.timerSeconds!)}
+                      >
+                        <Text style={styles.timerBtnText}>
+                          Start timer ({formatStepTimerNl(st.timerSeconds)})
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
+      ))}
+      </ScrollView>
+      <CookingChatPanel recipe={recipe} recipeId={recipeId} servings={servings} onRecipeUpdated={reload} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrap: { flex: 1 },
+  scrollFlex: { flex: 1 },
+  scroll: { padding: 16, paddingBottom: 88 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  muted: { color: '#666' },
+  coverImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    backgroundColor: '#e8e4dc',
+    marginBottom: 12,
+  },
+  title: { fontSize: 24, fontWeight: '700', marginBottom: 8, color: '#1a1a1a' },
+  desc: { fontSize: 15, color: '#555', marginBottom: 16, lineHeight: 22 },
+  section: { fontSize: 18, fontWeight: '700', marginTop: 20, marginBottom: 8 },
+  block: { marginBottom: 4 },
+  subHeader: { fontSize: 14, fontWeight: '600', color: '#666', marginTop: 8, marginBottom: 4 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+    marginBottom: 8,
+    gap: 10,
+  },
+  rowDone: { backgroundColor: '#f0f0ee', borderColor: '#dddcd8' },
+  check: { fontSize: 20, lineHeight: 24 },
+  stepNum: {
+    minWidth: 30,
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+  stepNumDone: { color: '#999' },
+  rowText: { flex: 1, fontSize: 16, lineHeight: 22, color: '#1a1a1a' },
+  rowTextDone: { textDecorationLine: 'line-through', color: '#888' },
+  stepRowTextDone: { color: '#999' },
+  stepWrap: { marginBottom: 4 },
+  /** Lijn uit met tekst na stapnummer (padding 8 + nummer 30 + gap 10). */
+  timerRow: { marginLeft: 48, marginBottom: 12 },
+  timerRowDone: { opacity: 0.75 },
+  timerText: { fontSize: 18, fontWeight: '600', color: '#1a1a1a' },
+  timerTextDone: { color: '#999' },
+  timerBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#2a6cb6',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  timerBtnText: { color: '#fff', fontWeight: '600' },
+});

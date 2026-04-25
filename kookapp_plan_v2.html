@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kookapp — Technisch Plan v2</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap');
+
+  :root {
+    --bg: #faf9f7;
+    --surface: #fff;
+    --border: #e2ddd5;
+    --text: #1a1a1a;
+    --text-secondary: #6b6560;
+    --accent: #c05e2f;
+    --accent-light: #fdf0e9;
+    --ai-bg: #eef4fb;
+    --ai-text: #2a6cb6;
+    --later-bg: #f3f2f0;
+    --later-text: #9a958e;
+    --code-bg: #f5f3f0;
+    --mono: 'JetBrains Mono', monospace;
+    --serif: 'Source Serif 4', Georgia, serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--serif);
+    background: var(--bg);
+    color: var(--text);
+    padding: 3rem 2rem 6rem;
+    max-width: 860px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  header {
+    margin-bottom: 3rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.5rem;
+  }
+
+  header h1 {
+    font-size: 1.6rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.35rem;
+  }
+
+  header .subtitle {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-family: var(--mono);
+  }
+
+  .section {
+    margin-bottom: 2.5rem;
+  }
+
+  .section-title {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Prose blocks */
+  .prose {
+    font-size: 0.92rem;
+    color: var(--text);
+    line-height: 1.7;
+    margin-bottom: 1rem;
+  }
+
+  .prose code {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* Stack pills */
+  .stack-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .pill {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    padding: 5px 12px;
+    border-radius: 99px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  /* Feature list */
+  .feature-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .feature {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    transition: border-color 0.15s;
+  }
+
+  .feature:hover { border-color: var(--accent); }
+
+  .feature.later {
+    opacity: 0.5;
+    border-style: dashed;
+  }
+
+  .num {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    min-width: 20px;
+    margin-top: 2px;
+  }
+
+  .feature-text {
+    font-size: 0.88rem;
+    color: var(--text);
+    line-height: 1.45;
+  }
+
+  .feature-sub {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    line-height: 1.45;
+  }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    padding: 2px 7px;
+    border-radius: 6px;
+    margin-left: 6px;
+    vertical-align: 1px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .badge-ai { background: var(--ai-bg); color: var(--ai-text); }
+  .badge-later { background: var(--later-bg); color: var(--later-text); }
+
+  /* DB schema cards */
+  .db-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 8px;
+  }
+
+  .db-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+
+  .db-title {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+
+  .db-field {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+
+  .db-field .pk { color: var(--accent); font-weight: 500; }
+  .db-field .fk { color: var(--ai-text); }
+  .db-field .new { background: #e8f5e1; padding: 0 3px; border-radius: 2px; color: #3a7d1a; }
+
+  /* Architecture note boxes */
+  .note-box {
+    background: var(--accent-light);
+    border-left: 3px solid var(--accent);
+    padding: 12px 16px;
+    border-radius: 0 6px 6px 0;
+    margin: 1rem 0;
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+
+  .note-box strong {
+    font-weight: 600;
+  }
+
+  /* Prompt spec blocks */
+  .prompt-spec {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin: 0.75rem 0;
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+
+  .prompt-spec .label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+
+  .prompt-spec pre {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    white-space: pre-wrap;
+    color: var(--text);
+    line-height: 1.7;
+  }
+
+  /* Section divider */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2.5rem 0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Kookapp — Technisch Plan v2</h1>
+  <div class="subtitle">React Native (Expo) · SQLite · Claude API · Nextcloud sync</div>
+</header>
+
+<!-- ============================================ -->
+<!-- PRINCIPES -->
+<!-- ============================================ -->
+
+<div class="section">
+  <div class="section-title">Ontwerpprincipes</div>
+  <div class="prose">
+    <strong>Privacy-first & lokaal.</strong> Alle data staat in SQLite op het device. Geen account, geen externe database. Claude API-calls bevatten alleen het recept waar de gebruiker op dat moment mee werkt — nooit de hele collectie.
+  </div>
+  <div class="prose">
+    <strong>Offline-kookmodus.</strong> De receptweergave, checkboxes, timers en schaling werken volledig zonder internet. AI-features (tips, chat, extractie) zijn gracefully disabled met een duidelijke melding als er geen verbinding is.
+  </div>
+  <div class="prose">
+    <strong>Eén gebruiker, geen sync-conflicten.</strong> Export/import via JSON naar Nextcloud (WebDAV) is een bewuste backup-actie, geen real-time sync. Simpel en voorspelbaar.
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ============================================ -->
+<!-- TECH STACK -->
+<!-- ============================================ -->
+
+<div class="section">
+  <div class="section-title">Tech stack</div>
+  <div class="stack-row">
+    <span class="pill">React Native (Expo)</span>
+    <span class="pill">expo-sqlite</span>
+    <span class="pill">expo-secure-store</span>
+    <span class="pill">Claude API (Haiku default)</span>
+    <span class="pill">JSON export → Nextcloud WebDAV</span>
+  </div>
+
+  <div class="note-box">
+    <strong>API-key opslag:</strong> Sla de Claude API-key op via <code>expo-secure-store</code> (Keychain op iOS, Keystore op Android). De key wordt bij eerste gebruik ingevoerd door de gebruiker in een instellingenscherm. Hardcode nooit een key. Overweeg later een lichte proxy (Cloudflare Worker) zodat de key helemaal niet op het device staat.
+  </div>
+
+  <div class="note-box">
+    <strong>Model-keuze per feature:</strong> Gebruik <code>claude-haiku-4-5</code> als default voor alle AI-features (extractie, tips, receptaanpassingen). Alleen voor complexere taken zoals weekplanning met constraints of chat-interacties kan <code>claude-sonnet-4</code> worden aangesproken. Maak dit configureerbaar in de instellingen.
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ============================================ -->
+<!-- EENHEDEN-SYSTEEM -->
+<!-- ============================================ -->
+
+<div class="section">
+  <div class="section-title">Eenheden-normalisatie</div>
+  <div class="prose">
+    Ingrediënten worden bij invoer (handmatig of via Claude-extractie) genormaliseerd naar een vaste set eenheden. Dit is noodzakelijk voor het schalen van porties en aggregeren van boodschappenlijsten.
+  </div>
+
+  <div class="prompt-spec">
+    <div class="label">Canonieke eenheden</div>
+    <pre>
+Gewicht:    g, kg
+Volume:     ml, l, el (eetlepel), tl (theelepel)
+Stuks:      stuk(s), teen, plak, tak, blad
+Vrij:       snuf, naar smaak
+    </pre>
+  </div>
+
+  <div class="prose">
+    Claude krijgt bij elke extractie-prompt de instructie om ingrediënten te normaliseren naar deze eenheden. Bekende synoniemen (bijv. "eetlepels" → "el", "theelepels" → "tl", "gram" → "g") worden ook client-side afgevangen met een mapping-tabel als fallback.
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ============================================ -->
+<!-- DATASTRUCTUUR -->
+<!-- ============================================ -->
+
+<div class="section">
+  <div class="section-title">Datastructuur (SQLite)</div>
+  <div class="prose">
+    Velden gemarkeerd met <span class="db-field"><span class="new">nieuw</span></span> zijn toevoegingen t.o.v. v1. Elke tabel heeft een <code>schema_version</code>-migratiesysteem zodat toekomstige velduitbreidingen non-destructief zijn.
+  </div>
+  <div class="prose">
+    <strong>Receptlijsten (thema’s).</strong> Naast vrije <em>tags</em> en één <em>categorie</em> per recept kun je <strong>handmatige lijsten</strong> maken — bijvoorbeeld «Zomerrecepten», «Uitgebreid koken», «BBQ» of «Week snel». Dat zijn vaste verzamelingen die jij zelf benoemt; een recept kan in meerdere lijsten staan. Lijsten zijn puur lokaal (SQLite), geen AI nodig. Ideaal om te browsen vóór weekplanning of om een seizoen/thema te groeperen zonder je tag-taxonomie te vervuilen.
+  </div>
+
+  <div class="db-grid">
+    <div class="db-card">
+      <div class="db-title">recipes</div>
+      <div class="db-field">
+        <span class="pk">id</span> INTEGER PK<br>
+        title TEXT NOT NULL<br>
+        description TEXT<br>
+        source_url TEXT<br>
+        base_servings INTEGER<br>
+        <span class="new">prep_time_min</span> INTEGER<br>
+        <span class="new">cook_time_min</span> INTEGER<br>
+        <span class="new">total_time_min</span> INTEGER<br>
+        category TEXT<br>
+        is_favorite INTEGER (0/1)<br>
+        want_to_try INTEGER (0/1)<br>
+        <span class="new">notes</span> TEXT<br>
+        <span class="new">image_uri</span> TEXT<br>
+        created_at TEXT<br>
+        updated_at TEXT
+      </div>
+    </div>
+
+    <div class="db-card">
+      <div class="db-title">ingredient_groups</div>
+      <div class="db-field">
+        <span class="pk">id</span> INTEGER PK<br>
+        <span class="fk">recipe_id</span> → recipes<br>
+        <span class="new">title</span> TEXT<br>
+        <span class="feature-sub">(bijv. "voor de saus")</span><br>
+        order_index INTEGER
+      </div>
+    </div>
+
+    <div class="db-card">
+      <div class="db-title">ingredients</div>
+      <div class="db-field">
+        <span class="pk">id</span> INTEGER PK<br>
+        <span class="fk">recipe_id</span> → recipes<br>
+        <span class="new"><span class="fk">group_id</span></span> → ingredient_groups (nullable)<br>
+        name TEXT NOT NULL<br>
+        amount REAL<br>
+        unit TEXT<br>
+        order_index INTEGER
+      </div>
+    </div>
+
+    <div class="db-card">
+      <div class="db-title">step_sections</div>
+      <div class="db-field">
+        <span class="pk">id</span> INTEGER PK<br>
+        <span class="fk">recipe_id</span> → recipes<br>
+        <span class="new">title</span> TEXT<br>
+        <span class="feature-sub">(bijv. "het deeg")</span><br>
+        order_index INTEGER
+      </div>
+    </div>
+
+    <div class="db-card">
+      <div class="db-title">steps</div>
+      <div class="db-field">
+        <span class="pk">id</span> INTEGER PK<br>
+        <span class="fk">recipe_id</span> → recipes<br>
+        <span class="new"><span class="fk">section_id</span></span> → step_sections (nullable)<br>
+        order_index INTEGER<br>
+        description TEXT NOT NULL<br>
+        <span class="new">timer_seconds</span> INTEGER (nullable)
+      </div>
+    </div>
+
+    <div class="db-card">
+      <div class="db-title">tags</div>
+      <div class="db-field">
+        <span class="pk">id</span> INTEGER PK<br>
+        name TEXT UNIQUE NOT NULL
+      </div>
+    </div>
+
+    <div class="db-card">
+      <div class="db-title">recipe_tags</div>
+      <div class="db-field">
+        <span class="fk">recipe_id</span> → recipes<br>
+        <span class="fk">tag_id</span> → tags<br>
+        PRIMARY KEY (recipe_id, tag_id)
+      </div>
+    </div>
+
+    <div class="db-card">
+      <div class="db-title">recipe_lists</div>
+      <div class="db-field">
+        <span class="pk">id</span> INTEGER PK<br>
+        name TEXT NOT NULL<br>
+        description TEXT<br>
+        sort_order INTEGER<br>
+        created_at TEXT<br>
+        updated_at TEXT<br>
+        <span class="feature-sub">Thema-verzamelingen: «Zomer», «Uitgebreid koken», …</span>
+      </div>
+    </div>
+
+    <div class="db-card">
+      <div class="db-title">recipe_list_items</div>
+      <div class="db-field">
+        <span class="fk">list_id</span> → recipe_lists<br>
+        <span class="fk">recipe_id</span> → recipes<br>
+        sort_order INTEGER<br>
+        PRIMARY KEY (list_id, recipe_id)<br>
+        <span class="feature-sub">Eén recept in meerdere lijsten mogelijk</span>
+      </div>
+    </div>
+
+    <div class="db-card">
+      <div class="db-title">recipe_versions</div>
+      <div class="db-field">
+        <span class="pk">id</span> INTEGER PK<br>
+        <span class="fk">recipe_id</span> → recipes<br>
+        version_number INTEGER<br>
+        note TEXT<br>
+        snapshot TEXT (JSON)<br>
+        created_at TEXT
+      </div>
+    </div>
+
+    <div class="db-card">
+      <div class="db-title">techniques</div>
+      <div class="db-field">
+        <span class="pk">id</span> INTEGER PK<br>
+        name TEXT NOT NULL<br>
+        description TEXT<br>
+        <span class="new">related_recipe_ids</span> TEXT (JSON array)<br>
+        created_at TEXT
+      </div>
+    </div>
+
+    <div class="db-card">
+      <div class="db-title">week_plans</div>
+      <div class="db-field">
+        <span class="pk">id</span> INTEGER PK<br>
+        date TEXT NOT NULL<br>
+        <span class="fk">recipe_id</span> → recipes<br>
+        servings INTEGER<br>
+        cooks_for_days INTEGER DEFAULT 1<br>
+        <span class="new">sort_order</span> INTEGER
+      </div>
+    </div>
+
+    <div class="db-card">
+      <div class="db-title">shopping_items</div>
+      <div class="db-field">
+        <span class="pk">id</span> INTEGER PK<br>
+        <span class="new"><span class="fk">plan_id</span></span> → week_plans (nullable)<br>
+        name TEXT NOT NULL<br>
+        amount REAL<br>
+        unit TEXT<br>
+        is_checked INTEGER (0/1)<br>
+        <span class="new">category</span> TEXT<br>
+        <span class="feature-sub">(groente, zuivel, etc. — voor<br>gegroepeerde weergave)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="note-box">
+    <strong>Migraties:</strong> Gebruik een <code>schema_version</code>-tabel met een integer. Bij app-start check je de huidige versie en voer je de nodige ALTER TABLE-statements uit. Expo-sqlite ondersteunt dit via een <code>onUpgrade</code>-callback.
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ============================================ -->
+<!-- BOUWVOLGORDE -->
+<!-- ============================================ -->
+
+<div class="section">
+  <div class="section-title">Functies — bouwvolgorde</div>
+
+  <div class="feature-list">
+
+    <div class="feature">
+      <span class="num">1</span>
+      <div>
+        <div class="feature-text">Recepten handmatig invoeren + scrollbare kookweergave</div>
+        <div class="feature-sub">
+          Formulier met ingrediënt-groepen, stapsecties, timers per stap, tags, categorie, favorieten, wil-ik-proberen.
+          Kookweergave met checkboxes (ingrediënten + stappen), timers, en wake-lock zodat het scherm niet uitgaat.
+          Dit valideert het volledige datamodel met echte data voordat AI-extractie wordt gebouwd.
+        </div>
+      </div>
+    </div>
+
+    <div class="feature">
+      <span class="num">1b</span>
+      <div>
+        <div class="feature-text">Receptlijsten / thema-verzamelingen</div>
+        <div class="feature-sub">
+          Handmatige lijsten (bijv. «Zomerrecepten», «Uitgebreid koken»): op de receptenpagina horizontale thema-boxen (inclusief «Nieuwe lijst»); tik op een box om recepten in die lijst te zien. Recepten toevoegen/verwijderen per lijst vanuit die weergave.
+          Op het receptdetail: aan/uit per lijst. Eén recept kan in meerdere lijsten staan. Geen AI; volledig offline.
+        </div>
+      </div>
+    </div>
+
+    <div class="feature">
+      <span class="num">2</span>
+      <div>
+        <div class="feature-text">Porties instellen → ingrediënten schalen</div>
+        <div class="feature-sub">
+          Puur rekenkundig, geen AI. Slider of ±knoppen. Respecteert eenheden-normalisatie (bijv. 1000ml → 1l). 
+          "naar smaak" en "snuf" worden niet geschaald.
+        </div>
+      </div>
+    </div>
+
+    <div class="feature">
+      <span class="num">3</span>
+      <div>
+        <div class="feature-text">Zoeken + filteren in eigen receptenverzameling</div>
+        <div class="feature-sub">
+          Full-text search op titel, ingrediënten, tags. Filters op categorie, favoriet, bereidingstijd, wil-ik-proberen, en (optioneel) lidmaatschap van een receptlijst.
+        </div>
+      </div>
+    </div>
+
+    <div class="feature">
+      <span class="num">4</span>
+      <div>
+        <div class="feature-text">Instellingenscherm + API-key opslag</div>
+        <div class="feature-sub">
+          API-key invoer via secure store. Model-keuze (Haiku/Sonnet). Eenheden-voorkeuren. 
+          Dit moet staan vóór de eerste AI-feature.
+        </div>
+      </div>
+    </div>
+
+    <div class="feature">
+      <span class="num">5</span>
+      <div>
+        <div class="feature-text">URL plakken → recept extraheren<span class="badge badge-ai">Haiku</span></div>
+        <div class="feature-sub">
+          Fetch de pagina-HTML, stuur naar Claude met structured output (JSON). Valideer response client-side tegen het schema.
+          Toon preview vóór opslaan zodat de gebruiker kan corrigeren. Fallback-UI bij parse-fouten.
+        </div>
+      </div>
+    </div>
+
+    <div class="feature">
+      <span class="num">6</span>
+      <div>
+        <div class="feature-text">Tips &amp; chat tijdens het koken<span class="badge badge-ai">Haiku</span></div>
+        <div class="feature-sub">
+          Eén component dat begint als een tips-knop (snelle one-shot vragen over het huidige recept) en uitklapt tot een mini-chatvenster. 
+          Context = huidig recept + aantal personen. Microfoon-knop alvast zichtbaar maar disabled. 
+          Zo hoeft dit later niet opnieuw gebouwd te worden.
+        </div>
+      </div>
+    </div>
+
+    <div class="feature">
+      <span class="num">7</span>
+      <div>
+        <div class="feature-text">Notities → Claude past recept aan + versiegeschiedenis<span class="badge badge-ai">Haiku</span></div>
+        <div class="feature-sub">
+          Gebruiker typt een notitie ("volgende keer meer knoflook", "30 min was te lang"). 
+          Claude ontvangt het huidige recept + notitie en retourneert een aangepaste versie. 
+          Oude versie wordt opgeslagen als snapshot in <code>recipe_versions</code>.
+          <strong>Terugzetten</strong> van een eerdere snapshot naar het actieve recept staat in het stappenplan onder «later»
+          (zie onderaan deze lijst): UI op receptdetail, <code>FullRecipe</code> uit JSON terugschrijven, optioneel huidige staat weer als nieuwe versie vastleggen vóór restore.
+        </div>
+      </div>
+    </div>
+
+    <div class="feature">
+      <span class="num">8</span>
+      <div>
+        <div class="feature-text">Weekplanner + boodschappenlijst<span class="badge badge-ai">Sonnet</span></div>
+        <div class="feature-sub">
+          Dagen selecteren, recepten toewijzen (handmatig of AI-suggestie). Eén of meerdere dagen koken.
+          Wensen-tekstvak voor AI ("licht deze week", "iets met aubergine").
+          Boodschappenlijst wordt geaggregeerd uit geplande recepten: zelfde ingrediënt + eenheid → optellen. 
+          Gegroepeerd op categorie (groente, zuivel, droog, etc.). Checkboxes per item.
+        </div>
+      </div>
+    </div>
+
+    <div class="feature">
+      <span class="num">9</span>
+      <div>
+        <div class="feature-text">Technieken-bibliotheek<span class="badge badge-ai">Haiku</span></div>
+        <div class="feature-sub">
+          Doorzoekbare lijst met koktechnieken. Claude kan technieken genereren of uitleggen. 
+          Link naar recepten die de techniek gebruiken.
+        </div>
+      </div>
+    </div>
+
+    <div class="feature">
+      <span class="num">10</span>
+      <div>
+        <div class="feature-text">Recepten zoeken via internet<span class="badge badge-ai">Sonnet + web search</span></div>
+        <div class="feature-sub">
+          Gebruiker beschrijft wat ze willen, Claude zoekt online en presenteert opties.
+          Geselecteerd recept wordt geëxtraheerd en opgeslagen via dezelfde flow als feature 5.
+        </div>
+      </div>
+    </div>
+
+    <div class="feature later">
+      <span class="num">—</span>
+      <div>
+        <div class="feature-text">Voice input (Whisper API)<span class="badge badge-later">later</span></div>
+        <div class="feature-sub">Microfoon-knop in feature 6 wordt enabled. ~€2/maand extra kosten.</div>
+      </div>
+    </div>
+
+    <div class="feature later">
+      <span class="num">—</span>
+      <div>
+        <div class="feature-text">Export/import via Nextcloud WebDAV<span class="badge badge-later">later</span></div>
+        <div class="feature-sub">Volledige DB-export als JSON. Importeer met conflict-detectie op recipe.id + updated_at.</div>
+      </div>
+    </div>
+
+    <div class="feature later">
+      <span class="num">—</span>
+      <div>
+        <div class="feature-text">Techniekvoortgang bijhouden (Ferriss-angle)<span class="badge badge-later">later</span></div>
+      </div>
+    </div>
+
+    <div class="feature later">
+      <span class="num">7→</span>
+      <div>
+        <div class="feature-text">Receptversie terugzetten (uit <code>recipe_versions</code>)<span class="badge badge-later">later</span></div>
+        <div class="feature-sub">
+          Aansluitend op feature 7: op het receptdetail een lijst of sheet met opgeslagen versies (datum, optioneel de notitie die tot die versie leidde).
+          Gebruiker kiest «Terugzetten» → bevestiging → huidige <code>FullRecipe</code> (optioneel) eerst als nieuwe snapshot bewaren, daarna snapshot uit gekozen rij parsen en via bestaande <code>updateRecipe</code>-achtige pad in SQLite schrijven.
+          Geen AI; valideer JSON tegen hetzelfde domeinmodel. Kookvoortgang (<code>cook_progress</code>) wissen of behouden — expliciet kiezen in UI of altijd wissen i.v.m. gewijzigde stap-/ingredient-id’s.
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ============================================ -->
+<!-- CLAUDE PROMPT SPECS -->
+<!-- ============================================ -->
+
+<div class="section">
+  <div class="section-title">Claude API — prompt specs per feature</div>
+
+  <div class="prompt-spec">
+    <div class="label">Feature 5 — URL → recept extractie</div>
+    <pre>
+System prompt:
+Je bent een recept-parser. Extraheer het recept uit de volgende HTML 
+en retourneer ALLEEN valid JSON in het opgegeven schema. 
+Normaliseer eenheden: gebruik g, kg, ml, l, el, tl, stuk(s), teen, 
+plak, tak, blad, snuf, "naar smaak". 
+Groepeer ingrediënten als het origineel secties heeft.
+Schat prep_time_min, cook_time_min, total_time_min als ze niet 
+expliciet vermeld staan.
+
+Output schema:
+{
+  "title": string,
+  "description": string | null,
+  "base_servings": number,
+  "prep_time_min": number | null,
+  "cook_time_min": number | null,
+  "total_time_min": number | null,
+  "category": string | null,
+  "ingredient_groups": [
+    {
+      "title": string | null,
+      "ingredients": [
+        { "name": string, "amount": number | null, "unit": string | null }
+      ]
+    }
+  ],
+  "step_sections": [
+    {
+      "title": string | null,
+      "steps": [
+        { "description": string, "timer_seconds": number | null }
+      ]
+    }
+  ],
+  "tags": [string]
+}
+
+Validatie client-side:
+- Check of JSON valid is
+- Check of title niet leeg is
+- Check of minstens 1 ingrediënt en 1 stap aanwezig zijn
+- Bij falen: toon foutmelding + raw response voor debugging
+    </pre>
+  </div>
+
+  <div class="prompt-spec">
+    <div class="label">Feature 6 — Tips & chat context</div>
+    <pre>
+System prompt:
+Je bent een ervaren kok die helpt tijdens het koken. 
+Je hebt context over het recept dat de gebruiker aan het maken is.
+Geef korte, praktische antwoorden. Maximaal 2-3 zinnen tenzij
+de gebruiker expliciet om meer detail vraagt.
+Antwoord in het Nederlands.
+
+User message bevat:
+- Het volledige recept (titel, ingrediënten, stappen)
+- Aantal personen waarvoor wordt gekookt
+- De vraag van de gebruiker
+    </pre>
+  </div>
+
+  <div class="prompt-spec">
+    <div class="label">Feature 7 — Recept aanpassen o.b.v. notitie</div>
+    <pre>
+System prompt:
+De gebruiker heeft een notitie geschreven over een recept. 
+Pas het recept aan op basis van de notitie.
+Retourneer het VOLLEDIGE aangepaste recept in hetzelfde JSON-schema 
+als de extractie-feature. Wijzig ALLEEN wat de notitie impliceert.
+
+User message bevat:
+- Het huidige recept als JSON
+- De notitie van de gebruiker
+    </pre>
+  </div>
+
+  <div class="prompt-spec">
+    <div class="label">Later — versie terugzetten (geen Claude)</div>
+    <pre>
+Implementatie-stappen (stappenplan):
+1. repo: listRecipeVersions(recipe_id) → id, version_number, note, created_at (snapshot alleen bij restore laden).
+2. receptdetail: sectie «Eerdere versies» met FlatList / modal; knop «Bekijk» toont read-only samenvatting (titel + aantallen).
+3. «Terugzetten»: Alert bevestigen; optioneel checkbox «Huidige versie eerst bewaren» (nieuwe recipe_versions-rij met note "Vóór terugzetten").
+4. snapshot JSON → FullRecipe valideren (zelfde velden als getFullRecipe); bij fout: geen write.
+5. applyRestoredRecipe(recipeId, fullRecipe) — transactie: DELETE/INSERT nested zoals updateRecipe, of hergebruik applyRecipePayloadSync na fullRecipeToPayload.
+6. Na succes: invalidate UI; optioneel versie-rij verwijderen of behouden (meestal behouden voor geschiedenis).
+
+Geen aparte prompt; dit is puur client + SQLite.
+    </pre>
+  </div>
+
+  <div class="prompt-spec">
+    <div class="label">Feature 8 — Weekplanner (Sonnet)</div>
+    <pre>
+System prompt:
+Je helpt met weekplanning voor maaltijden (alleen diner).
+De gebruiker geeft aan voor welke dagen ze willen plannen,
+en kan optioneel wensen meegeven.
+Kies recepten uit hun collectie. Hergebruik ingrediënten slim
+(bijv. als maandag paprika's gebruikt, plan dinsdag iets met paprika).
+Houd rekening met "cooks_for_days" als de gebruiker aangeeft 
+voor meerdere dagen te koken.
+
+User message bevat:
+- Lijst van beschikbare recepten (id, title, category, tags, 
+  key ingredients)
+- Dagen waarvoor gepland moet worden
+- Wensen-tekst van de gebruiker
+- Eventuele "wil ik proberen"-recepten als suggesties
+
+Output: array van { date, recipe_id, servings, cooks_for_days }
+    </pre>
+  </div>
+
+  <div class="prompt-spec">
+    <div class="label">Boodschappenlijst (client-side aggregatie)</div>
+    <pre>
+Geen AI nodig — puur client-side:
+
+1. Voor elke geplande maaltijd: 
+   ingredients × (plan.servings / recipe.base_servings)
+2. Groepeer op genormaliseerde (name + unit)
+3. Tel amounts op
+4. Sorteer op shopping_category
+5. "naar smaak" items: toon zonder hoeveelheid, niet optellen
+
+Edge cases:
+- "2 el olijfolie" + "3 el olijfolie" → "5 el olijfolie"
+- "200g kipfilet" + "300g kipfilet" → "500g kipfilet"  
+- "1 ui" + "2 uien" → "3 ui(en)" — normaliseer meervoud
+    </pre>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ============================================ -->
+<!-- ERROR HANDLING -->
+<!-- ============================================ -->
+
+<div class="section">
+  <div class="section-title">Error handling & edge cases</div>
+
+  <div class="prose">
+    <strong>Claude API-fouten:</strong> Wrap elke API-call in try/catch. Bij netwerk-fouten of 5xx: toon "Geen verbinding met AI — probeer opnieuw". Bij 4xx (rate limit, invalid key): toon specifieke melding. Bewaar het user-bericht zodat ze het kunnen her-versturen.
+  </div>
+  <div class="prose">
+    <strong>Onverwachte JSON-responses:</strong> Na elke Claude-response, valideer tegen het verwachte schema. Als de JSON invalid is of verplichte velden mist: toon een fallback-UI met de ruwe response en een "opnieuw proberen"-knop. Log de fout lokaal voor debugging.
+  </div>
+  <div class="prose">
+    <strong>URL-extractie fallbacks:</strong> Sommige sites blokkeren scraping. Als de fetch faalt: toon een melding dat de site niet ondersteund wordt, en bied aan om het recept handmatig in te voeren. Alternatief: laat de gebruiker HTML plakken.
+  </div>
+  <div class="prose">
+    <strong>Offline-modus:</strong> Check netwerkstatus bij elke AI-actie. Als offline: disable AI-knoppen visueel (greyed out + tooltip). Alle niet-AI-functies (receptweergave, checkboxes, timers, schaling, zoeken, receptlijsten, boodschappenlijst) werken volledig offline.
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ============================================ -->
+<!-- PROJECTSTRUCTUUR -->
+<!-- ============================================ -->
+
+<div class="section">
+  <div class="section-title">Projectstructuur (suggestie)</div>
+  <div class="prompt-spec">
+    <pre>
+kookapp/
+├── app/                    # Expo Router file-based routing
+│   ├── (tabs)/
+│   │   ├── index.tsx       # Recepten + thema-lijstboxen (home)
+│   │   ├── planner.tsx     # Weekplanner
+│   │   ├── shopping.tsx    # Boodschappenlijst
+│   │   └── techniques.tsx  # Technieken
+│   ├── list/
+│   │   └── [id].tsx        # Recepten binnen één lijst
+│   ├── recipe/
+│   │   ├── [id]/           # Receptdetail, kookweergave, bewerken
+│   │   ├── new.tsx         # Nieuw recept (handmatig)
+│   │   └── import.tsx      # URL-import
+│   └── settings.tsx        # Instellingen + API key
+├── components/
+│   ├── RecipeForm.tsx
+│   ├── CookingView.tsx     # Kookweergave met checkboxes + timers
+│   ├── CookingChat.tsx     # Tips-knop + uitklapbaar chatvenster
+│   ├── IngredientScaler.tsx
+│   ├── ShoppingList.tsx
+│   └── WeekGrid.tsx
+├── lib/
+│   ├── db.ts               # SQLite setup + migraties
+│   ├── claude.ts            # API-wrapper + prompt templates
+│   ├── units.ts             # Eenheden-normalisatie + synoniemen
+│   ├── shopping.ts          # Boodschappenlijst-aggregatie
+│   └── types.ts             # TypeScript types voor het schema
+└── assets/
+    </pre>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ============================================ -->
+<!-- KOSTEN -->
+<!-- ============================================ -->
+
+<div class="section">
+  <div class="section-title">Kosten schatting (bijgewerkt)</div>
+  <div class="stack-row">
+    <span class="pill">Haiku (meeste features): ~€0.50–1.50/maand</span>
+    <span class="pill">Sonnet (weekplanner + web search): ~€1–3/maand</span>
+    <span class="pill">Hosting: geen</span>
+    <span class="pill">Opslag: lokaal gratis</span>
+    <span class="pill">Voice (later): ~€2/maand</span>
+  </div>
+  <div class="note-box">
+    Totaal geschat: <strong>€1.50–4.50/maand</strong> bij actief gebruik (3-5 recepten importeren, wekelijks plannen, regelmatig tips vragen). Significant lager als je vooral handmatig invoert.
+  </div>
+</div>
+
+</body>
+</html>

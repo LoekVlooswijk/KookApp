@@ -1,0 +1,57 @@
+{
+  "expo": {
+    "name": "Kookapp",
+    "slug": "kook-app",
+    "scheme": "kookapp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#faf9f7"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#faf9f7"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "updates": {
+      "checkAutomatically": "NEVER",
+      "enabled": false
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "headers": {
+            "Cross-Origin-Embedder-Policy": "credentialless",
+            "Cross-Origin-Opener-Policy": "same-origin"
+          }
+        }
+      ],
+      "expo-sqlite",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Kies een screenshot om recepten te importeren, of een foto als omslag van je recept.",
+          "cameraPermission": "Maak een foto om als omslag van je recept te gebruiken."
+        }
+      ],
+      "expo-file-system",
+      "expo-audio",
+      "expo-asset"
+    ]
+  }
+}

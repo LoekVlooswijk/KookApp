@@ -1,0 +1,13 @@
+---
+description: SQLite, migrations, units, and Claude integration for Kookapp
+globs: "lib/**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+# Data & AI
+
+- **Migrations**: Keep a `schema_version` (or equivalent) and apply **incremental** `ALTER`/create steps on upgrade. Do not wipe user data silently.
+- **Units**: Normalize to the canonical set in the plan (`g`, `kg`, `ml`, `l`, `el`, `tl`, stuks, etc.). Do not scale `snuf` / `naar smaak` amounts.
+- **Claude responses**: Treat model output as untrusted. **Validate** JSON against the app’s schema before saving; on failure show a clear Dutch error + optional raw response for debugging (per plan).
+- **Errors**: Wrap API calls; map network/5xx to a generic retry message; 4xx (e.g. key/rate limit) to a specific Dutch message; preserve the user’s draft so they can resend.
+- **URL import**: If fetch fails (blocked site), explain in Dutch and offer manual entry or paste HTML (per plan).

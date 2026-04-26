@@ -169,15 +169,11 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
       >
         <KeyboardAvoidingView
           style={styles.modalRoot}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior="padding"
         >
           <Pressable style={styles.modalBackdrop} onPress={() => setOpen(false)} />
-          <ScrollView
-            style={[styles.sheet, { backgroundColor: theme.background }]}
-            scrollEnabled={false}
-            keyboardShouldPersistTaps="always"
-            contentContainerStyle={styles.sheetInner}
-          >
+          <View style={[styles.sheet, { backgroundColor: theme.background }]}>
+            <View style={styles.sheetInner}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Kookhulp</Text>
               <View style={styles.headerActions}>
@@ -297,7 +293,8 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
                 <Text style={styles.sendBtnText}>Verstuur</Text>
               </Pressable>
             </View>
-          </ScrollView>
+            </View>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
     </>

@@ -13,8 +13,13 @@ function normName(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function stripVersPrefix(n: string): string {
+  const t = n.trim();
+  return t.replace(/^(vers(e)?\s+)/i, '');
+}
+
 function canonicalMergeName(name: string): { keyName: string; displayName: string } {
-  const n = normName(name);
+  const n = normName(stripVersPrefix(name));
   if (!n) return { keyName: '', displayName: '' };
 
   // Garlic clove naming varies ("knoflookteen" vs "knoflook teentje").
@@ -32,7 +37,8 @@ function canonicalMergeName(name: string): { keyName: string; displayName: strin
     return { keyName: 'ui', displayName: 'ui' };
   }
 
-  return { keyName: n, displayName: name.trim() };
+  const displayName = stripVersPrefix(name).trim();
+  return { keyName: n, displayName: displayName || name.trim() };
 }
 
 /** For ui/knoflook, empty unit + any finite amount should still merge with "stuks" lines. */
@@ -127,7 +133,54 @@ export function mergeAggregatedShoppingItems(items: AggregatedShoppingItemInput[
   for (const it of items) {
     mergeShoppingLinesIntoMap(out, it.name, it.unit, it.amount);
   }
-  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, 'nl'));
+
+  const byUnitMerged = [...out.values()];
+
+  // Fallback: if we still have multiple lines for the same ingredient name (but different unit),
+  // combine them into one line by name and show quantities joined with "+".
+  const linesByName = new Map<string, Array<{ displayName: string; amount: number | null; unit: string | null }>>();
+  for (const it of byUnitMerged) {
+    const { keyName, displayName } = canonicalMergeName(it.name);
+    if (!keyName) continue;
+    const arr = linesByName.get(keyName) ?? [];
+    arr.push({ displayName, amount: it.amount, unit: it.unit });
+    linesByName.set(keyName, arr);
+  }
+
+  const final: AggregatedShoppingItem[] = [];
+  for (const [keyName, arr] of linesByName) {
+    if (arr.length <= 1) {
+      const one = arr[0];
+      if (one) final.push({ name: one.displayName, amount: one.amount, unit: one.unit });
+      continue;
+    }
+
+    // Only collapse into "a + b + c" when we have numeric amounts for all parts.
+    // If some lines are non-numeric, keep them as separate lines to avoid losing detail.
+    const allNumeric = arr.every((x) => x.amount != null && Number.isFinite(x.amount));
+    if (!allNumeric) {
+      for (const it of arr) {
+        final.push({ name: it.displayName, amount: it.amount, unit: it.unit });
+      }
+      continue;
+    }
+
+    // Prefer the shortest reasonable display name (after canonicalization).
+    const sortedNames = [...arr].map((x) => x.displayName.trim()).filter(Boolean).sort((a, b) => a.length - b.length);
+    const displayName = sortedNames[0] ?? keyName;
+
+    const parts: string[] = [];
+    for (const it of arr) {
+      const amt = String(round2(it.amount!));
+      const u = (it.unit ?? '').trim();
+      parts.push(u ? `${amt} ${u}` : amt);
+    }
+
+    // Store the combined quantities in `unit` so the UI can render it even when `amount` is null.
+    final.push({ name: displayName, amount: null, unit: parts.join(' + ') });
+  }
+
+  return final.sort((a, b) => a.name.localeCompare(b.name, 'nl'));
 }
 
 function isStaple(ingredientName: string, staples: string[]): boolean {

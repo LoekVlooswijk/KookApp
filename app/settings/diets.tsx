@@ -1,6 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
@@ -10,6 +11,7 @@ import { ensureDatabaseAsync } from '../../lib/db';
 export default function DietsSettingsScreen() {
   const theme = useAppTheme();
   const { confirm, ConfirmDialog } = useConfirmDialog();
+  const headerHeight = useHeaderHeight();
 
   const [customDiets, setCustomDietsState] = useState<string[]>([]);
   const [newDietInput, setNewDietInput] = useState('');
@@ -57,17 +59,18 @@ export default function DietsSettingsScreen() {
   }, [confirm]);
 
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={[styles.scroll, { backgroundColor: theme.background }]}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={headerHeight}
     >
-      <ConfirmDialog />
-      <Text style={styles.section}>Dieten</Text>
-      <Text style={styles.hint}>
-        Dit zijn extra dieetlabels naast de ingebouwde opties (Vega/Vegan/Keto). Ze worden opgeslagen als speciale tags
-        (`diet:...`) zodat gewone tags voor thema/techniek blijven.
-      </Text>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ConfirmDialog />
+        <Text style={styles.section}>Dieten</Text>
+        <Text style={styles.hint}>
+          Dit zijn extra dieetlabels naast de ingebouwde opties (Vega/Vegan/Keto). Ze worden opgeslagen als speciale tags
+          (`diet:...`) zodat gewone tags voor thema/techniek blijven.
+        </Text>
 
       <View style={styles.row}>
         <TextInput
@@ -98,7 +101,8 @@ export default function DietsSettingsScreen() {
       ) : (
         <Text style={styles.statusMuted}>Nog geen extra diëten toegevoegd.</Text>
       )}
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

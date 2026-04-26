@@ -10,6 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import { CookingChatPanel } from './CookingChatPanel';
 import { PortionScaler } from './PortionScaler';
@@ -37,7 +38,11 @@ function formatRemain(sec: number): string {
 
 type CheckState = { ing: number[]; step: number[] };
 
-/** stepId -> unix ms when the timer should ring (wall clock; survives background). */
+type StepTimerState =
+  | { status: 'running'; endMs: number }
+  | { status: 'paused'; remainingSec: number };
+
+/** stepId -> timer state (running is wall clock; survives background). */
 function remainingSecondsFromEnd(endMs: number): number {
   return Math.max(0, Math.ceil((endMs - Date.now()) / 1000));
 }
@@ -50,24 +55,26 @@ export function CookingView({ recipeId }: Props) {
   const [checks, setChecks] = useState<CheckState>({ ing: [], step: [] });
   const [servings, setServings] = useState(4);
 
-  const timerEndMsRef = useRef<Record<number, number>>({});
+  const timersByStepIdRef = useRef<Record<number, StepTimerState>>({});
   const [, tick] = useState(0);
   const bump = useCallback(() => tick((x) => x + 1), []);
 
   const syncTimersFromClock = useCallback((): number => {
-    const keys = Object.keys(timerEndMsRef.current);
+    const keys = Object.keys(timersByStepIdRef.current);
     if (keys.length === 0) return 0;
     const now = Date.now();
     let finished = 0;
-    const next = { ...timerEndMsRef.current };
+    const next = { ...timersByStepIdRef.current };
     for (const k of keys) {
       const sid = Number(k);
-      if (next[sid] <= now) {
+      const t = next[sid];
+      if (!t) continue;
+      if (t.status === 'running' && t.endMs <= now) {
         finished += 1;
         delete next[sid];
       }
     }
-    timerEndMsRef.current = next;
+    timersByStepIdRef.current = next;
     return finished;
   }, []);
 
@@ -94,7 +101,7 @@ export function CookingView({ recipeId }: Props) {
 
   useEffect(() => {
     const id = setInterval(() => {
-      if (Object.keys(timerEndMsRef.current).length === 0) return;
+      if (Object.keys(timersByStepIdRef.current).length === 0) return;
       const finished = syncTimersFromClock();
       bump();
       if (finished > 0) {
@@ -106,7 +113,7 @@ export function CookingView({ recipeId }: Props) {
 
   useEffect(() => {
     const onAppState = (state: AppStateStatus) => {
-      if (state !== 'active' || Object.keys(timerEndMsRef.current).length === 0) return;
+      if (state !== 'active' || Object.keys(timersByStepIdRef.current).length === 0) return;
       const finished = syncTimersFromClock();
       bump();
       if (finished > 0) {
@@ -145,7 +152,42 @@ export function CookingView({ recipeId }: Props) {
 
   const startTimer = useCallback(
     (stepId: number, seconds: number) => {
-      timerEndMsRef.current = { ...timerEndMsRef.current, [stepId]: Date.now() + seconds * 1000 };
+      timersByStepIdRef.current = {
+        ...timersByStepIdRef.current,
+        [stepId]: { status: 'running', endMs: Date.now() + seconds * 1000 },
+      };
+      bump();
+    },
+    [bump]
+  );
+
+  const togglePauseTimer = useCallback(
+    (stepId: number) => {
+      const cur = timersByStepIdRef.current[stepId];
+      if (!cur) return;
+      if (cur.status === 'running') {
+        const remainingSec = remainingSecondsFromEnd(cur.endMs);
+        timersByStepIdRef.current = {
+          ...timersByStepIdRef.current,
+          [stepId]: { status: 'paused', remainingSec },
+        };
+      } else {
+        timersByStepIdRef.current = {
+          ...timersByStepIdRef.current,
+          [stepId]: { status: 'running', endMs: Date.now() + cur.remainingSec * 1000 },
+        };
+      }
+      bump();
+    },
+    [bump]
+  );
+
+  const resetTimer = useCallback(
+    (stepId: number) => {
+      if (!timersByStepIdRef.current[stepId]) return;
+      const next = { ...timersByStepIdRef.current };
+      delete next[stepId];
+      timersByStepIdRef.current = next;
       bump();
     },
     [bump]
@@ -217,9 +259,15 @@ export function CookingView({ recipeId }: Props) {
         <View key={s.id} style={styles.block}>
           {s.title ? <Text style={styles.subHeader}>{s.title}</Text> : null}
           {s.steps.map((st) => {
-            const endMs = timerEndMsRef.current[st.id];
+            const timer = timersByStepIdRef.current[st.id];
             const done = stepChecked.has(st.id);
             const num = stepNumberById.get(st.id) ?? 0;
+            const remainingSec =
+              timer?.status === 'running'
+                ? remainingSecondsFromEnd(timer.endMs)
+                : timer?.status === 'paused'
+                  ? timer.remainingSec
+                  : null;
             return (
               <View key={st.id} style={styles.stepWrap}>
                 <Pressable
@@ -233,10 +281,36 @@ export function CookingView({ recipeId }: Props) {
                 </Pressable>
                 {st.timerSeconds != null && st.timerSeconds > 0 ? (
                   <View style={[styles.timerRow, done && styles.timerRowDone]}>
-                    {endMs != null ? (
-                      <Text style={[styles.timerText, done && styles.timerTextDone]}>
-                        {formatRemain(remainingSecondsFromEnd(endMs))}
-                      </Text>
+                    {timer != null && remainingSec != null ? (
+                      <View style={styles.timerActiveRow}>
+                        <Text style={[styles.timerText, done && styles.timerTextDone]}>
+                          {formatRemain(remainingSec)}
+                        </Text>
+                        <View style={styles.timerIcons}>
+                          <Pressable
+                            onPress={() => togglePauseTimer(st.id)}
+                            hitSlop={6}
+                            accessibilityRole="button"
+                            accessibilityLabel={timer.status === 'running' ? 'Pauzeer timer' : 'Hervat timer'}
+                            style={styles.timerIconBtn}
+                          >
+                            <MaterialIcons
+                              name={timer.status === 'running' ? 'pause' : 'play-arrow'}
+                              size={30}
+                              color={done ? '#999' : theme.accent}
+                            />
+                          </Pressable>
+                          <Pressable
+                            onPress={() => resetTimer(st.id)}
+                            hitSlop={6}
+                            accessibilityRole="button"
+                            accessibilityLabel="Reset timer"
+                            style={styles.timerIconBtn}
+                          >
+                            <MaterialIcons name="refresh" size={28} color={done ? '#999' : '#666'} />
+                          </Pressable>
+                        </View>
+                      </View>
                     ) : (
                       <Pressable
                         style={styles.timerBtn}
@@ -307,7 +381,30 @@ const styles = StyleSheet.create({
   /** Lijn uit met tekst na stapnummer (padding 8 + nummer 30 + gap 10). */
   timerRow: { marginLeft: 48, marginBottom: 12 },
   timerRowDone: { opacity: 0.75 },
-  timerText: { fontSize: 18, fontWeight: '600', color: '#1a1a1a' },
+  timerActiveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 18,
+    alignSelf: 'flex-start',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+  },
+  timerIcons: { flexDirection: 'row', alignItems: 'center', gap: 18 },
+  timerIconBtn: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#f7f6f3',
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+  },
+  timerText: { fontSize: 26, fontWeight: '800', color: '#1a1a1a', fontVariant: ['tabular-nums'] },
   timerTextDone: { color: '#999' },
   timerBtn: {
     alignSelf: 'flex-start',

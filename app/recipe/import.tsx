@@ -1,6 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -8,6 +9,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -16,12 +18,9 @@ import {
 import { useAppTheme } from '../../components/ThemeContext';
 import type { AiImageMediaType } from '../../lib/aiClient';
 import { hasActiveAiKey } from '../../lib/aiClient';
+import { getImportAhSiteSearchEnabled, setImportAhSiteSearchEnabled } from '../../lib/aiAhSearchPrefs';
+import { getImportExtractConcurrency } from '../../lib/aiImportConcurrencyPrefs';
 import { registerImportSession } from '../../lib/importDraft';
-import {
-  persistPickedRecipeCover,
-  persistRecipeCoverFromBase64,
-  tryDeleteManagedCover,
-} from '../../lib/recipeCoverStorage';
 import {
   buildManualFallbackImportPayload,
   discoverRecipesFromPhoto,
@@ -32,20 +31,6 @@ import {
 } from '../../lib/recipeImportFromPhoto';
 import { createRecipe } from '../../lib/recipesRepo';
 import type { RecipeSavePayload } from '../../lib/types';
-
-/**
- * Als de receptpagina al een omslag heeft (lokaal gedownload in `fetchAndExtractOneRecipe`), die houden.
- * Anders de screenshot als omslag (unieke kopie per recept).
- */
-async function payloadWithImportScreenshotCover(
-  persistedSourceUri: string | null,
-  payload: RecipeSavePayload
-): Promise<RecipeSavePayload> {
-  if (payload.imageUri?.trim()) return payload;
-  if (!persistedSourceUri) return payload;
-  const copyUri = await persistPickedRecipeCover(persistedSourceUri);
-  return { ...payload, imageUri: copyUri };
-}
 
 type UrlPhase = 'idle' | 'loading' | 'preview' | 'error';
 
@@ -69,9 +54,38 @@ function mimeToAiMediaType(mime: string | undefined): AiImageMediaType {
   return 'image/jpeg';
 }
 
+async function downscaleForVision(asset: ImagePicker.ImagePickerAsset): Promise<{
+  base64: string;
+  mediaType: AiImageMediaType;
+}> {
+  // Vision token use scales with image size. For screenshots, a resized JPEG keeps OCR quality
+  // while cutting input tokens significantly.
+  if (asset.uri) {
+    try {
+      const manipulated = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 1100 } }],
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+      if (manipulated.base64) {
+        return { base64: manipulated.base64, mediaType: 'image/jpeg' };
+      }
+    } catch {
+      // Fall back to picker base64.
+    }
+  }
+  const b64 = asset.base64;
+  if (!b64) {
+    throw new Error('Kon de afbeelding niet lezen. Probeer een andere foto.');
+  }
+  return { base64: b64, mediaType: mimeToAiMediaType(asset.mimeType) };
+}
+
 export default function ImportRecipeScreen() {
   const theme = useAppTheme();
+  const navigation = useNavigation();
   const router = useRouter();
+  const params = useLocalSearchParams<{ saved?: string | string[] }>();
   const [tab, setTab] = useState<'url' | 'foto'>('url');
 
   const chipOnStyle = useMemo(
@@ -89,8 +103,54 @@ export default function ImportRecipeScreen() {
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoRows, setPhotoRows] = useState<PhotoImportRow[]>([]);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [photoAhSearch, setPhotoAhSearch] = useState(true);
 
   const lastUrlImportFetchRef = useRef<string | null>(null);
+  const importBusy = urlPhase === 'loading' || photoBusy;
+
+  useEffect(() => {
+    const raw = Array.isArray(params.saved) ? params.saved[0] : params.saved;
+    if (raw !== '1') return;
+    // Clear URL-import preview state after saving from the preview screen.
+    setUrlPhase('idle');
+    setPayload(null);
+    setUrlMessage(null);
+    setRawDebug(null);
+    // Keep the input URL text; user might want to import another similar URL.
+  }, [params.saved]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setPhotoAhSearch(await getImportAhSiteSearchEnabled());
+      } catch {
+        setPhotoAhSearch(true);
+      }
+    })();
+  }, []);
+
+  const onTogglePhotoAhSearch = useCallback((v: boolean) => {
+    void (async () => {
+      try {
+        await setImportAhSiteSearchEnabled(v);
+        setPhotoAhSearch(v);
+      } catch (e) {
+        Alert.alert('Fout', e instanceof Error ? e.message : 'Opslaan mislukt.');
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', (e: any) => {
+      if (!importBusy) return;
+      e.preventDefault();
+      Alert.alert(
+        'Even wachten',
+        'De assistent is nog bezig met importeren. Wacht tot dit klaar is.'
+      );
+    });
+    return unsub;
+  }, [importBusy, navigation]);
 
   const runExtractUrl = useCallback(async () => {
     const okKey = await hasActiveAiKey();
@@ -152,13 +212,14 @@ export default function ImportRecipeScreen() {
   const goToEditor = useCallback(() => {
     if (!payload) return;
     const sid = registerImportSession(payload);
-    router.push({ pathname: '/recipe/new', params: { importSid: sid } });
+    // URL-import: use the same clean preview, but allow saving from there.
+    router.push({ pathname: '/recipe/preview', params: { importSid: sid, mode: 'single' } });
   }, [payload, router]);
 
   const goToEditorFromPayload = useCallback(
     (p: RecipeSavePayload) => {
       const sid = registerImportSession(p);
-      router.push({ pathname: '/recipe/new', params: { importSid: sid } });
+      router.push({ pathname: '/recipe/preview', params: { importSid: sid } });
     },
     [router]
   );
@@ -186,7 +247,7 @@ export default function ImportRecipeScreen() {
 
     const pick = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.75,
+      quality: 0.65,
       base64: true,
     });
 
@@ -195,31 +256,14 @@ export default function ImportRecipeScreen() {
     }
 
     const asset = pick.assets[0];
-    const b64 = asset.base64;
-    if (!b64) {
-      setPhotoError('Kon de afbeelding niet lezen. Probeer een andere foto.');
-      return;
-    }
-
-    let importCoverSourceUri: string | null = null;
-    if (asset.uri) {
-      try {
-        importCoverSourceUri = await persistPickedRecipeCover(asset.uri);
-      } catch {
-        importCoverSourceUri = null;
-      }
-    }
-    if (!importCoverSourceUri) {
-      importCoverSourceUri = await persistRecipeCoverFromBase64(b64, asset.mimeType);
-    }
 
     setPhotoError(null);
     setPhotoBusy(true);
     setPhotoRows([]);
 
     try {
-      const mediaType = mimeToAiMediaType(asset.mimeType);
-      const discovered = await discoverRecipesFromPhoto(b64, mediaType);
+      const { base64, mediaType } = await downscaleForVision(asset);
+      const discovered = await discoverRecipesFromPhoto(base64, mediaType);
       if (!discovered.ok) {
         setPhotoError(discovered.message);
         return;
@@ -239,41 +283,45 @@ export default function ImportRecipeScreen() {
 
       setPhotoRows(rows);
 
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        if (!row.url) continue;
+      // Fetch+extract can be slow; run a small pool in parallel to speed up,
+      // while keeping rate limits manageable.
+      const cfgConcurrency = await getImportExtractConcurrency();
+      const indices = rows.map((_, i) => i).filter((i) => !!rows[i]?.url);
+      let cursor = 0;
+      const concurrency = Math.max(1, Math.min(cfgConcurrency, 10));
+      const worker = async () => {
+        while (cursor < indices.length) {
+          const i = indices[cursor]!;
+          cursor++;
+          const row = rows[i];
+          if (!row?.url) continue;
 
-        setPhotoRows((prev) =>
-          prev.map((p, j) => (j === i ? { ...p, status: 'loading' as const } : p))
-        );
+          setPhotoRows((prev) =>
+            prev.map((p, j) => (j === i ? { ...p, status: 'loading' as const } : p))
+          );
 
-        const result = await fetchAndExtractOneRecipe(row.url);
+          const result = await fetchAndExtractOneRecipe(row.url);
 
-        const withCover =
-          result.ok && result.payload
-            ? await payloadWithImportScreenshotCover(importCoverSourceUri, result.payload)
-            : null;
+          setPhotoRows((prev) =>
+            prev.map((p, j) =>
+              j === i
+                ? result.ok && result.payload
+                  ? { ...p, status: 'ok' as const, payload: result.payload }
+                  : {
+                      ...p,
+                      status: 'error' as const,
+                      message: result.ok ? 'Importeren mislukt.' : result.message,
+                    }
+                : p
+            )
+          );
+        }
+      };
 
-        setPhotoRows((prev) =>
-          prev.map((p, j) =>
-            j === i
-              ? result.ok && withCover
-                ? { ...p, status: 'ok' as const, payload: withCover }
-                : {
-                    ...p,
-                    status: 'error' as const,
-                    message: result.ok ? 'Importeren mislukt.' : result.message,
-                  }
-              : p
-          )
-        );
-      }
+      await Promise.all(Array.from({ length: Math.min(concurrency, indices.length) }, () => worker()));
     } catch (e) {
       setPhotoError(e instanceof Error ? e.message : 'Er ging iets mis.');
     } finally {
-      if (importCoverSourceUri) {
-        void tryDeleteManagedCover(importCoverSourceUri);
-      }
       setPhotoBusy(false);
     }
   }, []);
@@ -408,9 +456,7 @@ export default function ImportRecipeScreen() {
                 ]}
                 onPress={goToEditor}
               >
-                <Text style={[styles.secondaryBtnText, { color: theme.accentSoftText }]}>
-                  Controleren in formulier
-                </Text>
+                <Text style={[styles.secondaryBtnText, { color: theme.accentSoftText }]}>Controleren</Text>
               </Pressable>
               <Pressable
                 style={styles.ghostBtn}
@@ -468,9 +514,27 @@ export default function ImportRecipeScreen() {
           <Text style={styles.label}>Screenshot of foto</Text>
           <Text style={styles.hintBlock}>
             Kies een afbeelding met één of meerdere recepten. Zichtbare URL’s in de screenshot (adresbalk of link)
-            geven het beste resultaat. Als de receptpagina een eigen foto heeft, wordt die als omslag gebruikt;
-            anders wordt je screenshot (per recept een aparte kopie) opgeslagen.
+            geven het beste resultaat. Als de receptpagina een eigen foto heeft, wordt die als omslag gebruikt.
           </Text>
+
+          <View style={styles.switchRow}>
+            <View style={styles.switchTextCol}>
+              <Text style={styles.switchLabel}>AH/Allerhande site-zoekfunctie gebruiken</Text>
+              <Text style={styles.hintBlock}>
+                Als je screenshot geen URL’s bevat, probeert de app eerst via ah.nl recepten-zoeken een match te vinden
+                op basis van titel. Dit voorkomt dure AI web_search calls.
+              </Text>
+            </View>
+            <Switch
+              value={photoAhSearch && Platform.OS !== 'web'}
+              onValueChange={(v) => {
+                if (Platform.OS !== 'web') onTogglePhotoAhSearch(v);
+              }}
+              disabled={Platform.OS === 'web'}
+              trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
+              thumbColor={photoAhSearch && Platform.OS !== 'web' ? theme.accent : '#f4f3f4'}
+            />
+          </View>
 
           <Pressable
             style={[styles.primaryBtn, { backgroundColor: theme.accent }, photoBusy && styles.btnDisabled]}
@@ -518,7 +582,7 @@ export default function ImportRecipeScreen() {
                       style={styles.smallLinkBtn}
                       onPress={() => goToEditorFromPayload(row.payload!)}
                     >
-                      <Text style={styles.smallLinkBtnText}>Controleren in formulier</Text>
+                      <Text style={styles.smallLinkBtnText}>Controleren</Text>
                     </Pressable>
                   ) : null}
                   {row.status === 'error' && row.url ? (
@@ -589,6 +653,15 @@ const styles = StyleSheet.create({
   tabChipText: { fontSize: 15, fontWeight: '600', color: '#444' },
   label: { fontSize: 13, fontWeight: '600', color: '#444', marginBottom: 6 },
   hintBlock: { fontSize: 13, color: '#666', lineHeight: 19, marginBottom: 12 },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 8,
+  },
+  switchTextCol: { flex: 1, minWidth: 0 },
+  switchLabel: { fontSize: 15, fontWeight: '600', color: '#1a1a1a', marginBottom: 4 },
   input: {
     borderWidth: 1,
     borderColor: '#e2ddd5',

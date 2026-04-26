@@ -49,6 +49,13 @@ const SECTIONS: Section[] = [
         icon: 'smart-toy',
       },
       {
+        key: 'ai_debug',
+        title: 'AI-debuglog',
+        subtitle: 'Recente Anthropic-aanroepen (optioneel, lokaal in geheugen).',
+        href: '/settings/ai-debug',
+        icon: 'bug-report',
+      },
+      {
         key: 'cook',
         title: 'Kookprofiel (AI)',
         subtitle: 'Allergieën, dislikes en voorkeuren voor AI-antwoorden.',

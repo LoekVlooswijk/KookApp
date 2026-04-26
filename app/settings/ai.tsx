@@ -1,7 +1,10 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { useHeaderHeight } from '@react-navigation/elements';
+import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -11,6 +14,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Slider from '@react-native-community/slider';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
@@ -26,13 +30,18 @@ import {
   setAiModelPresetKey,
 } from '../../lib/aiPrefs';
 import { AI_MODEL_PRESETS, listAiProviders, type AiProviderId } from '../../lib/aiProviders';
+import { getImportAhSiteSearchEnabled, setImportAhSiteSearchEnabled } from '../../lib/aiAhSearchPrefs';
+import { getImportExtractConcurrency, setImportExtractConcurrency } from '../../lib/aiImportConcurrencyPrefs';
 import { getImportWebSearchEnabled, setImportWebSearchEnabled } from '../../lib/aiImportPrefs';
+import { getAiRequestLogEnabled, setAiRequestLogEnabled } from '../../lib/aiRequestLogPrefs';
 import { ensureDatabaseAsync } from '../../lib/db';
 
 export default function AiSettingsScreen() {
   const theme = useAppTheme();
+  const router = useRouter();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const web = Platform.OS === 'web';
+  const headerHeight = useHeaderHeight();
 
   const [keys, setKeys] = useState<AiApiKeyEntry[]>([]);
   const [activeKeyId, setActiveKeyIdState] = useState<string | null>(null);
@@ -44,6 +53,9 @@ export default function AiSettingsScreen() {
   const [customModelId, setCustomModelIdState] = useState<string>('');
   const [resolvedModelId, setResolvedModelIdState] = useState<string | null>(null);
   const [importWebSearch, setImportWebSearchState] = useState(false);
+  const [importAhSearch, setImportAhSearchState] = useState(true);
+  const [importConcurrency, setImportConcurrencyState] = useState(6);
+  const [requestLog, setRequestLogState] = useState(false);
 
   const chipOnStyle = { backgroundColor: theme.accentSoft, borderColor: theme.accent };
   const chipTextOnStyle = { color: theme.accentSoftText };
@@ -76,6 +88,9 @@ export default function AiSettingsScreen() {
       }
 
       setImportWebSearchState(await getImportWebSearchEnabled());
+      setImportAhSearchState(await getImportAhSiteSearchEnabled());
+      setImportConcurrencyState(await getImportExtractConcurrency());
+      setRequestLogState(await getAiRequestLogEnabled());
       setNewKeyInput('');
     })();
   }, []);
@@ -176,22 +191,49 @@ export default function AiSettingsScreen() {
     })();
   }, []);
 
+  const onToggleImportAhSearch = useCallback((on: boolean) => {
+    void (async () => {
+      await setImportAhSiteSearchEnabled(on);
+      setImportAhSearchState(on);
+    })();
+  }, []);
+
+  const onSetImportConcurrency = useCallback((n: number) => {
+    void (async () => {
+      const v = Math.max(1, Math.min(10, Math.round(n)));
+      await setImportExtractConcurrency(v);
+      setImportConcurrencyState(v);
+    })();
+  }, []);
+
+  const onToggleRequestLog = useCallback((on: boolean) => {
+    void (async () => {
+      try {
+        await setAiRequestLogEnabled(on);
+        setRequestLogState(on);
+      } catch (e) {
+        Alert.alert('Fout', e instanceof Error ? e.message : 'Opslaan mislukt.');
+      }
+    })();
+  }, []);
+
   const activeEntry = activeKeyId ? keys.find((k) => k.id === activeKeyId) : null;
   const activeProvider: AiProviderId | null = activeEntry?.provider ?? null;
   const providerInfo = activeProvider ? listAiProviders().find((p) => p.id === activeProvider) : null;
   const modelPresets = activeProvider ? AI_MODEL_PRESETS[activeProvider] : [];
 
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={[styles.scroll, { backgroundColor: theme.background }]}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
+      behavior={web ? undefined : Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={web ? 0 : headerHeight}
     >
-      <ConfirmDialog />
-      <Text style={styles.lead}>
-        AI wordt gebruikt voor URL-import en andere slimme functies. API-sleutels verlaten je apparaat alleen bij een
-        API-aanroep die jij start.
-      </Text>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ConfirmDialog />
+        <Text style={styles.lead}>
+          AI wordt gebruikt voor URL-import en andere slimme functies. API-sleutels verlaten je apparaat alleen bij een
+          API-aanroep die jij start.
+        </Text>
 
       {web ? (
         <View style={styles.notice}>
@@ -347,6 +389,24 @@ export default function AiSettingsScreen() {
       <Text style={styles.section}>Foto-import</Text>
       <View style={styles.switchRow}>
         <View style={styles.switchTextCol}>
+          <Text style={styles.switchLabel}>AH/Allerhande site-zoekfunctie gebruiken</Text>
+          <Text style={styles.hint}>
+            Probeert eerst via ah.nl recepten-zoeken de juiste recept-URL te vinden op basis van titel/zoekhint.
+            Dit is sneller en gebruikt geen AI web_search tokens. Als dit uit staat, gebruikt de app alleen AI om URL’s te raden/zoeken.
+          </Text>
+        </View>
+        <Switch
+          value={importAhSearch && !web}
+          onValueChange={(v) => {
+            if (!web) onToggleImportAhSearch(v);
+          }}
+          disabled={web}
+          trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
+          thumbColor={importAhSearch && !web ? theme.accent : '#f4f3f4'}
+        />
+      </View>
+      <View style={styles.switchRow}>
+        <View style={styles.switchTextCol}>
           <Text style={styles.switchLabel}>Web search ook bij eerste resolve</Text>
           <Text style={styles.hint}>
             Zonder zichtbare URL in de foto zoekt de app aan het eind automatisch met web search, met het model hierboven.
@@ -366,7 +426,56 @@ export default function AiSettingsScreen() {
           thumbColor={importWebSearch && !web && activeProvider === 'anthropic' ? theme.accent : '#f4f3f4'}
         />
       </View>
-    </ScrollView>
+
+      <View style={styles.card}>
+        <Text style={styles.switchLabel}>Parallel importeren (snelheid)</Text>
+        <Text style={styles.hint}>
+          Hoeveel recepten tegelijk opgehaald + geëxtraheerd worden bij foto-import. Hoger is sneller, maar kan bij sommige
+          keys ook eerder request-rate limits geven. Aanbevolen: 4–8.
+        </Text>
+        <Text style={styles.statusMuted}>Huidig: {importConcurrency} tegelijk</Text>
+        <Slider
+          minimumValue={1}
+          maximumValue={10}
+          step={1}
+          value={importConcurrency}
+          onValueChange={(v) => {
+            if (!web) onSetImportConcurrency(v);
+          }}
+          disabled={web}
+          minimumTrackTintColor={theme.accent}
+          maximumTrackTintColor="#ddd"
+          thumbTintColor={theme.accent}
+        />
+      </View>
+
+      <Text style={styles.section}>Debug</Text>
+      <View style={styles.switchRow}>
+        <View style={styles.switchTextCol}>
+          <Text style={styles.switchLabel}>AI-request logging</Text>
+          <Text style={styles.hint}>
+            Logt lokaal (in geheugen) details over Anthropic-aanroepen: model, HTTP-status, geschatte payload-groottes
+            (zonder API-key; base64 alleen als lengte) en eventuele usage-tokens uit het antwoord.
+          </Text>
+        </View>
+        <Switch
+          value={requestLog && !web && activeProvider === 'anthropic'}
+          onValueChange={(v) => {
+            if (!web && activeProvider === 'anthropic') void onToggleRequestLog(v);
+          }}
+          disabled={web || activeProvider !== 'anthropic'}
+          trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
+          thumbColor={requestLog && !web && activeProvider === 'anthropic' ? theme.accent : '#f4f3f4'}
+        />
+      </View>
+      <Pressable
+        style={[styles.btnOutline, { borderColor: theme.accent, alignSelf: 'flex-start' }]}
+        onPress={() => router.push('/settings/ai-debug')}
+      >
+        <Text style={[styles.btnOutlineText, { color: theme.accent }]}>Open AI-debuglog</Text>
+      </Pressable>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -456,5 +565,13 @@ const styles = StyleSheet.create({
   },
   switchTextCol: { flex: 1, minWidth: 0 },
   switchLabel: { fontSize: 15, fontWeight: '600', color: '#1a1a1a', marginBottom: 4 },
+  card: {
+    marginTop: 10,
+    padding: 14,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+  },
 });
 

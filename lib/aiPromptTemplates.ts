@@ -197,6 +197,8 @@ Regels:
 - Restjes (2 dagen tegelijk koken):
   - HARD RULE: probeer de week zoveel mogelijk te plannen in 2-daagse blokken: kookdag + restjesdag erna.
     - Voorbeeld: dagen 1–2 samen, 3–4 samen, 5–6 samen, etc. (laatste dag mag solo).
+  - PREFER: plan restjes bij voorkeur op de direct opvolgende geselecteerde dag(en) (dus zonder gaten).
+    - Als je tóch een gat gebruikt (bijv. omdat er maar één kookdag mogelijk is), doe dat spaarzaam en leg kort uit in "rationale" en/of "unsatisfied_constraints".
   - Zet op de kookdag "cooks_for_days" op 2 of 3.
   - Voor de volgende dag(en) die restjes zijn: zet "leftover_of_date" op de kookdag (YYYY-MM-DD) en zet "cooks_for_days" op 1.
   - Restjes-dagen mogen geen nieuwe restjes genereren (dus geen cooks_for_days > 1 als leftover_of_date gezet is).
@@ -230,16 +232,56 @@ export function buildWeekPlanUserPrompt(params: {
 }): string {
   const days = Array.isArray(params.days) ? params.days : [];
   const pairBlocks: Array<{ cook_day: string; leftover_day: string }> = [];
-  for (let i = 0; i + 1 < days.length; i += 2) {
-    pairBlocks.push({ cook_day: days[i] ?? '', leftover_day: days[i + 1] ?? '' });
+  const soloDays: string[] = [];
+  const isIsoDate = (s: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(s);
+  const daysNorm = days.map((d) => (typeof d === 'string' ? d.trim() : '')).filter((d) => isIsoDate(d));
+  // Only pair within consecutive calendar-day runs.
+  // For odd-length runs: make the FIRST day solo, so cooking days cluster (e.g. 3 days -> solo day1, pair day2-3).
+  // This prevents "cook once, then 2-3 days nothing, then cook again" patterns.
+  const asDateMs = (dateOnly: string): number => {
+    const [y, m, d] = dateOnly.split('-').map((x) => Number.parseInt(x, 10));
+    return new Date(y, (m ?? 1) - 1, d ?? 1).getTime();
+  };
+  const dayDiff = (a: string, b: string): number => Math.round((asDateMs(a) - asDateMs(b)) / (24 * 60 * 60 * 1000));
+  const runs: string[][] = [];
+  let cur: string[] = [];
+  for (const d of daysNorm) {
+    if (cur.length === 0) {
+      cur.push(d);
+      continue;
+    }
+    const prev = cur[cur.length - 1] ?? '';
+    if (dayDiff(d, prev) === 1) {
+      cur.push(d);
+    } else {
+      runs.push(cur);
+      cur = [d];
+    }
   }
-  const lastSoloDay = days.length % 2 === 1 ? days[days.length - 1] ?? '' : '';
+  if (cur.length > 0) runs.push(cur);
+
+  for (const run of runs) {
+    if (run.length <= 1) {
+      if (run[0]) soloDays.push(run[0]);
+      continue;
+    }
+    let startIdx = 0;
+    if (run.length % 2 === 1) {
+      // Make first day solo, then pair the remainder.
+      soloDays.push(run[0] ?? '');
+      startIdx = 1;
+    }
+    for (let i = startIdx; i + 1 < run.length; i += 2) {
+      pairBlocks.push({ cook_day: run[i] ?? '', leftover_day: run[i + 1] ?? '' });
+    }
+  }
+  const lastSoloDay = soloDays.length > 0 ? soloDays[soloDays.length - 1] ?? '' : '';
   const recent = Array.isArray(params.recentlyUsedRecipeIds) ? params.recentlyUsedRecipeIds : [];
   const recentlyUsedRecipeIds = Array.from(
     new Set(recent.map((x) => (typeof x === 'number' && Number.isFinite(x) ? Math.round(x) : -1)).filter((x) => x > 0))
   ).slice(0, 40);
   const input = {
-    days,
+    days: daysNorm,
     wishes_text: (params.wishesText ?? '').trim(),
     servings_default: params.defaultServings ?? 2,
     recipes: params.recipes,

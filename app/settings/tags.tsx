@@ -1,6 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
@@ -15,6 +16,7 @@ import { ensureDatabaseAsync } from '../../lib/db';
 export default function TagsSettingsScreen() {
   const theme = useAppTheme();
   const { confirm, ConfirmDialog } = useConfirmDialog();
+  const headerHeight = useHeaderHeight();
 
   const [managedTags, setManagedTags] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
@@ -75,17 +77,18 @@ export default function TagsSettingsScreen() {
   }, [confirm]);
 
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={[styles.scroll, { backgroundColor: theme.background }]}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={headerHeight}
     >
-      <ConfirmDialog />
-      <Text style={styles.section}>Tags beheren</Text>
-      <Text style={styles.hint}>
-        Voeg hier tags toe voor thema/keuken/techniek (bijv. “italiaans”, “airfryer”). Verwijderen haalt de tag ook weg
-        bij recepten die hem gebruiken.
-      </Text>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ConfirmDialog />
+        <Text style={styles.section}>Tags beheren</Text>
+        <Text style={styles.hint}>
+          Voeg hier tags toe voor thema/keuken/techniek (bijv. “italiaans”, “airfryer”). Verwijderen haalt de tag ook weg
+          bij recepten die hem gebruiken.
+        </Text>
 
       <View style={styles.row}>
         <TextInput
@@ -116,7 +119,8 @@ export default function TagsSettingsScreen() {
       ) : (
         <Text style={styles.statusMuted}>Nog geen tags om te beheren.</Text>
       )}
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

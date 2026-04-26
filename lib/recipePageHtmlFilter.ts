@@ -136,6 +136,17 @@ function collapseWhitespace(html: string): string {
 }
 
 /**
+ * Convert (already reduced) HTML into a lightweight plain-text signal for the model.
+ * JSON-LD is appended separately and is the primary source when present.
+ */
+function htmlToLightText(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Public: reduce raw page HTML to a smaller string that still carries recipe content.
  */
 export function filterRecipePageHtml(html: string): string {
@@ -168,10 +179,14 @@ export function filterRecipePageHtml(html: string): string {
 
   s = collapseWhitespace(s);
 
+  // The model doesn't need full markup at this point; keep a compact text-only signal.
+  // This materially reduces input tokens on big sites while still giving fallback context.
+  const lightText = htmlToLightText(s);
+
   if (jsonLdChunks.length === 0) {
-    return s;
+    return lightText;
   }
 
   const appendix = jsonLdChunks.join('\n---JSONLD---\n');
-  return `${s}${JSON_LD_BLOCKS_MARKER}${appendix}`;
+  return `${lightText}${JSON_LD_BLOCKS_MARKER}${appendix}`;
 }

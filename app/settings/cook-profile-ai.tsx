@@ -1,7 +1,9 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -30,6 +32,7 @@ export default function AiCookProfileSettingsScreen() {
   const theme = useAppTheme();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const web = Platform.OS === 'web';
+  const headerHeight = useHeaderHeight();
 
   const [loaded, setLoaded] = useState(false);
   const [mustNotText, setMustNotText] = useState('');
@@ -138,47 +141,51 @@ export default function AiCookProfileSettingsScreen() {
   }, [confirm, reload, web]);
 
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={[styles.scroll, { backgroundColor: theme.background }]}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
+      behavior={web ? undefined : Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={web ? 0 : headerHeight}
     >
-      <ConfirmDialog />
-      <Text style={styles.lead}>
-        Stel hier je vaste voorkeuren in. De app voegt dit automatisch toe aan AI-prompts (bijv. kooktips en recept
-        aanpassen), zodat de antwoorden beter bij jou passen.
-      </Text>
-      {!web ? (
-        <Text style={styles.autoSaveHint}>
-          Wijzigingen worden automatisch opgeslagen wanneer je teruggaat naar de vorige pagina (los van de knop
-          Opslaan).
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        <ConfirmDialog />
+        <Text style={styles.lead}>
+          Stel hier je vaste voorkeuren in. De app voegt dit automatisch toe aan AI-prompts (bijv. kooktips en recept
+          aanpassen), zodat de antwoorden beter bij jou passen.
         </Text>
-      ) : null}
+        {!web ? (
+          <Text style={styles.autoSaveHint}>
+            Wijzigingen worden automatisch opgeslagen wanneer je teruggaat naar de vorige pagina (los van de knop
+            Opslaan).
+          </Text>
+        ) : null}
 
-      {web ? (
-        <View style={styles.notice}>
-          <Text style={styles.noticeText}>Op web worden instellingen alleen weergegeven. Gebruik iOS of Android om op te slaan.</Text>
-        </View>
-      ) : null}
+        {web ? (
+          <View style={styles.notice}>
+            <Text style={styles.noticeText}>Op web worden instellingen alleen weergegeven. Gebruik iOS of Android om op te slaan.</Text>
+          </View>
+        ) : null}
 
-      <View style={styles.card}>
-        <Text style={styles.h2}>Standaard porties</Text>
-        <Text style={styles.p}>Dit getal gebruikt de app als standaard bij AI weekmenu’s en suggesties.</Text>
-        <View style={styles.stepperRow}>
-          <Pressable
-            style={[styles.stepBtn, defaultServings <= 1 && styles.stepBtnOff]}
-            onPress={() => setDefaultServings((v) => Math.max(1, v - 1))}
-            disabled={defaultServings <= 1}
-            hitSlop={10}
-          >
-            <Text style={styles.stepBtnText}>−</Text>
-          </Pressable>
-          <Text style={styles.stepValue}>{defaultServings}</Text>
-          <Pressable style={styles.stepBtn} onPress={() => setDefaultServings((v) => Math.min(99, v + 1))} hitSlop={10}>
-            <Text style={styles.stepBtnText}>+</Text>
-          </Pressable>
+        <View style={styles.card}>
+          <Text style={styles.h2}>Standaard porties</Text>
+          <Text style={styles.p}>Dit getal gebruikt de app als standaard bij AI weekmenu’s en suggesties.</Text>
+          <View style={styles.stepperRow}>
+            <Pressable
+              style={[styles.stepBtn, defaultServings <= 1 && styles.stepBtnOff]}
+              onPress={() => setDefaultServings((v) => Math.max(1, v - 1))}
+              disabled={defaultServings <= 1}
+              hitSlop={10}
+            >
+              <Text style={styles.stepBtnText}>−</Text>
+            </Pressable>
+            <Text style={styles.stepValue}>{defaultServings}</Text>
+            <Pressable style={styles.stepBtn} onPress={() => setDefaultServings((v) => Math.min(99, v + 1))} hitSlop={10}>
+              <Text style={styles.stepBtnText}>+</Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
 
       <Text style={styles.section}>Waar toepassen?</Text>
       <View style={styles.switchRow}>
@@ -351,7 +358,8 @@ export default function AiCookProfileSettingsScreen() {
       </Pressable>
 
       <AiPromptsCatalogModal visible={promptsModalOpen} onClose={() => setPromptsModalOpen(false)} />
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

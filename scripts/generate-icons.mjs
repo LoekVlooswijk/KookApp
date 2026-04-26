@@ -7,8 +7,26 @@ const assetsDir = path.join(root, 'assets');
 
 async function renderSvgToPng({ svgPath, outPath, size, background }) {
   const svg = await fs.readFile(svgPath);
-  const img = sharp(svg, { density: 300 }).resize(size, size, { fit: 'cover' });
-  const finalImg = background ? img.flatten({ background }) : img;
+  const canvasBg = background ?? { r: 0, g: 0, b: 0, alpha: 0 };
+  const contentSize = Math.round(size * 0.78);
+
+  // Avoid the typical "zoomed in" look by rendering the SVG smaller
+  // and centering it on a full-size canvas with padding.
+  const content = await sharp(svg, { density: 300 })
+    .resize(contentSize, contentSize, { fit: 'contain', background: canvasBg })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+
+  const composed = sharp({
+    create: {
+      width: size,
+      height: size,
+      channels: 4,
+      background: canvasBg,
+    },
+  }).composite([{ input: content, gravity: 'center' }]);
+
+  const finalImg = background ? composed.flatten({ background }) : composed;
   await finalImg.png({ compressionLevel: 9 }).toFile(outPath);
 }
 

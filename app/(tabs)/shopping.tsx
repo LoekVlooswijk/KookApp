@@ -1,8 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Pressable,
   SectionList,
@@ -13,6 +12,7 @@ import {
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 
+import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
 import { ensureDatabaseAsync } from '../../lib/db';
 import { appendShoppingStapleExcludeLine } from '../../lib/shoppingStaplesPrefs';
@@ -56,10 +56,13 @@ function parseManualShoppingInput(
 
 export default function ShoppingScreen() {
   const theme = useAppTheme();
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const [items, setItems] = useState<ShoppingItemRow[]>([]);
   const [newText, setNewText] = useState('');
   const [loading, setLoading] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [addBarHeight, setAddBarHeight] = useState(0);
 
   const reload = useCallback(() => {
     void (async () => {
@@ -78,6 +81,16 @@ export default function ShoppingScreen() {
       reload();
     }, [reload])
   );
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const sections = useMemo(() => {
     const mijnLijstje = items.filter((i) => i.category !== SHOPPING_INTERNAL_CATEGORY_WEEK);
@@ -127,26 +140,22 @@ export default function ShoppingScreen() {
 
   const onMoveToStaples = useCallback(
     (row: ShoppingItemRow) => {
-      Alert.alert(
-        row.name,
-        'Het item verdwijnt van je boodschappenlijst en staat voortaan op je lijst “altijd op voorraad” in instellingen (net als olie en kruiden).',
-        [
-          { text: 'Annuleren', style: 'cancel' },
-          {
-            text: 'Zet item op standaard voorraad',
-            onPress: () => {
-              void (async () => {
-                await ensureDatabaseAsync();
-                await appendShoppingStapleExcludeLine(row.name);
-                await deleteShoppingItem(row.id);
-                reload();
-              })();
-            },
-          },
-        ]
-      );
+      void (async () => {
+        const ok = await confirm({
+          title: row.name,
+          message:
+            'Het item verdwijnt van je boodschappenlijst en staat voortaan op je lijst “altijd op voorraad” in instellingen (net als olie en kruiden).',
+          confirmText: 'Zet item op standaard voorraad',
+          cancelText: 'Annuleren',
+        });
+        if (!ok) return;
+        await ensureDatabaseAsync();
+        await appendShoppingStapleExcludeLine(row.name);
+        await deleteShoppingItem(row.id);
+        reload();
+      })();
     },
-    [reload]
+    [confirm, reload]
   );
 
   const renderRightActions = useCallback(
@@ -167,39 +176,36 @@ export default function ShoppingScreen() {
   const onClearWeekSection = useCallback(() => {
     const weekCount = items.filter((i) => i.category === SHOPPING_INTERNAL_CATEGORY_WEEK).length;
     if (weekCount === 0) return;
-    Alert.alert(
-      'Weekmenu-items wissen?',
-      'Alle regels onder “Van weekmenu” worden verwijderd. “Mijn lijstje” blijft staan.',
-      [
-        { text: 'Annuleren', style: 'cancel' },
-        {
-          text: 'Wissen',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              await ensureDatabaseAsync();
-              await clearWeekShoppingItems();
-              reload();
-            })();
-          },
-        },
-      ]
-    );
-  }, [items, reload]);
+    void (async () => {
+      const ok = await confirm({
+        title: 'Weekmenu-items wissen?',
+        message: 'Alle regels onder “Van weekmenu” worden verwijderd. “Mijn lijstje” blijft staan.',
+        confirmText: 'Wissen',
+        cancelText: 'Annuleren',
+        destructive: true,
+      });
+      if (!ok) return;
+      await ensureDatabaseAsync();
+      await clearWeekShoppingItems();
+      reload();
+    })();
+  }, [confirm, items, reload]);
+
+  // Android: `KeyboardAvoidingView` + Tabs can "bounce" (briefly moves then snaps back).
+  // Keep the list stable; only lift the bottom add-bar above the keyboard.
+  const addBarBottom = Platform.OS === 'android' ? keyboardHeight : 0;
+  const listPaddingBottom = Math.max(addBarHeight, 72) + 12;
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: theme.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <ConfirmDialog />
       <SectionList
         sections={sections}
         keyExtractor={(it) => String(it.id)}
         refreshing={loading}
         onRefresh={reload}
         style={styles.sectionList}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, { paddingBottom: listPaddingBottom }]}
         renderSectionHeader={({ section }) => {
           const isWeek = section.key === 'week';
           const weekEmpty = isWeek && section.data.length === 0;
@@ -236,7 +242,7 @@ export default function ShoppingScreen() {
           const qty =
             item.amount != null
               ? `${String(item.amount)}${item.unit?.trim() ? ` ${item.unit.trim()}` : ''}`
-              : '';
+              : (item.unit ?? '').trim();
           return (
             <Swipeable renderRightActions={() => renderRightActions(item)} overshootRight={false}>
               <View style={styles.row}>
@@ -278,9 +284,10 @@ export default function ShoppingScreen() {
         keyboardShouldPersistTaps="handled"
       />
       <View
+        onLayout={(e) => setAddBarHeight(e.nativeEvent.layout.height)}
         style={[
           styles.addBar,
-          { backgroundColor: theme.background, borderTopColor: '#e2ddd5' },
+          { backgroundColor: theme.background, borderTopColor: '#e2ddd5', bottom: addBarBottom },
         ]}
       >
         <View style={styles.addRow}>
@@ -303,7 +310,7 @@ export default function ShoppingScreen() {
           </Pressable>
         </View>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -311,6 +318,10 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   sectionList: { flex: 1 },
   addBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 12,

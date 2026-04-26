@@ -1,8 +1,10 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -34,6 +36,7 @@ export default function ManageMetadataSettingsScreen() {
   const theme = useAppTheme();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const web = Platform.OS === 'web';
+  const headerHeight = useHeaderHeight();
 
   const [busy, setBusy] = useState(false);
 
@@ -208,18 +211,19 @@ export default function ManageMetadataSettingsScreen() {
   }, [confirm]);
 
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={[styles.scroll, { backgroundColor: theme.background }]}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
+      behavior={web ? undefined : Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={web ? 0 : headerHeight}
     >
-      <ConfirmDialog />
-      <Text style={styles.section}>Beheren</Text>
-      <Text style={styles.hint}>
-        Hier beheer je categorieën, tags en extra diëten. Met “Recepten opschonen” worden bestaande recepten aangepast zodat
-        informatie op de juiste plek staat.
-        {web ? ' (Werkt ook op web.)' : ''}
-      </Text>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ConfirmDialog />
+        <Text style={styles.section}>Beheren</Text>
+        <Text style={styles.hint}>
+          Hier beheer je categorieën, tags en extra diëten. Met “Recepten opschonen” worden bestaande recepten aangepast zodat
+          informatie op de juiste plek staat.
+          {web ? ' (Werkt ook op web.)' : ''}
+        </Text>
 
       <Text style={styles.subSection}>Categorieën</Text>
       <Text style={styles.hint}>
@@ -339,7 +343,8 @@ export default function ManageMetadataSettingsScreen() {
           <Text style={styles.busyHint}>Even geduld…</Text>
         </View>
       ) : null}
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -2,6 +2,8 @@ import type { AiProviderId } from './aiProviders';
 import { AI_PROVIDERS } from './aiProviders';
 import { listAiApiKeys } from './aiKeyring';
 import { getActiveAiKeyId, resolveAiModelId } from './aiPrefs';
+import { recordAnthropicRequestLog } from './aiRequestLog';
+import { isAiRequestLogEnabledSync } from './aiRequestLogPrefs';
 
 export type AiOk = { ok: true; text: string };
 export type AiErr = {
@@ -63,10 +65,92 @@ function concatAnthropicTextBlocks(content: unknown): string {
   return parts.join('\n').trim();
 }
 
+function redactAnthropicBodyForLog(body: Record<string, unknown>): { redacted: unknown; imageBlocks: number; imageDataChars: number } {
+  let imageBlocks = 0;
+  let imageDataChars = 0;
+
+  const visitContent = (content: unknown): unknown => {
+    if (typeof content === 'string') return content;
+    if (!Array.isArray(content)) return content;
+    return content.map((block) => {
+      if (!isRecord(block)) return block;
+      if (block.type === 'image' && isRecord(block.source)) {
+        const src = block.source as Record<string, unknown>;
+        if (src.type === 'base64' && typeof src.data === 'string') {
+          imageBlocks += 1;
+          imageDataChars += src.data.length;
+          return {
+            ...block,
+            source: {
+              type: 'base64',
+              media_type: src.media_type,
+              data: `<redacted base64 len=${src.data.length}>`,
+            },
+          };
+        }
+      }
+      return block;
+    });
+  };
+
+  const visitMessages = (msgs: unknown): unknown => {
+    if (!Array.isArray(msgs)) return msgs;
+    return msgs.map((m) => {
+      if (!isRecord(m)) return m;
+      const role = m.role;
+      const content = m.content;
+      if (typeof content === 'string') return { role, content };
+      return { role, content: visitContent(content) };
+    });
+  };
+
+  const out: Record<string, unknown> = { ...body };
+  if (Array.isArray(out.messages)) {
+    out.messages = visitMessages(out.messages);
+  }
+  return { redacted: out, imageBlocks, imageDataChars };
+}
+
+function approxUserTextChars(body: Record<string, unknown>): number {
+  let n = 0;
+  const addStr = (s: unknown) => {
+    if (typeof s === 'string') n += s.length;
+  };
+
+  addStr(body.system);
+
+  const msgs = body.messages;
+  if (!Array.isArray(msgs)) return n;
+  for (const m of msgs) {
+    if (!isRecord(m)) continue;
+    const c = m.content;
+    if (typeof c === 'string') {
+      n += c.length;
+      continue;
+    }
+    if (!Array.isArray(c)) continue;
+    for (const block of c) {
+      if (!isRecord(block)) continue;
+      if (block.type === 'text' && typeof block.text === 'string') n += block.text.length;
+    }
+  }
+  return n;
+}
+
 async function fetchAnthropic(
   apiKey: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  debug?: { tag?: string }
 ): Promise<{ ok: true; raw: string } | AiErr> {
+  const wireJson = JSON.stringify(body);
+  const { redacted, imageBlocks, imageDataChars } = redactAnthropicBodyForLog(body);
+  const redactedJson = JSON.stringify(redacted);
+  const systemChars = typeof body.system === 'string' ? body.system.length : 0;
+  const userTextCharsApprox = approxUserTextChars(body);
+  const model = typeof body.model === 'string' ? body.model : undefined;
+  const tools = body.tools;
+
+  const t0 = Date.now();
   let res: Response;
   try {
     res = await fetch(ANTHROPIC_MESSAGES_URL, {
@@ -76,13 +160,67 @@ async function fetchAnthropic(
         'x-api-key': apiKey,
         'anthropic-version': ANTHROPIC_VERSION,
       },
-      body: JSON.stringify(body),
+      body: wireJson,
     });
   } catch {
+    if (isAiRequestLogEnabledSync()) {
+      recordAnthropicRequestLog({
+        provider: 'anthropic',
+        tag: debug?.tag,
+        url: ANTHROPIC_MESSAGES_URL,
+        model,
+        okHttp: false,
+        requestJsonChars: wireJson.length,
+        requestJsonCharsRedacted: redactedJson.length,
+        imageBlocks,
+        imageDataChars,
+        systemChars,
+        userTextCharsApprox,
+        tools,
+        responseChars: 0,
+        errorMessage: 'fetch failed (network)',
+      });
+    }
     return { ok: false, message: 'Geen verbinding met AI — controleer internet en probeer opnieuw.' };
   }
 
   const raw = await res.text();
+  const elapsed = Date.now() - t0;
+
+  let stopReason: string | null | undefined;
+  let usage: { input_tokens?: number; output_tokens?: number } | null = null;
+  if (res.ok) {
+    try {
+      const j = JSON.parse(raw) as { stop_reason?: string | null; usage?: { input_tokens?: number; output_tokens?: number } };
+      stopReason = j.stop_reason ?? null;
+      usage = j.usage ?? null;
+    } catch {
+      /* */
+    }
+  }
+
+  if (isAiRequestLogEnabledSync()) {
+    recordAnthropicRequestLog({
+      provider: 'anthropic',
+      tag: debug?.tag,
+      url: ANTHROPIC_MESSAGES_URL,
+      model,
+      httpStatus: res.status,
+      okHttp: res.ok,
+      stopReason,
+      usage,
+      requestJsonChars: wireJson.length,
+      requestJsonCharsRedacted: redactedJson.length,
+      imageBlocks,
+      imageDataChars,
+      systemChars,
+      userTextCharsApprox,
+      tools,
+      responseChars: raw.length,
+      errorMessage: res.ok ? undefined : `HTTP ${res.status} (${elapsed}ms)`,
+    });
+  }
+
   if (!res.ok) {
     let message = `AI gaf foutcode ${res.status}.`;
     try {
@@ -120,12 +258,16 @@ async function callAnthropicText(params: {
   user: string;
   maxTokens?: number;
 }): Promise<AiOk | AiErr> {
-  const fr = await fetchAnthropic(params.apiKey, {
-    model: params.model,
-    max_tokens: params.maxTokens ?? 8192,
-    system: params.system,
-    messages: [{ role: 'user', content: params.user }],
-  });
+  const fr = await fetchAnthropic(
+    params.apiKey,
+    {
+      model: params.model,
+      max_tokens: params.maxTokens ?? 8192,
+      system: params.system,
+      messages: [{ role: 'user', content: params.user }],
+    },
+    { tag: 'anthropic:text' }
+  );
   if (!fr.ok) return fr;
   return parseAnthropicText(fr.raw);
 }
@@ -143,12 +285,16 @@ async function callAnthropicChat(params: {
   if (params.messages[0].role !== 'user') {
     return { ok: false, message: 'Ongeldige chat: begin met een gebruikersbericht.' };
   }
-  const fr = await fetchAnthropic(params.apiKey, {
-    model: params.model,
-    max_tokens: params.maxTokens ?? 1536,
-    system: params.system,
-    messages: params.messages.map((m) => ({ role: m.role, content: m.text })),
-  });
+  const fr = await fetchAnthropic(
+    params.apiKey,
+    {
+      model: params.model,
+      max_tokens: params.maxTokens ?? 1536,
+      system: params.system,
+      messages: params.messages.map((m) => ({ role: m.role, content: m.text })),
+    },
+    { tag: 'anthropic:chat' }
+  );
   if (!fr.ok) return fr;
   return parseAnthropicText(fr.raw);
 }
@@ -162,33 +308,38 @@ async function callAnthropicWithImageText(params: {
   imageMediaType: AiImageMediaType;
   maxTokens?: number;
 }): Promise<AiOk | AiErr> {
-  const fr = await fetchAnthropic(params.apiKey, {
-    model: params.model,
-    max_tokens: params.maxTokens ?? 4096,
-    system: params.system,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: params.imageMediaType,
-              data: params.imageBase64,
+  const fr = await fetchAnthropic(
+    params.apiKey,
+    {
+      model: params.model,
+      max_tokens: params.maxTokens ?? 4096,
+      system: params.system,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: params.imageMediaType,
+                data: params.imageBase64,
+              },
             },
-          },
-          { type: 'text', text: params.userText },
-        ],
-      },
-    ],
-  });
+            { type: 'text', text: params.userText },
+          ],
+        },
+      ],
+    },
+    { tag: 'anthropic:vision' }
+  );
   if (!fr.ok) return fr;
   return parseAnthropicText(fr.raw);
 }
 
 // Web search (Anthropic tools)
-export const AI_WEB_SEARCH_MAX_USES = 25;
+// Keep this low to prevent huge tool-result transcripts (TPM spikes).
+export const AI_WEB_SEARCH_MAX_USES = 3;
 
 async function callAnthropicTextWithWebSearch(params: {
   apiKey: string;
@@ -217,15 +368,21 @@ async function callAnthropicTextWithWebSearch(params: {
       { role: 'user', content: params.user },
     ];
 
-    const maxPauseLoops = 8;
+    // Each pause_turn can accumulate large tool results in the model-side context.
+    // Keep this low to avoid huge input token usage.
+    const maxPauseLoops = 3;
     for (let pi = 0; pi < maxPauseLoops; pi++) {
-      const fr = await fetchAnthropic(params.apiKey, {
-        model: params.model,
-        max_tokens: params.maxTokens ?? 8192,
-        system: params.system,
-        messages,
-        tools,
-      });
+      const fr = await fetchAnthropic(
+        params.apiKey,
+        {
+          model: params.model,
+          max_tokens: params.maxTokens ?? 8192,
+          system: params.system,
+          messages,
+          tools,
+        },
+        { tag: `anthropic:web_search t${ti} p${pi}` }
+      );
       if (!fr.ok) {
         lastHttpErr = fr;
         if (fr.status === 400 && ti < toolVariants.length - 1) continue toolLoop;

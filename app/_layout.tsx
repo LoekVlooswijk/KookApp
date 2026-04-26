@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useAppTheme } from '../components/ThemeContext';
 import { hydrateAiCookProfileFromDb } from '../lib/aiCookProfile';
 import { hydrateAiPrefsFromDb } from '../lib/aiPrefs';
+import { hydrateAiRequestLogPrefsFromDb } from '../lib/aiRequestLogPrefs';
 import { ensureDatabaseAsync } from '../lib/db';
 import { hydrateShoppingStaplesPrefsFromDb } from '../lib/shoppingStaplesPrefs';
 
@@ -24,6 +25,7 @@ function ThemedStack() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="settings/ai" options={{ title: 'AI' }} />
+        <Stack.Screen name="settings/ai-debug" options={{ title: 'AI-debuglog' }} />
         <Stack.Screen name="settings/cook-profile-ai" options={{ title: 'Kookprofiel (AI)' }} />
         <Stack.Screen name="settings/shopping" options={{ title: 'Boodschappen' }} />
         <Stack.Screen name="settings/appearance" options={{ title: 'Uiterlijk' }} />
@@ -44,6 +46,7 @@ export default function RootLayout() {
         await ensureDatabaseAsync();
         await hydrateAiPrefsFromDb();
         await hydrateAiCookProfileFromDb();
+        await hydrateAiRequestLogPrefsFromDb();
         await hydrateShoppingStaplesPrefsFromDb();
       } catch (e) {
         console.error(e);

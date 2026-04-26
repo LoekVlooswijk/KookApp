@@ -1,6 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useCallback, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
@@ -17,6 +18,7 @@ export default function ShoppingSettingsScreen() {
   const theme = useAppTheme();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const web = Platform.OS === 'web';
+  const headerHeight = useHeaderHeight();
 
   const [text, setText] = useState('');
 
@@ -61,12 +63,17 @@ export default function ShoppingSettingsScreen() {
   }, [confirm, reload, web]);
 
   return (
-    <ScrollView style={[styles.scroll, { backgroundColor: theme.background }]} contentContainerStyle={styles.content}>
-      <ConfirmDialog />
-      <Text style={styles.lead}>
-        Items in deze lijst worden <Text style={styles.bold}>niet</Text> automatisch toegevoegd aan je boodschappenlijst
-        als ze in een gepland recept staan (handig voor zout, olie, water, enz.). Eén per regel.
-      </Text>
+    <KeyboardAvoidingView
+      style={[styles.scroll, { backgroundColor: theme.background }]}
+      behavior={web ? undefined : Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={web ? 0 : headerHeight}
+    >
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ConfirmDialog />
+        <Text style={styles.lead}>
+          Items in deze lijst worden <Text style={styles.bold}>niet</Text> automatisch toegevoegd aan je boodschappenlijst
+          als ze in een gepland recept staan (handig voor zout, olie, water, enz.). Eén per regel.
+        </Text>
 
       {web ? (
         <View style={styles.notice}>
@@ -93,7 +100,8 @@ export default function ShoppingSettingsScreen() {
           <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>Reset</Text>
         </Pressable>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

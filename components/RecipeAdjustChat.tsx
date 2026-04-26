@@ -149,15 +149,11 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.modalRoot}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
       >
         <Pressable style={styles.modalBackdrop} onPress={handleClose} />
-        <ScrollView
-          style={[styles.sheet, { backgroundColor: theme.background }]}
-          scrollEnabled={false}
-          keyboardShouldPersistTaps="always"
-          contentContainerStyle={styles.sheetInner}
-        >
+        <View style={[styles.sheet, { backgroundColor: theme.background }]}>
+          <View style={styles.sheetInner}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Recept aanpassen</Text>
             <Pressable onPress={handleClose} hitSlop={12} disabled={busy}>
@@ -265,7 +261,8 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
               <Text style={styles.sendBtnText}>Verstuur</Text>
             </Pressable>
           </View>
-        </ScrollView>
+          </View>
+        </View>
       </KeyboardAvoidingView>
     </Modal>
   );

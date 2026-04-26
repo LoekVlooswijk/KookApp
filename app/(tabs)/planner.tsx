@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MaterialIcons } from '@expo/vector-icons';
 
+import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
 import { callAiText, hasActiveAiKey } from '../../lib/aiClient';
 import { buildAiRepairUserPrompt, buildWeekPlanSystemPrompt, buildWeekPlanUserPrompt, WEEK_PLAN_OUTPUT_SCHEMA } from '../../lib/aiPromptTemplates';
@@ -52,10 +53,20 @@ function clampInt(n: unknown, lo: number, hi: number, fallback: number): number 
   return Math.max(lo, Math.min(hi, r));
 }
 
+function dateOnlyToMs(dateOnly: string): number {
+  const [y, m, d] = (dateOnly ?? '').split('-').map((x) => Number.parseInt(x, 10));
+  return new Date(y, (m ?? 1) - 1, d ?? 1).getTime();
+}
+
+function diffDays(a: string, b: string): number {
+  return Math.round((dateOnlyToMs(a) - dateOnlyToMs(b)) / (24 * 60 * 60 * 1000));
+}
+
 export default function PlannerScreen() {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { confirm, ConfirmDialog } = useConfirmDialog();
   const { recipeId: recipeIdParam } = useLocalSearchParams<{ recipeId?: string }>();
   const quickRecipeId = Number.parseInt(String(recipeIdParam ?? ''), 10);
 
@@ -444,58 +455,46 @@ export default function PlannerScreen() {
           return;
         }
 
-        Alert.alert(
-          'Op boodschappenlijstje zetten?',
-          'Dit vervangt alleen de “week”-items op je boodschappenlijst. Handmatige items blijven staan.',
-          [
-            { text: 'Annuleren', style: 'cancel' },
-            {
-              text: 'Zet erop',
-              onPress: () => {
-                void (async () => {
-                  await clearWeekShoppingItems();
-                  await insertWeekShoppingItems(agg);
-                })();
-              },
-            },
-          ]
-        );
+        const ok = await confirm({
+          title: 'Op boodschappenlijstje zetten?',
+          message: 'Dit vervangt alleen de “week”-items op je boodschappenlijst. Handmatige items blijven staan.',
+          confirmText: 'Zet erop',
+          cancelText: 'Annuleren',
+        });
+        if (!ok) return;
+        await clearWeekShoppingItems();
+        await insertWeekShoppingItems(agg);
       } finally {
         setBusyExport(false);
       }
     })();
-  }, [busyExport, endDate, startDate]);
+  }, [busyExport, confirm, endDate, startDate]);
 
   const clearWeek = useCallback(() => {
     if (busyClear) return;
-    Alert.alert(
-      'Weekplanner wissen?',
-      `Dit verwijdert alle geplande dagen van ${formatDateDdMmYyyy(startDate)} t/m ${formatDateDdMmYyyy(endDate)}.`,
-      [
-        { text: 'Annuleren', style: 'cancel' },
-        {
-          text: 'Wissen',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              setBusyClear(true);
-              try {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                setPlansByDate({});
-                setPendingNewByDate({});
-                setPendingLeftoverOfDateByDate({});
-                await deleteWeekPlansBetween(startDate, endDate);
-                sessionSuggestedCookingRecipeIdsRef.current = new Set();
-                reload();
-              } finally {
-                setBusyClear(false);
-              }
-            })();
-          },
-        },
-      ]
-    );
-  }, [busyClear, endDate, reload, startDate]);
+    void (async () => {
+      const ok = await confirm({
+        title: 'Weekplanner wissen?',
+        message: `Dit verwijdert alle geplande dagen van ${formatDateDdMmYyyy(startDate)} t/m ${formatDateDdMmYyyy(endDate)}.`,
+        confirmText: 'Wissen',
+        cancelText: 'Annuleren',
+        destructive: true,
+      });
+      if (!ok) return;
+      setBusyClear(true);
+      try {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setPlansByDate({});
+        setPendingNewByDate({});
+        setPendingLeftoverOfDateByDate({});
+        await deleteWeekPlansBetween(startDate, endDate);
+        sessionSuggestedCookingRecipeIdsRef.current = new Set();
+        reload();
+      } finally {
+        setBusyClear(false);
+      }
+    })();
+  }, [busyClear, confirm, endDate, reload, startDate]);
 
   const generateWeekPlan = useCallback(() => {
     if (busyGenerate) return;
@@ -707,11 +706,13 @@ export default function PlannerScreen() {
               if (p.servings !== src.servings) {
                 p.servings = src.servings;
               }
-              const srcIndex = selectedDays.indexOf(src.date);
-              const dstIndex = selectedDays.indexOf(p.date);
-              if (srcIndex === -1 || dstIndex === -1) continue;
-              const needed = dstIndex - srcIndex + 1;
-              if (needed <= 1) continue;
+              // Prefer consecutive day(s), but allow gaps if the AI chose it.
+              // We still validate that cooks_for_days is large enough to cover the calendar span.
+              const needed = diffDays(p.date, src.date) + 1;
+              if (!Number.isFinite(needed) || needed <= 1) {
+                errs.push(`Ongeldige restjes-datum combinatie: ${src.date} -> ${p.date}.`);
+                continue;
+              }
               if (src.cooksForDays < needed) {
                 errs.push(
                   `Kookdag ${src.date} heeft cooks_for_days=${src.cooksForDays}, maar moet ≥ ${needed} zijn voor restjes op ${p.date}.`
@@ -733,21 +734,18 @@ export default function PlannerScreen() {
                 firstCookByRecipeKey.set(key, { date: p.date, servings: p.servings, cooksForDays: p.cooksForDays });
                 continue;
               }
+              const needed = diffDays(p.date, first.date) + 1;
+              if (!Number.isFinite(needed) || needed <= 1) continue;
+
               // Convert this later cooking day into a leftovers day of the first cook date.
               p.leftoverOfDate = first.date;
               p.cooksForDays = 1;
               p.servings = first.servings;
-              // Ensure the original cooking day cooks_for_days covers the leftovers day within selected range.
-              const srcIndex = selectedDays.indexOf(first.date);
-              const dstIndex = selectedDays.indexOf(p.date);
-              if (srcIndex !== -1 && dstIndex !== -1) {
-                const needed = dstIndex - srcIndex + 1;
-                if (needed > 1) {
-                  const src = byDate.get(first.date) ?? null;
-                  if (src && !src.leftoverOfDate && src.cooksForDays < needed) {
-                    src.cooksForDays = needed;
-                  }
-                }
+
+              // Ensure the original cooking day cooks_for_days covers the leftovers day.
+              const src = byDate.get(first.date) ?? null;
+              if (src && !src.leftoverOfDate && src.cooksForDays < needed) {
+                src.cooksForDays = needed;
               }
             }
           }
@@ -1151,6 +1149,7 @@ export default function PlannerScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <ConfirmDialog />
       <View
         style={[
           styles.loadingOverlay,

@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState, type ReactElement } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAppTheme } from './ThemeContext';
 
@@ -27,6 +27,43 @@ export function useConfirmDialog(): {
 } {
   const theme = useAppTheme();
   const [state, setState] = useState<InternalState | null>(null);
+  const [closing, setClosing] = useState(false);
+
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!state) return;
+    setClosing(false);
+    anim.stopAnimation();
+    anim.setValue(0);
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: 120,
+      useNativeDriver: true,
+    }).start();
+  }, [anim, state]);
+
+  const closeWithResult = useCallback(
+    (result: boolean) => {
+      setState((cur) => {
+        if (!cur) return cur;
+        if (closing) return cur;
+        setClosing(true);
+        Animated.timing(anim, {
+          toValue: 0,
+          duration: 90,
+          useNativeDriver: true,
+        }).start(({ finished }) => {
+          if (!finished) return;
+          cur.resolve(result);
+          setState(null);
+          setClosing(false);
+        });
+        return cur;
+      });
+    },
+    [anim, closing]
+  );
 
   const confirm = useCallback((opts: ConfirmDialogOptions) => {
     return new Promise<boolean>((resolve) => {
@@ -43,21 +80,9 @@ export function useConfirmDialog(): {
     });
   }, []);
 
-  const onCancel = useCallback(() => {
-    setState((cur) => {
-      if (!cur) return cur;
-      cur.resolve(false);
-      return null;
-    });
-  }, []);
+  const onCancel = useCallback(() => closeWithResult(false), [closeWithResult]);
 
-  const onConfirm = useCallback(() => {
-    setState((cur) => {
-      if (!cur) return cur;
-      cur.resolve(true);
-      return null;
-    });
-  }, []);
+  const onConfirm = useCallback(() => closeWithResult(true), [closeWithResult]);
 
   const destructiveTextColor = '#b00020';
   const destructiveBg = '#fff';
@@ -79,27 +104,43 @@ export function useConfirmDialog(): {
       <Modal
         visible
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={onCancel}
       >
         <View style={styles.backdrop}>
-          <Pressable style={styles.backdropPressable} onPress={onCancel} />
-          <View style={[styles.card, { backgroundColor: theme.background }]}>
+          <Pressable style={styles.backdropPressable} onPress={onCancel} disabled={closing} />
+          <Animated.View
+            style={[
+              styles.card,
+              { backgroundColor: theme.background },
+              {
+                opacity: anim,
+                transform: [
+                  {
+                    scale: anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.98, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
             <Text style={styles.title}>{state.opts.title}</Text>
             {state.opts.message ? <Text style={styles.message}>{state.opts.message}</Text> : null}
             <View style={styles.actions}>
-              <Pressable style={styles.btnGhost} onPress={onCancel}>
-                <Text style={styles.btnGhostText}>{state.opts.cancelText}</Text>
+              <Pressable style={styles.btnGhost} onPress={onCancel} disabled={closing}>
+                <Text style={[styles.btnGhostText, closing && { opacity: 0.55 }]}>{state.opts.cancelText}</Text>
               </Pressable>
-              <Pressable style={confirmBtnStyle} onPress={onConfirm}>
-                <Text style={confirmBtnTextStyle}>{state.opts.confirmText}</Text>
+              <Pressable style={confirmBtnStyle} onPress={onConfirm} disabled={closing}>
+                <Text style={[confirmBtnTextStyle, closing && { opacity: 0.55 }]}>{state.opts.confirmText}</Text>
               </Pressable>
             </View>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
     );
-  }, [confirmBtnStyle, confirmBtnTextStyle, onCancel, onConfirm, state, theme.background]);
+  }, [anim, closing, confirmBtnStyle, confirmBtnTextStyle, onCancel, onConfirm, state, theme.background]);
 
   return { confirm, ConfirmDialog, busy: state != null };
 }

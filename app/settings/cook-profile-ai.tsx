@@ -2,7 +2,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -34,6 +33,11 @@ export default function AiCookProfileSettingsScreen() {
   const web = Platform.OS === 'web';
   const headerHeight = useHeaderHeight();
 
+  const BASE_SHOP_OPTIONS = useMemo(
+    () => ['Supermarkt', 'Toko', 'Turkse supermarkt', 'Poolse supermarkt'],
+    []
+  );
+
   const [loaded, setLoaded] = useState(false);
   const [mustNotText, setMustNotText] = useState('');
   const [avoidText, setAvoidText] = useState('');
@@ -42,6 +46,8 @@ export default function AiCookProfileSettingsScreen() {
   const [weekPlanningTimeNotes, setWeekPlanningTimeNotes] = useState('');
   const [defaultServings, setDefaultServings] = useState(2);
   const [nearbyShops, setNearbyShops] = useState<string[]>([]);
+  const [customShopOptions, setCustomShopOptions] = useState<string[]>([]);
+  const [newShopText, setNewShopText] = useState('');
 
   const [applyTips, setApplyTips] = useState(true);
   const [applyAdjust, setApplyAdjust] = useState(true);
@@ -61,6 +67,7 @@ export default function AiCookProfileSettingsScreen() {
       setPreferText(aiCookProfileLinesToText(p.prefer));
       setFreeText(p.freeText ?? '');
       setNearbyShops(p.nearbyShops ?? []);
+      setCustomShopOptions(p.shopOptions ?? []);
       setWeekPlanningTimeNotes(p.weekPlanningTimeNotes ?? '');
       setDefaultServings(p.defaultServings ?? 2);
       setApplyTips(p.appliesTo.tipsChat);
@@ -77,11 +84,12 @@ export default function AiCookProfileSettingsScreen() {
       prefer: aiCookProfileTextToLines(preferText),
       freeText: freeText.trim(),
       nearbyShops,
+      shopOptions: customShopOptions,
       defaultServings: Math.max(1, Math.min(99, Math.round(defaultServings))),
       weekPlanningTimeNotes: weekPlanningTimeNotes.trim(),
       appliesTo: { tipsChat: applyTips, adjustRecipe: applyAdjust, recipeSuggestions: applySuggest },
     }),
-    [applyAdjust, applySuggest, applyTips, avoidText, defaultServings, freeText, mustNotText, nearbyShops, preferText, weekPlanningTimeNotes]
+    [applyAdjust, applySuggest, applyTips, avoidText, customShopOptions, defaultServings, freeText, mustNotText, nearbyShops, preferText, weekPlanningTimeNotes]
   );
 
   nextProfileRef.current = nextProfile;
@@ -110,19 +118,42 @@ export default function AiCookProfileSettingsScreen() {
     });
   }, []);
 
-  const shopOptions = useMemo(
-    () => ['Supermarkt', 'Toko', 'Turkse supermarkt', 'Poolse supermarkt'],
-    []
-  );
+  const shopOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const add = (x: string) => {
+      const s = x.trim();
+      if (!s) return;
+      const key = s.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(s);
+    };
+    for (const x of BASE_SHOP_OPTIONS) add(x);
+    for (const x of customShopOptions) add(x);
+    // Ensure previously selected shops remain selectable.
+    for (const x of nearbyShops) add(x);
+    return out;
+  }, [BASE_SHOP_OPTIONS, customShopOptions, nearbyShops]);
   const selectedShops = useMemo(() => new Set(nearbyShops), [nearbyShops]);
 
-  const onSave = useCallback(() => {
+  const addShopOption = useCallback(() => {
     if (web) return;
-    void (async () => {
-      await setAiCookProfile(nextProfile);
-      Alert.alert('Opgeslagen', 'Je kookprofiel wordt voortaan meegenomen bij AI-antwoorden.');
-    })();
-  }, [nextProfile, web]);
+    const raw = newShopText.trim();
+    if (!raw) return;
+    const key = raw.toLowerCase();
+    setCustomShopOptions((prev) => {
+      const seen = new Set(prev.map((x) => x.trim().toLowerCase()).filter(Boolean));
+      if (seen.has(key)) return prev;
+      return [...prev, raw];
+    });
+    setNearbyShops((prev) => {
+      const seen = new Set(prev.map((x) => x.trim().toLowerCase()).filter(Boolean));
+      if (seen.has(key)) return prev;
+      return [...prev, raw];
+    });
+    setNewShopText('');
+  }, [newShopText, web]);
 
   const onClear = useCallback(() => {
     if (web) return;
@@ -255,6 +286,25 @@ export default function AiCookProfileSettingsScreen() {
       <Text style={styles.hint}>
         Kies waar je meestal boodschappen doet. De AI kan dan rekening houden met wat daar verkrijgbaar is.
       </Text>
+      <View style={styles.addRow}>
+        <TextInput
+          style={[styles.input, styles.addInput]}
+          placeholder="Voeg een winkel toe…"
+          placeholderTextColor="#999"
+          value={newShopText}
+          onChangeText={setNewShopText}
+          editable={!web}
+          returnKeyType="done"
+          onSubmitEditing={addShopOption}
+        />
+        <Pressable
+          style={[styles.addBtn, { backgroundColor: theme.accent }, (web || !newShopText.trim()) && styles.btnDisabled]}
+          onPress={addShopOption}
+          disabled={web || !newShopText.trim()}
+        >
+          <Text style={styles.addBtnText}>Toevoegen</Text>
+        </Pressable>
+      </View>
       <View style={styles.chipWrap}>
         {shopOptions.map((opt) => {
           const on = selectedShops.has(opt);
@@ -337,13 +387,6 @@ export default function AiCookProfileSettingsScreen() {
       />
 
       <View style={styles.row}>
-        <Pressable
-          style={[styles.btnPrimary, { backgroundColor: theme.accent }, (web || !loaded) && styles.btnDisabled]}
-          onPress={onSave}
-          disabled={web || !loaded}
-        >
-          <Text style={styles.btnPrimaryText}>Opslaan</Text>
-        </Pressable>
         <Pressable style={[styles.btnOutline, web && styles.btnDisabled]} onPress={onClear} disabled={web || !loaded}>
           <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>Wissen</Text>
         </Pressable>
@@ -392,6 +435,10 @@ const styles = StyleSheet.create({
   },
   multiline: { minHeight: 90, textAlignVertical: 'top' },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 6 },
+  addRow: { flexDirection: 'row', gap: 10, alignItems: 'center', marginBottom: 4 },
+  addInput: { flex: 1, marginBottom: 0 },
+  addBtn: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10 },
+  addBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   btnPrimary: { paddingHorizontal: 18, paddingVertical: 11, borderRadius: 8 },
   btnPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   btnOutline: {

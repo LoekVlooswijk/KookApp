@@ -1,7 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useHeaderHeight } from '@react-navigation/elements';
-import { useCallback, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
@@ -21,30 +21,37 @@ export default function ShoppingSettingsScreen() {
   const headerHeight = useHeaderHeight();
 
   const [text, setText] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const loadedRef = useRef(false);
+  const nextTextRef = useRef('');
 
   const reload = useCallback(() => {
     void (async () => {
       await ensureDatabaseAsync();
       await hydrateShoppingStaplesPrefsFromDb();
       setText(staplesListToText(getShoppingStaplesExcludeList()));
+      setLoaded(true);
     })();
   }, []);
+
+  useEffect(() => {
+    loadedRef.current = loaded;
+  }, [loaded]);
+
+  nextTextRef.current = text;
 
   useFocusEffect(
     useCallback(() => {
       reload();
+      return () => {
+        if (web || !loadedRef.current) return;
+        void (async () => {
+          const list = staplesTextToList(nextTextRef.current);
+          await setShoppingStaplesExcludeList(list);
+        })();
+      };
     }, [reload])
   );
-
-  const onSave = useCallback(() => {
-    if (web) return;
-    void (async () => {
-      const list = staplesTextToList(text);
-      await setShoppingStaplesExcludeList(list);
-      Alert.alert('Opgeslagen', 'De uitsluitlijst wordt gebruikt bij “zet alles op boodschappenlijstje”.');
-      reload();
-    })();
-  }, [reload, text, web]);
 
   const onReset = useCallback(() => {
     if (web) return;
@@ -74,6 +81,11 @@ export default function ShoppingSettingsScreen() {
           Items in deze lijst worden <Text style={styles.bold}>niet</Text> automatisch toegevoegd aan je boodschappenlijst
           als ze in een gepland recept staan (handig voor zout, olie, water, enz.). Eén per regel.
         </Text>
+        {!web ? (
+          <Text style={styles.autoSaveHint}>
+            Wijzigingen worden automatisch opgeslagen wanneer je teruggaat naar de vorige pagina.
+          </Text>
+        ) : null}
 
       {web ? (
         <View style={styles.notice}>
@@ -93,9 +105,6 @@ export default function ShoppingSettingsScreen() {
       />
 
       <View style={styles.row}>
-        <Pressable style={[styles.btnPrimary, { backgroundColor: theme.accent }, web && styles.btnDisabled]} onPress={onSave} disabled={web}>
-          <Text style={styles.btnPrimaryText}>Opslaan</Text>
-        </Pressable>
         <Pressable style={[styles.btnOutline, web && styles.btnDisabled]} onPress={onReset} disabled={web}>
           <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>Reset</Text>
         </Pressable>
@@ -109,6 +118,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { padding: 16, paddingBottom: 40 },
   lead: { fontSize: 14, color: '#555', lineHeight: 21, marginBottom: 16 },
+  autoSaveHint: { fontSize: 13, color: '#666', lineHeight: 19, marginBottom: 16, fontStyle: 'italic' },
   bold: { fontWeight: '800', color: '#1a1a1a' },
   notice: {
     backgroundColor: '#fff8e6',
@@ -133,8 +143,6 @@ const styles = StyleSheet.create({
   },
   multiline: { minHeight: 140, textAlignVertical: 'top' },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 6 },
-  btnPrimary: { paddingHorizontal: 18, paddingVertical: 11, borderRadius: 8 },
-  btnPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   btnOutline: {
     paddingHorizontal: 18,
     paddingVertical: 11,

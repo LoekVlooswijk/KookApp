@@ -1,7 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
-  Keyboard,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   SectionList,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
@@ -57,11 +58,11 @@ function parseManualShoppingInput(
 export default function ShoppingScreen() {
   const theme = useAppTheme();
   const { confirm, ConfirmDialog } = useConfirmDialog();
+  const tabBarHeight = useBottomTabBarHeight();
 
   const [items, setItems] = useState<ShoppingItemRow[]>([]);
   const [newText, setNewText] = useState('');
   const [loading, setLoading] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [addBarHeight, setAddBarHeight] = useState(0);
 
   const reload = useCallback(() => {
@@ -81,16 +82,6 @@ export default function ShoppingScreen() {
       reload();
     }, [reload])
   );
-
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    const show = Keyboard.addListener('keyboardDidShow', (e) => setKeyboardHeight(e.endCoordinates.height));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   const sections = useMemo(() => {
     const mijnLijstje = items.filter((i) => i.category !== SHOPPING_INTERNAL_CATEGORY_WEEK);
@@ -191,13 +182,12 @@ export default function ShoppingScreen() {
     })();
   }, [confirm, items, reload]);
 
-  // Android: `KeyboardAvoidingView` + Tabs can "bounce" (briefly moves then snaps back).
-  // Keep the list stable; only lift the bottom add-bar above the keyboard.
-  const addBarBottom = Platform.OS === 'android' ? keyboardHeight : 0;
-  const listPaddingBottom = Math.max(addBarHeight, 72) + 12;
-
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: theme.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={tabBarHeight}
+    >
       <ConfirmDialog />
       <SectionList
         sections={sections}
@@ -205,7 +195,10 @@ export default function ShoppingScreen() {
         refreshing={loading}
         onRefresh={reload}
         style={styles.sectionList}
-        contentContainerStyle={[styles.list, { paddingBottom: listPaddingBottom }]}
+        contentContainerStyle={[
+          styles.list,
+          { paddingBottom: 12 + Math.max(addBarHeight, 72) },
+        ]}
         renderSectionHeader={({ section }) => {
           const isWeek = section.key === 'week';
           const weekEmpty = isWeek && section.data.length === 0;
@@ -287,7 +280,7 @@ export default function ShoppingScreen() {
         onLayout={(e) => setAddBarHeight(e.nativeEvent.layout.height)}
         style={[
           styles.addBar,
-          { backgroundColor: theme.background, borderTopColor: '#e2ddd5', bottom: addBarBottom },
+          { backgroundColor: theme.background, borderTopColor: '#e2ddd5' },
         ]}
       >
         <View style={styles.addRow}>
@@ -310,7 +303,7 @@ export default function ShoppingScreen() {
           </Pressable>
         </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -318,10 +311,6 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   sectionList: { flex: 1 },
   addBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 12,

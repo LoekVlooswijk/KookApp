@@ -15,6 +15,8 @@ export type AiCookProfile = {
   freeText: string;
   /** Stores/shops the user can realistically buy ingredients from. */
   nearbyShops: string[];
+  /** User-defined shop options shown in the settings UI. */
+  shopOptions: string[];
   /** Default servings used for week planning and other AI suggestions. */
   defaultServings: number;
   /** Extra context for week planning / recipe suggestions (feature 8). */
@@ -28,6 +30,7 @@ const DEFAULT_PROFILE: AiCookProfile = {
   prefer: [],
   freeText: '',
   nearbyShops: [],
+  shopOptions: [],
   defaultServings: 2,
   weekPlanningTimeNotes: '',
   appliesTo: { tipsChat: true, adjustRecipe: true, recipeSuggestions: true },
@@ -83,6 +86,7 @@ function normalizeProfile(raw: unknown): AiCookProfile {
     prefer: normalizeStringArray(r.prefer),
     freeText: typeof r.freeText === 'string' ? r.freeText.trim() : '',
     nearbyShops: normalizeStringArray(r.nearbyShops),
+    shopOptions: normalizeStringArray(r.shopOptions),
     defaultServings,
     weekPlanningTimeNotes: typeof r.weekPlanningTimeNotes === 'string' ? r.weekPlanningTimeNotes.trim() : '',
     appliesTo,
@@ -113,6 +117,7 @@ export async function setAiCookProfile(next: AiCookProfile): Promise<void> {
     profileCache.avoid.length > 0 ||
     profileCache.prefer.length > 0 ||
     profileCache.nearbyShops.length > 0 ||
+    profileCache.shopOptions.length > 0 ||
     !!profileCache.freeText.trim() ||
     !!profileCache.weekPlanningTimeNotes.trim() ||
     profileCache.defaultServings !== DEFAULT_PROFILE.defaultServings;

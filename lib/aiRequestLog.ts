@@ -1,7 +1,9 @@
+import type { AiProviderId } from './aiProviders';
+
 export type AiRequestLogEntry = {
   id: string;
   atIso: string;
-  provider: 'anthropic';
+  provider: AiProviderId;
   tag?: string;
   url: string;
   model?: string;
@@ -38,6 +40,15 @@ export function recordAnthropicRequestLog(entry: Omit<AiRequestLogEntry, 'id' | 
   while (ring.length > MAX) ring.pop();
 }
 
+export function recordAiRequestLog(entry: Omit<AiRequestLogEntry, 'id' | 'atIso'>): void {
+  ring.unshift({
+    id: nowId(),
+    atIso: new Date().toISOString(),
+    ...entry,
+  });
+  while (ring.length > MAX) ring.pop();
+}
+
 export function listAiRequestLogs(): AiRequestLogEntry[] {
   return ring.slice();
 }
@@ -47,7 +58,10 @@ export function clearAiRequestLogs(): void {
 }
 
 export function formatAiRequestLogEntry(e: AiRequestLogEntry): string {
-  const u = e.usage?.input_tokens != null ? ` usage_in=${e.usage.input_tokens} usage_out=${e.usage?.output_tokens ?? ''}` : '';
+  const u =
+    e.usage?.input_tokens != null
+      ? ` usage_in=${e.usage.input_tokens} usage_out=${e.usage?.output_tokens ?? ''}`
+      : '';
   const stop = e.stopReason != null ? ` stop=${e.stopReason}` : '';
   const err = e.errorMessage ? `\nerror: ${e.errorMessage}` : '';
   return (

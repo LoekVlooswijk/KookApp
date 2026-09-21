@@ -1,8 +1,13 @@
 import type { AiProviderId } from './aiProviders';
 import { AI_PROVIDERS } from './aiProviders';
-import { listAiApiKeys } from './aiKeyring';
-import { getActiveAiKeyId, resolveAiModelId } from './aiPrefs';
-import { recordAnthropicRequestLog } from './aiRequestLog';
+import { getAiApiKeyEntryById } from './aiKeyring';
+import {
+  getActiveAiKeyId,
+  resolveAiModelId,
+  resolveAiModelIdForTask,
+  type AiModelTask,
+} from './aiPrefs';
+import { recordAnthropicRequestLog, recordAiRequestLog } from './aiRequestLog';
 import { isAiRequestLogEnabledSync } from './aiRequestLogPrefs';
 
 export type AiOk = { ok: true; text: string };
@@ -23,27 +28,37 @@ function isRecord(x: unknown): x is Record<string, unknown> {
 async function getActiveKey(): Promise<{ provider: AiProviderId; apiKey: string } | null> {
   const activeId = getActiveAiKeyId();
   if (!activeId) return null;
-  const all = await listAiApiKeys();
-  const hit = all.find((k) => k.id === activeId);
+  const hit = await getAiApiKeyEntryById(activeId);
   if (!hit?.apiKey?.trim()) return null;
   return { provider: hit.provider, apiKey: hit.apiKey.trim() };
 }
 
-async function requireConfiguredProvider(): Promise<
+async function requireConfiguredProvider(
+  task?: AiModelTask
+): Promise<
   | { ok: true; provider: AiProviderId; apiKey: string; modelId: string }
   | { ok: false; error: AiErr }
 > {
   const k = await getActiveKey();
   if (!k) {
-    return { ok: false, error: { ok: false, message: 'Geen API-sleutel geselecteerd. Kies er één bij Instellingen.' } };
+    return {
+      ok: false,
+      error: { ok: false, message: 'Geen API-sleutel geselecteerd. Kies er één bij Instellingen.' },
+    };
   }
   const info = AI_PROVIDERS[k.provider];
   if (!info?.enabled) {
-    return { ok: false, error: { ok: false, message: 'Deze AI-provider is (nog) niet beschikbaar in de app.' } };
+    return {
+      ok: false,
+      error: { ok: false, message: 'Deze AI-provider is (nog) niet beschikbaar in de app.' },
+    };
   }
-  const modelId = resolveAiModelId(k.provider);
+  const modelId = task ? resolveAiModelIdForTask(k.provider, task) : resolveAiModelId(k.provider);
   if (!modelId?.trim()) {
-    return { ok: false, error: { ok: false, message: 'Geen model ingesteld. Kies een model bij Instellingen.' } };
+    return {
+      ok: false,
+      error: { ok: false, message: 'Geen model ingesteld. Kies een model bij Instellingen.' },
+    };
   }
   return { ok: true, provider: k.provider, apiKey: k.apiKey, modelId: modelId.trim() };
 }
@@ -65,7 +80,11 @@ function concatAnthropicTextBlocks(content: unknown): string {
   return parts.join('\n').trim();
 }
 
-function redactAnthropicBodyForLog(body: Record<string, unknown>): { redacted: unknown; imageBlocks: number; imageDataChars: number } {
+function redactAnthropicBodyForLog(body: Record<string, unknown>): {
+  redacted: unknown;
+  imageBlocks: number;
+  imageDataChars: number;
+} {
   let imageBlocks = 0;
   let imageDataChars = 0;
 
@@ -181,7 +200,10 @@ async function fetchAnthropic(
         errorMessage: 'fetch failed (network)',
       });
     }
-    return { ok: false, message: 'Geen verbinding met AI — controleer internet en probeer opnieuw.' };
+    return {
+      ok: false,
+      message: 'Geen verbinding met AI — controleer internet en probeer opnieuw.',
+    };
   }
 
   const raw = await res.text();
@@ -191,7 +213,10 @@ async function fetchAnthropic(
   let usage: { input_tokens?: number; output_tokens?: number } | null = null;
   if (res.ok) {
     try {
-      const j = JSON.parse(raw) as { stop_reason?: string | null; usage?: { input_tokens?: number; output_tokens?: number } };
+      const j = JSON.parse(raw) as {
+        stop_reason?: string | null;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
       stopReason = j.stop_reason ?? null;
       usage = j.usage ?? null;
     } catch {
@@ -244,10 +269,15 @@ function parseAnthropicText(raw: string): AiOk | AiErr {
   try {
     json = JSON.parse(raw) as { content?: unknown[] };
   } catch {
-    return { ok: false, message: 'Ongeldig JSON-antwoord van AI.', debugSnippet: raw.slice(0, 2500) };
+    return {
+      ok: false,
+      message: 'Ongeldig JSON-antwoord van AI.',
+      debugSnippet: raw.slice(0, 2500),
+    };
   }
   const text = concatAnthropicTextBlocks(json.content);
-  if (!text.trim()) return { ok: false, message: 'Leeg tekstantwoord van AI.', debugSnippet: raw.slice(0, 2500) };
+  if (!text.trim())
+    return { ok: false, message: 'Leeg tekstantwoord van AI.', debugSnippet: raw.slice(0, 2500) };
   return { ok: true, text };
 }
 
@@ -393,7 +423,11 @@ async function callAnthropicTextWithWebSearch(params: {
       try {
         json = JSON.parse(fr.raw) as { content?: unknown[]; stop_reason?: string | null };
       } catch {
-        return { ok: false, message: 'Ongeldig JSON-antwoord van AI.', debugSnippet: fr.raw.slice(0, 2500) };
+        return {
+          ok: false,
+          message: 'Ongeldig JSON-antwoord van AI.',
+          debugSnippet: fr.raw.slice(0, 2500),
+        };
       }
 
       const stop = json.stop_reason ?? null;
@@ -424,12 +458,225 @@ async function callAnthropicTextWithWebSearch(params: {
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 
+// ---------------- Mistral ----------------
+
+const MISTRAL_CHAT_URL = 'https://api.mistral.ai/v1/chat/completions';
+
+function approxMistralTextChars(body: Record<string, unknown>): number {
+  let n = 0;
+  const addStr = (s: unknown) => {
+    if (typeof s === 'string') n += s.length;
+  };
+
+  addStr(body.system);
+
+  const msgs = body.messages;
+  if (!Array.isArray(msgs)) return n;
+  for (const m of msgs) {
+    if (!isRecord(m)) continue;
+    const c = m.content;
+    if (typeof c === 'string') {
+      n += c.length;
+      continue;
+    }
+    if (!Array.isArray(c)) continue;
+    for (const block of c) {
+      if (!isRecord(block)) continue;
+      if (block.type === 'text' && typeof block.text === 'string') n += block.text.length;
+    }
+  }
+  return n;
+}
+
+async function fetchMistral(
+  apiKey: string,
+  body: Record<string, unknown>,
+  debug?: { tag?: string }
+): Promise<{ ok: true; raw: string } | AiErr> {
+  const wireJson = JSON.stringify(body);
+  const model = typeof body.model === 'string' ? body.model : undefined;
+  const systemChars = typeof body.system === 'string' ? body.system.length : 0;
+  const userTextCharsApprox = approxMistralTextChars(body);
+
+  const t0 = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(MISTRAL_CHAT_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: wireJson,
+    });
+  } catch {
+    if (isAiRequestLogEnabledSync()) {
+      recordAiRequestLog({
+        provider: 'mistral',
+        tag: debug?.tag,
+        url: MISTRAL_CHAT_URL,
+        model,
+        okHttp: false,
+        requestJsonChars: wireJson.length,
+        requestJsonCharsRedacted: wireJson.length,
+        imageBlocks: 0,
+        imageDataChars: 0,
+        systemChars,
+        userTextCharsApprox,
+        responseChars: 0,
+        errorMessage: 'fetch failed (network)',
+      });
+    }
+    return {
+      ok: false,
+      message: 'Geen verbinding met AI — controleer internet en probeer opnieuw.',
+    };
+  }
+
+  const raw = await res.text();
+  const elapsed = Date.now() - t0;
+
+  let stopReason: string | null | undefined;
+  let usage: { input_tokens?: number; output_tokens?: number } | null = null;
+  if (res.ok) {
+    try {
+      const j = JSON.parse(raw) as {
+        stop_reason?: string | null;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
+      stopReason = j.stop_reason ?? null;
+      usage = j.usage ?? null;
+    } catch {
+      /* */
+    }
+  }
+
+  if (isAiRequestLogEnabledSync()) {
+    recordAiRequestLog({
+      provider: 'mistral',
+      tag: debug?.tag,
+      url: MISTRAL_CHAT_URL,
+      model,
+      httpStatus: res.status,
+      okHttp: res.ok,
+      stopReason,
+      usage,
+      requestJsonChars: wireJson.length,
+      requestJsonCharsRedacted: wireJson.length,
+      imageBlocks: 0,
+      imageDataChars: 0,
+      systemChars,
+      userTextCharsApprox,
+      responseChars: raw.length,
+      errorMessage: res.ok ? undefined : `HTTP ${res.status} (${elapsed}ms)`,
+    });
+  }
+
+  if (!res.ok) {
+    let message = `AI gaf foutcode ${res.status}.`;
+    try {
+      const j = JSON.parse(raw) as { error?: { message?: string } };
+      if (j.error?.message) message = j.error.message;
+    } catch {
+      /* */
+    }
+    return {
+      ok: false,
+      message,
+      status: res.status,
+      debugSnippet: raw.length > 2500 ? `${raw.slice(0, 2500)}…` : raw,
+    };
+  }
+  return { ok: true, raw };
+}
+
+// Mistral uses OpenAI-compatible response format, so we reuse parseOpenAiText
+
+async function callMistralText(params: {
+  apiKey: string;
+  model: string;
+  system: string;
+  user: string;
+  maxTokens?: number;
+}): Promise<AiOk | AiErr> {
+  const fr = await fetchMistral(params.apiKey, {
+    model: params.model,
+    messages: [
+      { role: 'system', content: params.system },
+      { role: 'user', content: params.user },
+    ],
+    max_tokens: params.maxTokens ?? 8192,
+  });
+  if (!fr.ok) return fr;
+  return parseOpenAiText(fr.raw);
+}
+
+async function callMistralChat(params: {
+  apiKey: string;
+  model: string;
+  system: string;
+  messages: AiChatTurn[];
+  maxTokens?: number;
+}): Promise<AiOk | AiErr> {
+  if (params.messages.length === 0) {
+    return { ok: false, message: 'Geen berichten om te versturen.' };
+  }
+  if (params.messages[0].role !== 'user') {
+    return { ok: false, message: 'Ongeldige chat: begin met een gebruikersbericht.' };
+  }
+  const fr = await fetchMistral(params.apiKey, {
+    model: params.model,
+    messages: [
+      { role: 'system', content: params.system },
+      ...params.messages.map((m) => ({ role: m.role, content: m.text })),
+    ],
+    max_tokens: params.maxTokens ?? 1536,
+  });
+  if (!fr.ok) return fr;
+  return parseOpenAiText(fr.raw);
+}
+
+async function callMistralWithImageText(params: {
+  apiKey: string;
+  model: string;
+  system: string;
+  userText: string;
+  imageBase64: string;
+  imageMediaType: AiImageMediaType;
+  maxTokens?: number;
+}): Promise<AiOk | AiErr> {
+  // Mistral supports OpenAI-compatible vision with base64 data URLs
+  const dataUrl = `data:${params.imageMediaType};base64,${params.imageBase64}`;
+  const fr = await fetchMistral(params.apiKey, {
+    model: params.model,
+    messages: [
+      { role: 'system', content: params.system },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: params.userText },
+          { type: 'image_url', image_url: { url: dataUrl } },
+        ],
+      },
+    ],
+    max_tokens: params.maxTokens ?? 4096,
+  });
+  if (!fr.ok) return fr;
+  return parseOpenAiText(fr.raw);
+}
+
+// ---------------- OpenAI ----------------
+
 function parseOpenAiText(raw: string): AiOk | AiErr {
   let json: unknown;
   try {
     json = JSON.parse(raw);
   } catch {
-    return { ok: false, message: 'Ongeldig JSON-antwoord van AI.', debugSnippet: raw.slice(0, 2500) };
+    return {
+      ok: false,
+      message: 'Ongeldig JSON-antwoord van AI.',
+      debugSnippet: raw.slice(0, 2500),
+    };
   }
   if (!isRecord(json)) {
     return { ok: false, message: 'Ongeldig antwoord van AI.', debugSnippet: raw.slice(0, 2500) };
@@ -442,7 +689,8 @@ function parseOpenAiText(raw: string): AiOk | AiErr {
   const msg = isRecord(first.message) ? first.message : null;
   const content = msg && typeof msg.content === 'string' ? msg.content : '';
   const text = (content ?? '').trim();
-  if (!text) return { ok: false, message: 'Leeg tekstantwoord van AI.', debugSnippet: raw.slice(0, 2500) };
+  if (!text)
+    return { ok: false, message: 'Leeg tekstantwoord van AI.', debugSnippet: raw.slice(0, 2500) };
   return { ok: true, text };
 }
 
@@ -461,7 +709,10 @@ async function fetchOpenAi(
       body: JSON.stringify(body),
     });
   } catch {
-    return { ok: false, message: 'Geen verbinding met AI — controleer internet en probeer opnieuw.' };
+    return {
+      ok: false,
+      message: 'Geen verbinding met AI — controleer internet en probeer opnieuw.',
+    };
   }
   const raw = await res.text();
   if (!res.ok) {
@@ -565,14 +816,19 @@ export async function callAiText(params: {
   system: string;
   user: string;
   maxTokens?: number;
+  /** Modelkeuze uit AI-instellingen voor deze functie (importeren / aanpassen / weekmenu). */
+  task?: AiModelTask;
 }): Promise<AiOk | AiErr> {
-  const cfg = await requireConfiguredProvider();
+  const cfg = await requireConfiguredProvider(params.task);
   if (!cfg.ok) return cfg.error;
   if (cfg.provider === 'anthropic') {
     return callAnthropicText({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
   }
   if (cfg.provider === 'openai') {
     return callOpenAiText({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
+  }
+  if (cfg.provider === 'mistral') {
+    return callMistralText({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
   }
   return { ok: false, message: 'Onbekende AI-provider.' };
 }
@@ -581,14 +837,18 @@ export async function callAiChat(params: {
   system: string;
   messages: AiChatTurn[];
   maxTokens?: number;
+  task?: AiModelTask;
 }): Promise<AiOk | AiErr> {
-  const cfg = await requireConfiguredProvider();
+  const cfg = await requireConfiguredProvider(params.task);
   if (!cfg.ok) return cfg.error;
   if (cfg.provider === 'anthropic') {
     return callAnthropicChat({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
   }
   if (cfg.provider === 'openai') {
     return callOpenAiChat({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
+  }
+  if (cfg.provider === 'mistral') {
+    return callMistralChat({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
   }
   return { ok: false, message: 'Onbekende AI-provider.' };
 }
@@ -599,8 +859,9 @@ export async function callAiWithImageText(params: {
   imageBase64: string;
   imageMediaType: AiImageMediaType;
   maxTokens?: number;
+  task?: AiModelTask;
 }): Promise<AiOk | AiErr> {
-  const cfg = await requireConfiguredProvider();
+  const cfg = await requireConfiguredProvider(params.task);
   if (!cfg.ok) return cfg.error;
   const p = AI_PROVIDERS[cfg.provider];
   if (!p.supportsVision) {
@@ -612,6 +873,9 @@ export async function callAiWithImageText(params: {
   if (cfg.provider === 'openai') {
     return callOpenAiWithImageText({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
   }
+  if (cfg.provider === 'mistral') {
+    return callMistralWithImageText({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
+  }
   return { ok: false, message: 'Onbekende AI-provider.' };
 }
 
@@ -619,8 +883,9 @@ export async function callAiTextWithWebSearch(params: {
   system: string;
   user: string;
   maxTokens?: number;
+  task?: AiModelTask;
 }): Promise<AiOk | AiErr> {
-  const cfg = await requireConfiguredProvider();
+  const cfg = await requireConfiguredProvider(params.task);
   if (!cfg.ok) return cfg.error;
   const p = AI_PROVIDERS[cfg.provider];
   if (!p.supportsWebSearch) {
@@ -628,3 +893,5 @@ export async function callAiTextWithWebSearch(params: {
   }
   return callAnthropicTextWithWebSearch({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
 }
+
+export type { AiModelTask } from './aiPrefs';

@@ -36,9 +36,10 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderInfo> = {
   mistral: {
     id: 'mistral',
     label: 'Mistral',
-    enabled: false,
+    enabled: true,
     supportsWebSearch: false,
-    supportsVision: false,
+    supportsVision: true,
+    // Note: Vision models can be added to AI_MODEL_PRESETS.mistral when available.
   },
 } as const;
 
@@ -48,10 +49,18 @@ export function listAiProviders(): AiProviderInfo[] {
 
 export type AiModelPreset = { key: string; label: string; modelId: string };
 
-/** Model presets per provider. Gebruiker kan ook een custom model-id instellen. */
+/**
+ * Model presets: `modelId` is de **vaste snapshot** in de app (reproduceerbaar tot de volgende update).
+ * Met “altijd nieuwste alias” in instellingen wordt waar mogelijk de provider-alias gebruikt
+ * (zie `MODEL_PINNED_TO_LATEST_ALIAS`), bijv. Haiku-snapshot → `claude-haiku-4-5`.
+ */
 export const AI_MODEL_PRESETS: Record<AiProviderId, AiModelPreset[]> = {
   anthropic: [
-    { key: 'haiku', label: 'Haiku', modelId: 'claude-haiku-4-5' },
+    {
+      key: 'haiku',
+      label: 'Haiku',
+      modelId: 'claude-haiku-4-5-20251001',
+    },
     { key: 'sonnet', label: 'Sonnet', modelId: 'claude-sonnet-4-6' },
   ],
   openai: [
@@ -68,8 +77,27 @@ export const AI_MODEL_PRESETS: Record<AiProviderId, AiModelPreset[]> = {
   ],
 };
 
+/** Snapshot model-id → provider-alias die Anthropic naar de actuele release laat wijzen. */
+export const MODEL_PINNED_TO_LATEST_ALIAS: Partial<Record<AiProviderId, Record<string, string>>> = {
+  anthropic: {
+    'claude-haiku-4-5-20251001': 'claude-haiku-4-5',
+  },
+};
+
 export function resolvePresetModelId(provider: AiProviderId, presetKey: string): string | null {
   const presets = AI_MODEL_PRESETS[provider] ?? [];
   const hit = presets.find((p) => p.key === presetKey);
   return hit?.modelId ?? null;
+}
+
+/** Preset → API-modelstring; met `preferLatestAlias` worden bekende snapshots naar provider-aliases omgezet. */
+export function resolvePresetToApiModelId(
+  provider: AiProviderId,
+  presetKey: string,
+  preferLatestAlias: boolean
+): string | null {
+  const pinned = resolvePresetModelId(provider, presetKey);
+  if (!pinned) return null;
+  if (!preferLatestAlias) return pinned;
+  return MODEL_PINNED_TO_LATEST_ALIAS[provider]?.[pinned] ?? pinned;
 }

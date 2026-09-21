@@ -1,6 +1,5 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { useHeaderHeight } from '@react-navigation/elements';
-import { useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation/elements';
 import { useCallback, useState } from 'react';
 import {
   Alert,
@@ -18,27 +17,67 @@ import Slider from '@react-native-community/slider';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
-import { addAiApiKey, deleteAiApiKey, listAiApiKeys, type AiApiKeyEntry } from '../../lib/aiKeyring';
 import {
+  addAiApiKey,
+  deleteAiApiKey,
+  listAiApiKeys,
+  type AiApiKeyEntry,
+} from '../../lib/aiKeyring';
+import {
+  AI_MODEL_TASKS,
   getActiveAiKeyId,
-  getAiCustomModelId,
   getAiModelPresetKey,
+  getAiModelTaskPresetKey,
+  getAiPreferLatestModelAlias,
   hydrateAiPrefsFromDb,
-  resolveAiModelId,
   setActiveAiKeyId,
-  setAiCustomModelId,
   setAiModelPresetKey,
+  setAiModelTaskPresetKey,
+  setAiPreferLatestModelAlias,
+  type AiModelTask,
 } from '../../lib/aiPrefs';
-import { AI_MODEL_PRESETS, listAiProviders, type AiProviderId } from '../../lib/aiProviders';
-import { getImportAhSiteSearchEnabled, setImportAhSiteSearchEnabled } from '../../lib/aiAhSearchPrefs';
-import { getImportExtractConcurrency, setImportExtractConcurrency } from '../../lib/aiImportConcurrencyPrefs';
+import {
+  AI_MODEL_PRESETS,
+  AI_PROVIDERS,
+  listAiProviders,
+  type AiProviderId,
+} from '../../lib/aiProviders';
+
+/** Volgorde voor “nieuwe sleutel”: één rij, Mistral tweede, OpenAI laatste. */
+const NEW_API_KEY_PROVIDER_ORDER: readonly AiProviderId[] = [
+  'anthropic',
+  'mistral',
+  'gemini',
+  'openai',
+];
+import {
+  getImportAhSiteSearchEnabled,
+  setImportAhSiteSearchEnabled,
+} from '../../lib/aiAhSearchPrefs';
+import {
+  getImportExtractConcurrency,
+  setImportExtractConcurrency,
+} from '../../lib/aiImportConcurrencyPrefs';
 import { getImportWebSearchEnabled, setImportWebSearchEnabled } from '../../lib/aiImportPrefs';
-import { getAiRequestLogEnabled, setAiRequestLogEnabled } from '../../lib/aiRequestLogPrefs';
 import { ensureDatabaseAsync } from '../../lib/db';
+
+const AI_TASK_UI: Record<AiModelTask, { title: string; hint: string }> = {
+  import: {
+    title: 'Importeren',
+    hint: 'URL-import, foto-import en HTML-extractie.',
+  },
+  adjust: {
+    title: 'Aanpassen & chat',
+    hint: 'Recept aanpassen en kook-chat tijdens het koken.',
+  },
+  weekplan: {
+    title: 'Weekmenu',
+    hint: 'AI-voorstellen voor je weekplanning.',
+  },
+};
 
 export default function AiSettingsScreen() {
   const theme = useAppTheme();
-  const router = useRouter();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const web = Platform.OS === 'web';
   const headerHeight = useHeaderHeight();
@@ -50,12 +89,16 @@ export default function AiSettingsScreen() {
   const [newKeyInput, setNewKeyInput] = useState('');
 
   const [modelPresetKey, setModelPresetKeyState] = useState<string>('');
-  const [customModelId, setCustomModelIdState] = useState<string>('');
-  const [resolvedModelId, setResolvedModelIdState] = useState<string | null>(null);
+  const [preferLatestAlias, setPreferLatestAliasState] = useState(true);
   const [importWebSearch, setImportWebSearchState] = useState(false);
   const [importAhSearch, setImportAhSearchState] = useState(true);
   const [importConcurrency, setImportConcurrencyState] = useState(6);
-  const [requestLog, setRequestLogState] = useState(false);
+
+  const [taskPresets, setTaskPresets] = useState<Record<AiModelTask, string>>({
+    import: '',
+    adjust: '',
+    weekplan: '',
+  });
 
   const chipOnStyle = { backgroundColor: theme.accentSoft, borderColor: theme.accent };
   const chipTextOnStyle = { color: theme.accentSoftText };
@@ -79,18 +122,25 @@ export default function AiSettingsScreen() {
       const provider: AiProviderId | null = activeEntry?.provider ?? null;
       if (provider) {
         setModelPresetKeyState(getAiModelPresetKey(provider));
-        setCustomModelIdState(getAiCustomModelId(provider));
-        setResolvedModelIdState(resolveAiModelId(provider));
+        const nextTaskP: Record<AiModelTask, string> = {
+          import: '',
+          adjust: '',
+          weekplan: '',
+        };
+        for (const t of AI_MODEL_TASKS) {
+          nextTaskP[t] = getAiModelTaskPresetKey(t, provider);
+        }
+        setTaskPresets(nextTaskP);
       } else {
         setModelPresetKeyState('');
-        setCustomModelIdState('');
-        setResolvedModelIdState(null);
+        setTaskPresets({ import: '', adjust: '', weekplan: '' });
       }
+
+      setPreferLatestAliasState(await getAiPreferLatestModelAlias());
 
       setImportWebSearchState(await getImportWebSearchEnabled());
       setImportAhSearchState(await getImportAhSiteSearchEnabled());
       setImportConcurrencyState(await getImportExtractConcurrency());
-      setRequestLogState(await getAiRequestLogEnabled());
       setNewKeyInput('');
     })();
   }, []);
@@ -103,7 +153,11 @@ export default function AiSettingsScreen() {
 
   const onAddApiKey = useCallback(async () => {
     try {
-      const entry = await addAiApiKey({ provider: newProvider, label: newLabel, apiKey: newKeyInput });
+      const entry = await addAiApiKey({
+        provider: newProvider,
+        label: newLabel,
+        apiKey: newKeyInput,
+      });
       const next = await listAiApiKeys();
       setKeys(next);
       if (!activeKeyId) {
@@ -127,12 +181,18 @@ export default function AiSettingsScreen() {
         const provider = entry?.provider ?? null;
         if (provider) {
           setModelPresetKeyState(getAiModelPresetKey(provider));
-          setCustomModelIdState(getAiCustomModelId(provider));
-          setResolvedModelIdState(resolveAiModelId(provider));
+          const nextTaskP: Record<AiModelTask, string> = {
+            import: '',
+            adjust: '',
+            weekplan: '',
+          };
+          for (const t of AI_MODEL_TASKS) {
+            nextTaskP[t] = getAiModelTaskPresetKey(t, provider);
+          }
+          setTaskPresets(nextTaskP);
         } else {
           setModelPresetKeyState('');
-          setCustomModelIdState('');
-          setResolvedModelIdState(null);
+          setTaskPresets({ import: '', adjust: '', weekplan: '' });
         }
       })();
     },
@@ -169,20 +229,15 @@ export default function AiSettingsScreen() {
     void (async () => {
       await setAiModelPresetKey(provider, presetKey);
       setModelPresetKeyState(presetKey);
-      setResolvedModelIdState(resolveAiModelId(provider));
     })();
   }, []);
 
-  const onSaveCustomModelId = useCallback(
-    (provider: AiProviderId) => {
-      void (async () => {
-        await setAiCustomModelId(provider, customModelId);
-        setCustomModelIdState(customModelId);
-        setResolvedModelIdState(resolveAiModelId(provider));
-      })();
-    },
-    [customModelId]
-  );
+  const onTogglePreferLatestAlias = useCallback((on: boolean) => {
+    void (async () => {
+      await setAiPreferLatestModelAlias(on);
+      setPreferLatestAliasState(on);
+    })();
+  }, []);
 
   const onToggleImportWebSearch = useCallback((on: boolean) => {
     void (async () => {
@@ -206,21 +261,34 @@ export default function AiSettingsScreen() {
     })();
   }, []);
 
-  const onToggleRequestLog = useCallback((on: boolean) => {
-    void (async () => {
-      try {
-        await setAiRequestLogEnabled(on);
-        setRequestLogState(on);
-      } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Opslaan mislukt.');
-      }
-    })();
-  }, []);
-
   const activeEntry = activeKeyId ? keys.find((k) => k.id === activeKeyId) : null;
   const activeProvider: AiProviderId | null = activeEntry?.provider ?? null;
-  const providerInfo = activeProvider ? listAiProviders().find((p) => p.id === activeProvider) : null;
+  const providerInfo = activeProvider
+    ? listAiProviders().find((p) => p.id === activeProvider)
+    : null;
   const modelPresets = activeProvider ? AI_MODEL_PRESETS[activeProvider] : [];
+
+  const clearTaskModelOverride = useCallback(
+    (task: AiModelTask) => {
+      if (!activeProvider || web) return;
+      void (async () => {
+        await setAiModelTaskPresetKey(task, activeProvider, '');
+        setTaskPresets((p) => ({ ...p, [task]: '' }));
+      })();
+    },
+    [activeProvider, web]
+  );
+
+  const pickTaskPreset = useCallback(
+    (task: AiModelTask, presetKey: string) => {
+      if (!activeProvider || web) return;
+      void (async () => {
+        await setAiModelTaskPresetKey(task, activeProvider, presetKey);
+        setTaskPresets((p) => ({ ...p, [task]: presetKey }));
+      })();
+    },
+    [activeProvider, web]
+  );
 
   return (
     <KeyboardAvoidingView
@@ -231,249 +299,309 @@ export default function AiSettingsScreen() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ConfirmDialog />
         <Text style={styles.lead}>
-          AI wordt gebruikt voor URL-import en andere slimme functies. API-sleutels verlaten je apparaat alleen bij een
-          API-aanroep die jij start.
+          AI wordt gebruikt voor URL-import en andere slimme functies. API-sleutels verlaten je
+          apparaat alleen bij een API-aanroep die jij start.
         </Text>
 
-      {web ? (
-        <View style={styles.notice}>
-          <Text style={styles.noticeText}>
-            Op web wordt de API-sleutel niet opgeslagen. Gebruik iOS of Android om een sleutel vast te leggen.
+        {web ? (
+          <View style={styles.notice}>
+            <Text style={styles.noticeText}>
+              Op web wordt de API-sleutel niet opgeslagen. Gebruik iOS of Android om een sleutel
+              vast te leggen.
+            </Text>
+          </View>
+        ) : null}
+
+        <Text style={styles.section}>AI-sleutels</Text>
+        {keys.length > 0 ? (
+          <Text style={styles.statusOk}>
+            {keys.length} sleutel{keys.length === 1 ? '' : 's'} opgeslagen. Tik op een sleutel om
+            die actief te maken.
           </Text>
-        </View>
-      ) : null}
+        ) : (
+          <Text style={styles.statusMuted}>Nog geen sleutels ingesteld.</Text>
+        )}
 
-      <Text style={styles.section}>AI-sleutels</Text>
-      {keys.length > 0 ? (
-        <Text style={styles.statusOk}>
-          {keys.length} sleutel{keys.length === 1 ? '' : 's'} opgeslagen. Tik op een sleutel om die actief te maken.
-        </Text>
-      ) : (
-        <Text style={styles.statusMuted}>Nog geen sleutels ingesteld.</Text>
-      )}
-
-      {keys.length > 0 ? (
-        <View style={styles.keyList}>
-          {keys.map((k) => {
-            const selected = k.id === activeKeyId;
-            const providerLabel =
-              listAiProviders().find((p) => p.id === k.provider)?.label ??
-              (k.provider === 'anthropic'
-                ? 'Anthropic'
-                : k.provider === 'openai'
-                  ? 'OpenAI'
-                  : k.provider === 'gemini'
-                    ? 'Google Gemini'
-                    : 'Mistral');
-            return (
-              <View key={k.id} style={[styles.keyRow, selected ? styles.keyRowSelected : null]}>
-                <Pressable style={styles.keyMain} onPress={() => onSelectKey(k.id)}>
-                  <Text style={styles.keyTitle} numberOfLines={1}>
-                    {k.label.trim() || 'API-sleutel'}
-                  </Text>
-                  <Text style={styles.keyMeta} numberOfLines={1}>
-                    {providerLabel}
-                    {selected ? ' · Actief' : ''}
-                  </Text>
-                </Pressable>
-                {!web ? (
-                  <Pressable style={styles.keyDeleteBtn} onPress={() => onDeleteKey(k.id)}>
-                    <Text style={styles.keyDeleteText}>Verwijderen</Text>
+        {keys.length > 0 ? (
+          <View style={styles.keyList}>
+            {keys.map((k) => {
+              const selected = k.id === activeKeyId;
+              const providerLabel =
+                listAiProviders().find((p) => p.id === k.provider)?.label ??
+                (k.provider === 'anthropic'
+                  ? 'Anthropic'
+                  : k.provider === 'openai'
+                    ? 'OpenAI'
+                    : k.provider === 'gemini'
+                      ? 'Google Gemini'
+                      : 'Mistral');
+              return (
+                <View key={k.id} style={[styles.keyRow, selected ? styles.keyRowSelected : null]}>
+                  <Pressable style={styles.keyMain} onPress={() => onSelectKey(k.id)}>
+                    <Text style={styles.keyTitle} numberOfLines={1}>
+                      {k.label.trim() || 'API-sleutel'}
+                    </Text>
+                    <Text style={styles.keyMeta} numberOfLines={1}>
+                      {providerLabel}
+                      {selected ? ' · Actief' : ''}
+                    </Text>
                   </Pressable>
-                ) : null}
-              </View>
+                  {!web ? (
+                    <Pressable style={styles.keyDeleteBtn} onPress={() => onDeleteKey(k.id)}>
+                      <Text style={styles.keyDeleteText}>Verwijderen</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
+
+        <Text style={styles.subLabel}>Nieuwe sleutel toevoegen</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.chipScrollOuter}
+          contentContainerStyle={styles.chipScrollRow}
+          keyboardShouldPersistTaps="handled"
+        >
+          {NEW_API_KEY_PROVIDER_ORDER.map((id) => {
+            const p = AI_PROVIDERS[id];
+            return (
+              <Pressable
+                key={p.id}
+                style={[
+                  styles.chip,
+                  styles.chipNoShrink,
+                  newProvider === p.id ? { ...chipOnStyle, opacity: p.enabled ? 1 : 0.6 } : null,
+                ]}
+                onPress={() => setNewProvider(p.id)}
+              >
+                <Text style={[styles.chipText, newProvider === p.id ? chipTextOnStyle : null]}>
+                  {p.label}
+                </Text>
+              </Pressable>
             );
           })}
-        </View>
-      ) : null}
-
-      <Text style={styles.subLabel}>Nieuwe sleutel toevoegen</Text>
-      <View style={styles.chipRow}>
-        {listAiProviders().map((p) => (
+        </ScrollView>
+        <TextInput
+          style={styles.input}
+          placeholder="Naam (bijv. Persoonlijk, Werk, Test)…"
+          placeholderTextColor="#999"
+          value={newLabel}
+          onChangeText={setNewLabel}
+          editable={!web}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="API-sleutel plakken…"
+          placeholderTextColor="#999"
+          value={newKeyInput}
+          onChangeText={setNewKeyInput}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+          editable={!web}
+        />
+        <View style={styles.row}>
           <Pressable
-            key={p.id}
-            style={[styles.chip, newProvider === p.id ? { ...chipOnStyle, opacity: p.enabled ? 1 : 0.6 } : null]}
-            onPress={() => setNewProvider(p.id)}
+            style={[
+              styles.btnPrimary,
+              { backgroundColor: theme.accent },
+              (web || !newKeyInput.trim()) && styles.btnDisabled,
+            ]}
+            onPress={() => {
+              if (!web) void onAddApiKey();
+            }}
+            disabled={web || !newKeyInput.trim()}
           >
-            <Text style={[styles.chipText, newProvider === p.id ? chipTextOnStyle : null]}>{p.label}</Text>
+            <Text style={styles.btnPrimaryText}>Opslaan</Text>
           </Pressable>
-        ))}
-      </View>
-      <TextInput
-        style={styles.input}
-        placeholder="Naam (bijv. Persoonlijk, Werk, Test)…"
-        placeholderTextColor="#999"
-        value={newLabel}
-        onChangeText={setNewLabel}
-        editable={!web}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="API-sleutel plakken…"
-        placeholderTextColor="#999"
-        value={newKeyInput}
-        onChangeText={setNewKeyInput}
-        autoCapitalize="none"
-        autoCorrect={false}
-        secureTextEntry
-        editable={!web}
-      />
-      <View style={styles.row}>
-        <Pressable
-          style={[styles.btnPrimary, { backgroundColor: theme.accent }, (web || !newKeyInput.trim()) && styles.btnDisabled]}
-          onPress={() => {
-            if (!web) void onAddApiKey();
-          }}
-          disabled={web || !newKeyInput.trim()}
-        >
-          <Text style={styles.btnPrimaryText}>Opslaan</Text>
-        </Pressable>
-      </View>
+        </View>
 
-      <Text style={styles.section}>Model</Text>
-      {activeProvider ? (
-        <>
-          <Text style={styles.hint}>
-            Actieve provider: {providerInfo?.label ?? activeProvider}. Kies een preset, of vul een eigen model-id in.
-          </Text>
-          {!providerInfo?.enabled ? (
-            <View style={styles.notice}>
-              <Text style={styles.noticeText}>
-                Deze provider staat als optie klaar, maar is nog niet geïmplementeerd voor API-aanroepen in de app.
-              </Text>
+        <Text style={styles.section}>Model</Text>
+        {activeProvider ? (
+          <>
+            <Text style={styles.hint}>
+              Actieve provider: {providerInfo?.label ?? activeProvider}. Kies een preset hieronder.
+            </Text>
+            {!providerInfo?.enabled ? (
+              <View style={styles.notice}>
+                <Text style={styles.noticeText}>
+                  Deze provider staat als optie klaar, maar is nog niet geïmplementeerd voor
+                  API-aanroepen in de app.
+                </Text>
+              </View>
+            ) : null}
+            <View style={styles.switchRow}>
+              <View style={styles.switchTextCol}>
+                <Text style={styles.switchLabel}>Altijd nieuwste model-alias</Text>
+                <Text style={styles.hint}>
+                  Staat aan: waar de app een vaste snapshot kent (zoals Haiku), wordt de korte
+                  provider-alias gebruikt die naar de actuele release wijst — je hoeft zelf geen
+                  versienummers bij te houden. Uit: alleen de snapshot uit deze app (stabieler tot
+                  je update).
+                </Text>
+              </View>
+              <Switch
+                value={preferLatestAlias && !web}
+                onValueChange={(v) => {
+                  if (!web) onTogglePreferLatestAlias(v);
+                }}
+                disabled={web}
+                trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
+                thumbColor={preferLatestAlias && !web ? theme.accent : '#f4f3f4'}
+              />
             </View>
-          ) : null}
-          <View style={styles.chipRow}>
-            {modelPresets.map((p) => (
-              <Pressable
-                key={p.key}
-                style={[styles.chip, modelPresetKey === p.key ? chipOnStyle : null]}
-                onPress={() => pickModelPreset(activeProvider, p.key)}
-              >
-                <Text style={[styles.chipText, modelPresetKey === p.key ? chipTextOnStyle : null]}>{p.label}</Text>
-              </Pressable>
-            ))}
+            <View style={styles.chipRow}>
+              {modelPresets.map((p) => (
+                <Pressable
+                  key={p.key}
+                  style={[styles.chip, modelPresetKey === p.key ? chipOnStyle : null]}
+                  onPress={() => pickModelPreset(activeProvider, p.key)}
+                >
+                  <Text
+                    style={[styles.chipText, modelPresetKey === p.key ? chipTextOnStyle : null]}
+                  >
+                    {p.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        ) : (
+          <Text style={styles.statusMuted}>
+            Kies eerst een actieve API-sleutel om een model te selecteren.
+          </Text>
+        )}
+
+        <Text style={styles.section}>Model per functie</Text>
+        {activeProvider && providerInfo?.enabled ? (
+          <>
+            <Text style={styles.hint}>
+              Optioneel: ander preset dan hierboven per functie. Laat &apos;Zelfde als
+              hierboven&apos; staan voor het standaardmodel (inclusief nieuwste-alias schakelaar).
+            </Text>
+            {AI_MODEL_TASKS.map((task) => {
+              const ui = AI_TASK_UI[task];
+              const inherit = !taskPresets[task]?.trim();
+              return (
+                <View key={task} style={styles.taskModelBlock}>
+                  <Text style={styles.taskModelTitle}>{ui.title}</Text>
+                  <Text style={styles.hint}>{ui.hint}</Text>
+                  <View style={styles.chipRow}>
+                    <Pressable
+                      style={[styles.chip, inherit ? chipOnStyle : null]}
+                      onPress={() => {
+                        if (!web) clearTaskModelOverride(task);
+                      }}
+                      disabled={web}
+                    >
+                      <Text style={[styles.chipText, inherit ? chipTextOnStyle : null]}>
+                        Zelfde als hierboven
+                      </Text>
+                    </Pressable>
+                    {modelPresets.map((p) => (
+                      <Pressable
+                        key={`${task}-${p.key}`}
+                        style={[styles.chip, taskPresets[task] === p.key ? chipOnStyle : null]}
+                        onPress={() => {
+                          if (!web) pickTaskPreset(task, p.key);
+                        }}
+                        disabled={web}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            taskPresets[task] === p.key ? chipTextOnStyle : null,
+                          ]}
+                        >
+                          {p.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              );
+            })}
+          </>
+        ) : activeProvider && !providerInfo?.enabled ? (
+          <Text style={styles.statusMuted}>
+            Deze provider kan nog geen API-aanroepen doen; model per functie volgt later.
+          </Text>
+        ) : (
+          <Text style={styles.statusMuted}>
+            Kies eerst een actieve API-sleutel om modellen per functie in te stellen.
+          </Text>
+        )}
+
+        <Text style={styles.section}>Foto-import</Text>
+        <View style={styles.switchRow}>
+          <View style={styles.switchTextCol}>
+            <Text style={styles.switchLabel}>AH/Allerhande site-zoekfunctie gebruiken</Text>
+            <Text style={styles.hint}>
+              Probeert eerst via ah.nl recepten-zoeken de juiste recept-URL te vinden op basis van
+              titel/zoekhint. Dit is sneller en gebruikt geen AI web_search tokens. Als dit uit
+              staat, gebruikt de app alleen AI om URL’s te raden/zoeken.
+            </Text>
           </View>
-          <Text style={styles.subLabel}>Eigen model-id (optioneel)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="bijv. gpt-4o-mini / gemini-… (of laat leeg en kies een preset)"
-            placeholderTextColor="#999"
-            value={customModelId}
-            onChangeText={setCustomModelIdState}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!web}
+          <Switch
+            value={importAhSearch && !web}
+            onValueChange={(v) => {
+              if (!web) onToggleImportAhSearch(v);
+            }}
+            disabled={web}
+            trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
+            thumbColor={importAhSearch && !web ? theme.accent : '#f4f3f4'}
           />
-          <View style={styles.row}>
-            <Pressable
-              style={[styles.btnOutline, { borderColor: theme.accent }, web && styles.btnDisabled]}
-              onPress={() => {
-                if (!web) onSaveCustomModelId(activeProvider);
-              }}
-              disabled={web}
-            >
-              <Text style={[styles.btnOutlineText, { color: theme.accent }]}>Bewaar model-id</Text>
-            </Pressable>
+        </View>
+        <View style={styles.switchRow}>
+          <View style={styles.switchTextCol}>
+            <Text style={styles.switchLabel}>Web search ook bij eerste resolve</Text>
+            <Text style={styles.hint}>
+              Zonder zichtbare URL in de foto zoekt de app aan het eind automatisch met web search,
+              met het import-model (zie Model per functie). Met deze optie aan gebeurt dat ook
+              meteen bij de eerste resolve — vaak sneller, wel meer API-kosten.
+            </Text>
+            {activeProvider && activeProvider !== 'anthropic' ? (
+              <Text style={styles.hint}>Let op: web search werkt alleen met Anthropic.</Text>
+            ) : null}
           </View>
-          {resolvedModelId ? (
-            <Text style={styles.statusOk}>Huidig model-id: {resolvedModelId}</Text>
-          ) : (
-            <Text style={styles.statusMuted}>Nog geen model-id ingesteld.</Text>
-          )}
-        </>
-      ) : (
-        <Text style={styles.statusMuted}>Kies eerst een actieve API-sleutel om een model te selecteren.</Text>
-      )}
-
-      <Text style={styles.section}>Foto-import</Text>
-      <View style={styles.switchRow}>
-        <View style={styles.switchTextCol}>
-          <Text style={styles.switchLabel}>AH/Allerhande site-zoekfunctie gebruiken</Text>
-          <Text style={styles.hint}>
-            Probeert eerst via ah.nl recepten-zoeken de juiste recept-URL te vinden op basis van titel/zoekhint.
-            Dit is sneller en gebruikt geen AI web_search tokens. Als dit uit staat, gebruikt de app alleen AI om URL’s te raden/zoeken.
-          </Text>
+          <Switch
+            value={importWebSearch && !web && activeProvider === 'anthropic'}
+            onValueChange={(v) => {
+              if (!web && activeProvider === 'anthropic') onToggleImportWebSearch(v);
+            }}
+            disabled={web || activeProvider !== 'anthropic'}
+            trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
+            thumbColor={
+              importWebSearch && !web && activeProvider === 'anthropic' ? theme.accent : '#f4f3f4'
+            }
+          />
         </View>
-        <Switch
-          value={importAhSearch && !web}
-          onValueChange={(v) => {
-            if (!web) onToggleImportAhSearch(v);
-          }}
-          disabled={web}
-          trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
-          thumbColor={importAhSearch && !web ? theme.accent : '#f4f3f4'}
-        />
-      </View>
-      <View style={styles.switchRow}>
-        <View style={styles.switchTextCol}>
-          <Text style={styles.switchLabel}>Web search ook bij eerste resolve</Text>
-          <Text style={styles.hint}>
-            Zonder zichtbare URL in de foto zoekt de app aan het eind automatisch met web search, met het model hierboven.
-            Met deze optie aan gebeurt dat ook meteen bij de eerste resolve — vaak sneller, wel meer API-kosten.
-          </Text>
-          {activeProvider && activeProvider !== 'anthropic' ? (
-            <Text style={styles.hint}>Let op: web search werkt alleen met Anthropic.</Text>
-          ) : null}
-        </View>
-        <Switch
-          value={importWebSearch && !web && activeProvider === 'anthropic'}
-          onValueChange={(v) => {
-            if (!web && activeProvider === 'anthropic') onToggleImportWebSearch(v);
-          }}
-          disabled={web || activeProvider !== 'anthropic'}
-          trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
-          thumbColor={importWebSearch && !web && activeProvider === 'anthropic' ? theme.accent : '#f4f3f4'}
-        />
-      </View>
 
-      <View style={styles.card}>
-        <Text style={styles.switchLabel}>Parallel importeren (snelheid)</Text>
-        <Text style={styles.hint}>
-          Hoeveel recepten tegelijk opgehaald + geëxtraheerd worden bij foto-import. Hoger is sneller, maar kan bij sommige
-          keys ook eerder request-rate limits geven. Aanbevolen: 4–8.
-        </Text>
-        <Text style={styles.statusMuted}>Huidig: {importConcurrency} tegelijk</Text>
-        <Slider
-          minimumValue={1}
-          maximumValue={10}
-          step={1}
-          value={importConcurrency}
-          onValueChange={(v) => {
-            if (!web) onSetImportConcurrency(v);
-          }}
-          disabled={web}
-          minimumTrackTintColor={theme.accent}
-          maximumTrackTintColor="#ddd"
-          thumbTintColor={theme.accent}
-        />
-      </View>
-
-      <Text style={styles.section}>Debug</Text>
-      <View style={styles.switchRow}>
-        <View style={styles.switchTextCol}>
-          <Text style={styles.switchLabel}>AI-request logging</Text>
+        <View style={styles.card}>
+          <Text style={styles.switchLabel}>Parallel importeren (snelheid)</Text>
           <Text style={styles.hint}>
-            Logt lokaal (in geheugen) details over Anthropic-aanroepen: model, HTTP-status, geschatte payload-groottes
-            (zonder API-key; base64 alleen als lengte) en eventuele usage-tokens uit het antwoord.
+            Hoeveel recepten tegelijk opgehaald + geëxtraheerd worden bij foto-import. Hoger is
+            sneller, maar kan bij sommige keys ook eerder request-rate limits geven. Aanbevolen:
+            4–8.
           </Text>
+          <Text style={styles.statusMuted}>Huidig: {importConcurrency} tegelijk</Text>
+          <Slider
+            minimumValue={1}
+            maximumValue={10}
+            step={1}
+            value={importConcurrency}
+            onValueChange={(v) => {
+              if (!web) onSetImportConcurrency(v);
+            }}
+            disabled={web}
+            minimumTrackTintColor={theme.accent}
+            maximumTrackTintColor="#ddd"
+            thumbTintColor={theme.accent}
+          />
         </View>
-        <Switch
-          value={requestLog && !web && activeProvider === 'anthropic'}
-          onValueChange={(v) => {
-            if (!web && activeProvider === 'anthropic') void onToggleRequestLog(v);
-          }}
-          disabled={web || activeProvider !== 'anthropic'}
-          trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
-          thumbColor={requestLog && !web && activeProvider === 'anthropic' ? theme.accent : '#f4f3f4'}
-        />
-      </View>
-      <Pressable
-        style={[styles.btnOutline, { borderColor: theme.accent, alignSelf: 'flex-start' }]}
-        onPress={() => router.push('/settings/ai-debug')}
-      >
-        <Text style={[styles.btnOutlineText, { color: theme.accent }]}>Open AI-debuglog</Text>
-      </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -547,6 +675,15 @@ const styles = StyleSheet.create({
   },
   btnOutlineText: { fontWeight: '700', fontSize: 15 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chipScrollOuter: { flexGrow: 0 },
+  chipScrollRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: 8,
+    flexWrap: 'nowrap',
+  },
+  chipNoShrink: { flexShrink: 0 },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 9,
@@ -573,5 +710,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2ddd5',
   },
+  taskModelBlock: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  taskModelTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    marginBottom: 6,
+  },
 });
-

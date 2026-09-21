@@ -191,7 +191,7 @@ export function mergeAggregatedShoppingItems(
   return final.sort((a, b) => a.name.localeCompare(b.name, 'nl'));
 }
 
-function isStaple(ingredientName: string, staples: string[]): boolean {
+export function isStaple(ingredientName: string, staples: string[]): boolean {
   const n = normName(ingredientName);
   if (!n) return false;
   for (const st of staples) {

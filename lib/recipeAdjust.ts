@@ -98,8 +98,7 @@ export function mergeAdjustedPayload(
 }
 
 export type RecipeAdjustResult =
-  | { ok: true; payload: RecipeSavePayload }
-  | { ok: false; message: string; raw?: string };
+  { ok: true; payload: RecipeSavePayload } | { ok: false; message: string; raw?: string };
 
 export async function requestRecipeAdjustment(
   recipe: FullRecipe,

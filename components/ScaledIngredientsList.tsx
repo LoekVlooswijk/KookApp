@@ -7,16 +7,20 @@ import { effectiveBaseServings, scaledIngredientDisplayParts, servingFactor } fr
 type Props = {
   recipe: FullRecipe;
   targetServings: number;
+  headerRight?: React.ReactNode;
 };
 
-export function ScaledIngredientsList({ recipe, targetServings }: Props) {
+export function ScaledIngredientsList({ recipe, targetServings, headerRight }: Props) {
   const theme = useAppTheme();
   const factor = servingFactor(targetServings, recipe.baseServings);
   const base = effectiveBaseServings(recipe.baseServings);
 
   return (
     <View style={styles.wrap}>
-      <Text style={[styles.heading, { color: theme.accent }]}>Ingrediënten</Text>
+      <View style={styles.headingRow}>
+        <Text style={[styles.heading, { color: theme.accent }]}>Ingrediënten</Text>
+        {headerRight}
+      </View>
       {targetServings !== base ? (
         <Text style={styles.hint}>
           Geschaald voor {targetServings} persoon{targetServings === 1 ? '' : 'en'} (×
@@ -58,6 +62,12 @@ function trimFactor(f: number): string {
 const styles = StyleSheet.create({
   wrap: { marginBottom: 8 },
   heading: { fontSize: 17, fontWeight: '700', marginBottom: 6 },
+  headingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
   hint: { fontSize: 13, color: '#666', marginBottom: 10 },
   group: { marginBottom: 14 },
   groupTitle: { fontSize: 14, fontWeight: '600', color: '#555', marginBottom: 6 },

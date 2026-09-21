@@ -18,8 +18,7 @@ export type RecipePhotoInput = {
 };
 
 export type RecipePhotoOcrResult =
-  | { ok: true; text: string }
-  | { ok: false; message: string; rawModelText?: string };
+  { ok: true; text: string } | { ok: false; message: string; rawModelText?: string };
 
 export async function transcribeRecipePhoto(params: {
   photo: RecipePhotoInput;

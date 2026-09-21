@@ -2525,11 +2525,7 @@ export default function PlannerScreen() {
         </View>
       </Modal>
 
-      <Modal
-        visible={previewOpen}
-        animationType="slide"
-        onRequestClose={closeRecipePreview}
-      >
+      <Modal visible={previewOpen} animationType="slide" onRequestClose={closeRecipePreview}>
         <View style={[styles.previewRoot, { backgroundColor: theme.background }]}>
           <View style={[styles.previewHeader, { paddingTop: 8 + insets.top }]}>
             <View style={{ flex: 1, minWidth: 0 }}>
@@ -2632,7 +2628,9 @@ export default function PlannerScreen() {
                 }}
                 style={[styles.previewGoBtn, { borderColor: theme.accent }]}
               >
-                <Text style={[styles.previewGoBtnText, { color: theme.accent }]}>Volledig recept</Text>
+                <Text style={[styles.previewGoBtnText, { color: theme.accent }]}>
+                  Volledig recept
+                </Text>
               </Pressable>
             </View>
           ) : null}

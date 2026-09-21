@@ -35,8 +35,7 @@ function formatRemain(sec: number): string {
 type CheckState = { ing: number[]; step: number[] };
 
 type StepTimerState =
-  | { status: 'running'; endMs: number }
-  | { status: 'paused'; remainingSec: number };
+  { status: 'running'; endMs: number } | { status: 'paused'; remainingSec: number };
 
 /** stepId -> timer state (running is wall clock; survives background). */
 function remainingSecondsFromEnd(endMs: number): number {

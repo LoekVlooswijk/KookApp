@@ -548,26 +548,23 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
     baselineJson != null &&
     JSON.stringify(buildCurrentPayload()) !== baselineJson;
 
-  const persistFromForm = useCallback(
-    async (): Promise<void> => {
-      const payload = buildCurrentPayload();
-      if (recipeId) {
-        await updateRecipe(recipeId, payload);
-        router.back();
-        return;
-      }
-      const id = await createRecipe(payload);
-      const sid = importSessionId?.trim();
-      if (sid) disposeImportSession(sid);
-      if (addToListId != null && Number.isFinite(addToListId)) {
-        await addRecipeToList(addToListId, id);
-        router.replace(`/list/${addToListId}`);
-      } else {
-        router.replace(`/recipe/${id}`);
-      }
-    },
-    [buildCurrentPayload, recipeId, importSessionId, addToListId, router]
-  );
+  const persistFromForm = useCallback(async (): Promise<void> => {
+    const payload = buildCurrentPayload();
+    if (recipeId) {
+      await updateRecipe(recipeId, payload);
+      router.back();
+      return;
+    }
+    const id = await createRecipe(payload);
+    const sid = importSessionId?.trim();
+    if (sid) disposeImportSession(sid);
+    if (addToListId != null && Number.isFinite(addToListId)) {
+      await addRecipeToList(addToListId, id);
+      router.replace(`/list/${addToListId}`);
+    } else {
+      router.replace(`/recipe/${id}`);
+    }
+  }, [buildCurrentPayload, recipeId, importSessionId, addToListId, router]);
 
   useEffect(() => {
     if (!isDirty) return;

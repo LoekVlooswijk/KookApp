@@ -1,0 +1,7 @@
+node_modules
+.expo
+coverage
+dist
+patches
+package-lock.json
+kookapp_plan_v2.html

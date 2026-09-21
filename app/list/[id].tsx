@@ -1,15 +1,7 @@
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
-import {
-  FlatList,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { RecipeListThumb } from '../../components/RecipeListThumb';
@@ -80,8 +72,7 @@ export default function ListDetailScreen() {
     const q = filter.trim().toLowerCase();
     if (!q) return true;
     return (
-      r.title.toLowerCase().includes(q) ||
-      (r.category && r.category.toLowerCase().includes(q))
+      r.title.toLowerCase().includes(q) || (r.category && r.category.toLowerCase().includes(q))
     );
   });
 
@@ -184,7 +175,9 @@ export default function ListDetailScreen() {
       </View>
 
       {items.length > 0 ? (
-        <Text style={styles.listHint}>Lang indrukken op een recept om het uit deze lijst te halen.</Text>
+        <Text style={styles.listHint}>
+          Lang indrukken op een recept om het uit deze lijst te halen.
+        </Text>
       ) : null}
 
       <FlatList
@@ -239,7 +232,9 @@ export default function ListDetailScreen() {
               }}
             >
               <Text style={styles.modalNewRecipeText}>+ Nieuw recept maken</Text>
-              <Text style={styles.modalNewRecipeSub}>Wordt na opslaan aan deze lijst toegevoegd</Text>
+              <Text style={styles.modalNewRecipeSub}>
+                Wordt na opslaan aan deze lijst toegevoegd
+              </Text>
             </Pressable>
             <TextInput
               style={styles.input}
@@ -249,7 +244,9 @@ export default function ListDetailScreen() {
             />
             <View style={styles.bulkToolbar}>
               <Text style={styles.bulkHint}>
-                {selectedCount === 0 ? 'Selecteer één of meer recepten.' : `${selectedCount} geselecteerd`}
+                {selectedCount === 0
+                  ? 'Selecteer één of meer recepten.'
+                  : `${selectedCount} geselecteerd`}
               </Text>
               <View style={styles.bulkActions}>
                 <Pressable

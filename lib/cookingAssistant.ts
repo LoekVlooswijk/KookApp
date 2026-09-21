@@ -48,7 +48,9 @@ export function buildCookingSystemPrompt(recipe: FullRecipe, servings: number): 
   for (const g of recipe.ingredientGroups) {
     if (g.title?.trim()) lines.push(`[${g.title.trim()}]`);
     for (const i of g.ingredients) {
-      const qty = [i.amount != null ? String(i.amount) : '', i.unit?.trim() ?? ''].filter(Boolean).join(' ');
+      const qty = [i.amount != null ? String(i.amount) : '', i.unit?.trim() ?? '']
+        .filter(Boolean)
+        .join(' ');
       lines.push(qty ? `- ${qty} ${i.name}` : `- ${i.name}`);
     }
   }

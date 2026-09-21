@@ -14,4 +14,3 @@ export async function setImportExtractConcurrency(n: number): Promise<void> {
   const v = Math.max(1, Math.min(10, Math.round(n)));
   await setAppMeta(META_IMPORT_EXTRACT_CONCURRENCY, String(v));
 }
-

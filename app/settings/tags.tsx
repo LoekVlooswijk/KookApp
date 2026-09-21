@@ -1,7 +1,17 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { useHeaderHeight } from '@react-navigation/elements';
+import { useFocusEffect } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation/elements';
 import { useCallback, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
@@ -48,33 +58,36 @@ export default function TagsSettingsScreen() {
     })();
   }, [newTagInput]);
 
-  const onRemoveTag = useCallback((name: string) => {
-    void (async () => {
-      try {
-        const usage = await getManagedTagUsageCount(name);
-        const usageLine =
-          usage > 0
-            ? `Deze tag wordt nu gebruikt bij ${usage} recept${usage === 1 ? '' : 'en'}. Verwijderen haalt hem weg bij al die recepten.`
-            : 'Deze tag wordt nu niet gebruikt in recepten.';
-        const ok = await confirm({
-          title: 'Tag verwijderen?',
-          message: `${usageLine}\n\n«${name}» verwijderen?`,
-          confirmText: 'Verwijderen',
-          cancelText: 'Annuleren',
-          destructive: true,
-        });
-        if (!ok) return;
+  const onRemoveTag = useCallback(
+    (name: string) => {
+      void (async () => {
         try {
-          await deleteManagedTagEverywhere(name);
-          setManagedTags(await listManagedTags());
+          const usage = await getManagedTagUsageCount(name);
+          const usageLine =
+            usage > 0
+              ? `Deze tag wordt nu gebruikt bij ${usage} recept${usage === 1 ? '' : 'en'}. Verwijderen haalt hem weg bij al die recepten.`
+              : 'Deze tag wordt nu niet gebruikt in recepten.';
+          const ok = await confirm({
+            title: 'Tag verwijderen?',
+            message: `${usageLine}\n\n«${name}» verwijderen?`,
+            confirmText: 'Verwijderen',
+            cancelText: 'Annuleren',
+            destructive: true,
+          });
+          if (!ok) return;
+          try {
+            await deleteManagedTagEverywhere(name);
+            setManagedTags(await listManagedTags());
+          } catch (e) {
+            Alert.alert('Fout', e instanceof Error ? e.message : 'Verwijderen mislukt.');
+          }
         } catch (e) {
           Alert.alert('Fout', e instanceof Error ? e.message : 'Verwijderen mislukt.');
         }
-      } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Verwijderen mislukt.');
-      }
-    })();
-  }, [confirm]);
+      })();
+    },
+    [confirm]
+  );
 
   return (
     <KeyboardAvoidingView
@@ -86,39 +99,39 @@ export default function TagsSettingsScreen() {
         <ConfirmDialog />
         <Text style={styles.section}>Tags beheren</Text>
         <Text style={styles.hint}>
-          Voeg hier tags toe voor thema/keuken/techniek (bijv. “italiaans”, “airfryer”). Verwijderen haalt de tag ook weg
-          bij recepten die hem gebruiken.
+          Voeg hier tags toe voor thema/keuken/techniek (bijv. “italiaans”, “airfryer”). Verwijderen
+          haalt de tag ook weg bij recepten die hem gebruiken.
         </Text>
 
-      <View style={styles.row}>
-        <TextInput
-          style={[styles.input, styles.flex1]}
-          placeholder="Bijv. italiaans"
-          value={newTagInput}
-          onChangeText={setNewTagInput}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <Pressable
-          style={[styles.btnPrimary, { backgroundColor: theme.accent }]}
-          onPress={onAddTag}
-          disabled={!newTagInput.trim()}
-        >
-          <Text style={styles.btnPrimaryText}>Toevoegen</Text>
-        </Pressable>
-      </View>
-
-      {managedTags.length > 0 ? (
-        <View style={styles.chipRow}>
-          {managedTags.map((t) => (
-            <Pressable key={t} style={styles.chip} onPress={() => onRemoveTag(t)}>
-              <Text style={styles.chipText}>{t} ×</Text>
-            </Pressable>
-          ))}
+        <View style={styles.row}>
+          <TextInput
+            style={[styles.input, styles.flex1]}
+            placeholder="Bijv. italiaans"
+            value={newTagInput}
+            onChangeText={setNewTagInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Pressable
+            style={[styles.btnPrimary, { backgroundColor: theme.accent }]}
+            onPress={onAddTag}
+            disabled={!newTagInput.trim()}
+          >
+            <Text style={styles.btnPrimaryText}>Toevoegen</Text>
+          </Pressable>
         </View>
-      ) : (
-        <Text style={styles.statusMuted}>Nog geen tags om te beheren.</Text>
-      )}
+
+        {managedTags.length > 0 ? (
+          <View style={styles.chipRow}>
+            {managedTags.map((t) => (
+              <Pressable key={t} style={styles.chip} onPress={() => onRemoveTag(t)}>
+                <Text style={styles.chipText}>{t} ×</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.statusMuted}>Nog geen tags om te beheren.</Text>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -160,4 +173,3 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: 14, color: '#444', fontWeight: '600' },
 });
-

@@ -57,4 +57,3 @@ export async function removeCustomDiet(name: string): Promise<CustomDiet[]> {
   await setCustomDiets(next);
   return next;
 }
-

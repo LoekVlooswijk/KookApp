@@ -1,7 +1,17 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { useHeaderHeight } from '@react-navigation/elements';
+import { useFocusEffect } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation/elements';
 import { useCallback, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
@@ -43,20 +53,23 @@ export default function DietsSettingsScreen() {
     })();
   }, [newDietInput]);
 
-  const onRemoveDiet = useCallback((name: string) => {
-    void (async () => {
-      const ok = await confirm({
-        title: 'Dieet verwijderen?',
-        message: `«${name}» verwijderen uit de lijst? Recepten die dit dieet nog als tag hebben blijven bestaan; je kunt daarna opschonen.`,
-        confirmText: 'Verwijderen',
-        cancelText: 'Annuleren',
-        destructive: true,
-      });
-      if (!ok) return;
-      const next = await removeCustomDiet(name);
-      setCustomDietsState(next.map((d) => d.name));
-    })();
-  }, [confirm]);
+  const onRemoveDiet = useCallback(
+    (name: string) => {
+      void (async () => {
+        const ok = await confirm({
+          title: 'Dieet verwijderen?',
+          message: `«${name}» verwijderen uit de lijst? Recepten die dit dieet nog als tag hebben blijven bestaan; je kunt daarna opschonen.`,
+          confirmText: 'Verwijderen',
+          cancelText: 'Annuleren',
+          destructive: true,
+        });
+        if (!ok) return;
+        const next = await removeCustomDiet(name);
+        setCustomDietsState(next.map((d) => d.name));
+      })();
+    },
+    [confirm]
+  );
 
   return (
     <KeyboardAvoidingView
@@ -68,39 +81,39 @@ export default function DietsSettingsScreen() {
         <ConfirmDialog />
         <Text style={styles.section}>Dieten</Text>
         <Text style={styles.hint}>
-          Dit zijn extra dieetlabels naast de ingebouwde opties (Vega/Vegan/Keto). Ze worden opgeslagen als speciale tags
-          (`diet:...`) zodat gewone tags voor thema/techniek blijven.
+          Dit zijn extra dieetlabels naast de ingebouwde opties (Vega/Vegan/Keto). Ze worden
+          opgeslagen als speciale tags (`diet:...`) zodat gewone tags voor thema/techniek blijven.
         </Text>
 
-      <View style={styles.row}>
-        <TextInput
-          style={[styles.input, styles.flex1]}
-          placeholder="Bijv. glutenvrij"
-          value={newDietInput}
-          onChangeText={setNewDietInput}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <Pressable
-          style={[styles.btnPrimary, { backgroundColor: theme.accent }]}
-          onPress={onAddDiet}
-          disabled={!newDietInput.trim()}
-        >
-          <Text style={styles.btnPrimaryText}>Toevoegen</Text>
-        </Pressable>
-      </View>
-
-      {customDiets.length > 0 ? (
-        <View style={styles.chipRow}>
-          {customDiets.map((d) => (
-            <Pressable key={d} style={styles.chip} onPress={() => onRemoveDiet(d)}>
-              <Text style={styles.chipText}>{d} ×</Text>
-            </Pressable>
-          ))}
+        <View style={styles.row}>
+          <TextInput
+            style={[styles.input, styles.flex1]}
+            placeholder="Bijv. glutenvrij"
+            value={newDietInput}
+            onChangeText={setNewDietInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Pressable
+            style={[styles.btnPrimary, { backgroundColor: theme.accent }]}
+            onPress={onAddDiet}
+            disabled={!newDietInput.trim()}
+          >
+            <Text style={styles.btnPrimaryText}>Toevoegen</Text>
+          </Pressable>
         </View>
-      ) : (
-        <Text style={styles.statusMuted}>Nog geen extra diëten toegevoegd.</Text>
-      )}
+
+        {customDiets.length > 0 ? (
+          <View style={styles.chipRow}>
+            {customDiets.map((d) => (
+              <Pressable key={d} style={styles.chip} onPress={() => onRemoveDiet(d)}>
+                <Text style={styles.chipText}>{d} ×</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.statusMuted}>Nog geen extra diëten toegevoegd.</Text>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -142,4 +155,3 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: 14, color: '#444', fontWeight: '600' },
 });
-

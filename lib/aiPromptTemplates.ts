@@ -1,6 +1,30 @@
 import { formatAiCookProfileForPrompt } from './aiCookProfile';
 
-export type AiPurpose = 'recipeExtract' | 'adjustRecipe' | 'tipsChat' | 'recipeSuggestions' | 'weekPlan';
+/** Cap repair-round previous output to limit tokens and accidental large pastes. */
+const REPAIR_PREVIOUS_OUTPUT_MAX_CHARS = 14_000;
+
+function truncateForAiRepairPreviousOutput(text: string): string {
+  const t = text.trim();
+  if (t.length <= REPAIR_PREVIOUS_OUTPUT_MAX_CHARS) return t;
+  const head = Math.floor(REPAIR_PREVIOUS_OUTPUT_MAX_CHARS * 0.55);
+  const tail = REPAIR_PREVIOUS_OUTPUT_MAX_CHARS - head - 100;
+  return `${t.slice(0, head)}\n\n[… midden weggelaten (token-/privacylimiet) …]\n\n${t.slice(-tail)}`;
+}
+
+export type AiPurpose =
+  | 'recipeExtract'
+  | 'adjustRecipe'
+  | 'tipsChat'
+  | 'recipeSuggestions'
+  | 'weekPlan'
+  | 'bioScore';
+
+export const BIO_SCORE_OUTPUT_SCHEMA = `{
+  "v": 1,
+  "items": [
+    { "n": string, "l": "G"|"O"|"R", "p": "L"|"M"|"H" }
+  ]
+}`;
 
 export const RECIPE_JSON_SCHEMA = `{
   "title": string,
@@ -10,6 +34,7 @@ export const RECIPE_JSON_SCHEMA = `{
   "cook_time_min": number | null,
   "total_time_min": number | null,
   "category": string | null,
+  "bio_score_color": "red"|"orange"|"green"|null,
   "ingredient_groups": [
     {
       "title": string | null,
@@ -73,7 +98,9 @@ export function buildAiSystemPrompt(params: BuildSystemPromptParams): string {
   lines.push('');
 
   if (params.jsonOnly) {
-    lines.push('Output-regel: retourneer ALLEEN geldige JSON. Geen markdown, geen uitleg, geen tekst ervoor of erna.');
+    lines.push(
+      'Output-regel: retourneer ALLEEN geldige JSON. Geen markdown, geen uitleg, geen tekst ervoor of erna.'
+    );
     lines.push('');
   }
 
@@ -130,7 +157,7 @@ export function buildAiRepairUserPrompt(params: BuildRepairPromptParams): string
   lines.push(params.outputSchema.trim());
   lines.push('');
   lines.push('PREVIOUS_OUTPUT:');
-  lines.push(params.previousOutput.trim());
+  lines.push(truncateForAiRepairPreviousOutput(params.previousOutput));
   lines.push('');
   lines.push('Retourneer opnieuw ALLEEN JSON dat exact voldoet aan het schema.');
   return lines.join('\n').trim();
@@ -152,6 +179,55 @@ Regels:
 - Schat prep_time_min, cook_time_min, total_time_min als ze niet expliciet staan.
 - timer_seconds: altijd een geheel aantal seconden (bijv. 30, 90; geen breuken in minuten zoals 0,5).
 - Alle teksten in het Nederlands als de bron Nederlands is.
+- Tags ("tags"): maximaal 6–8 nuttige steekwoorden (keuken, dieet, techniek, hoofdingrediënt, seizoen). Geen winkel- of merknamen, geen woorden als "recept", "snel" of "makkelijk" tenzij ze echt onderscheidend zijn.
+- Gebruik liever vaste filterlabels: voor een avondmaaltijd-hoofdgang tag "hoofdgerecht", niet "diner" of "avondeten". Zet "vegetarisch" als het om vlees/vis-vrij gaat; "vegan" alleen bij echt plantaardig zonder dierlijke producten.
+- Geen dubbele betekenis tussen maaltijdmoment en gang: geen combinatie van lunch, ontbijt, brunch, borrel of middageten samen met hoofdgerecht, voorgerecht, nagerecht, bijgerecht of tussengerecht.`,
+  });
+}
+
+/**
+ * OCR/vision stap voor receptfoto’s: transcribeer tekst zo letterlijk mogelijk.
+ * Output is plain text (geen JSON), zodat we daarna met een tweede (text-only) stap naar JSON kunnen.
+ */
+export function buildRecipePhotoOcrSystemPrompt(): string {
+  return buildAiSystemPrompt({
+    purpose: 'recipeExtract',
+    jsonOnly: false,
+    instructionsNl: `Je helpt bij het importeren van een recept uit een foto (boek/print/screenshot).
+
+Taak:
+- Schrijf alle leesbare recepttekst uit de afbeelding over als PLAIN TEXT.
+- Behoud regelafbrekingen en kopjes (bijv. "Ingrediënten", "Bereiding", "Voor de saus") waar zichtbaar.
+- Neem hoeveelheden, eenheden en tijden letterlijk over (bijv. "200 g", "1 el", "20 min").
+- Als tekst deels onleesbaar is: laat het weg (niet gokken) of markeer met "…".
+
+Regels:
+- GEEN JSON.
+- GEEN markdown.
+- GEEN uitleg; alleen de getranscribeerde tekst.`,
+  });
+}
+
+/**
+ * Tweede stap voor receptfoto’s: van (mogelijk rommelige) OCR-tekst naar strict JSON schema.
+ */
+export function buildRecipeExtractFromOcrTextSystemPrompt(): string {
+  return buildAiSystemPrompt({
+    purpose: 'recipeExtract',
+    jsonOnly: true,
+    instructionsNl: `Je bent een recept-parser.
+Je krijgt OCR-tekst die uit één of meerdere foto’s is getranscribeerd.
+Extraheer het recept uit die tekst en retourneer ALLEEN één JSON-object (geen markdown, geen uitleg ervoor of erna) in exact dit schema:
+
+Schema:
+${RECIPE_JSON_SCHEMA}
+
+Regels:
+- Normaliseer eenheden: gebruik g, kg, ml, l, el, tl, stuk(s), teen, plak, tak, blad, snuf, of "naar smaak" waar passend.
+- Groepeer ingrediënten als de tekst duidelijke secties heeft.
+- Schat prep_time_min, cook_time_min, total_time_min als ze niet expliciet staan.
+- timer_seconds: altijd een geheel aantal seconden (bijv. 30, 90; geen breuken in minuten zoals 0,5).
+- Alle teksten in het Nederlands.
 - Tags ("tags"): maximaal 6–8 nuttige steekwoorden (keuken, dieet, techniek, hoofdingrediënt, seizoen). Geen winkel- of merknamen, geen woorden als "recept", "snel" of "makkelijk" tenzij ze echt onderscheidend zijn.
 - Gebruik liever vaste filterlabels: voor een avondmaaltijd-hoofdgang tag "hoofdgerecht", niet "diner" of "avondeten". Zet "vegetarisch" als het om vlees/vis-vrij gaat; "vegan" alleen bij echt plantaardig zonder dierlijke producten.
 - Geen dubbele betekenis tussen maaltijdmoment en gang: geen combinatie van lunch, ontbijt, brunch, borrel of middageten samen met hoofdgerecht, voorgerecht, nagerecht, bijgerecht of tussengerecht.`,
@@ -215,7 +291,47 @@ Regels:
   });
 }
 
+export function buildBioScoreSystemPrompt(): string {
+  return buildAiSystemPrompt({
+    purpose: 'bioScore',
+    jsonOnly: true,
+    instructionsNl: `Je beoordeelt ingrediënten voor een bio-score in een kookapp.
+Je krijgt een lijst met ingredient-namen (losse woorden/phrases).
+
+Taak:
+- Beoordeel ALLEEN ingrediënten die duidelijk groente of fruit zijn.
+- Negeer alles dat geen groente/fruit is (vlees/vis/zuivel/granen/olie/kruiden/specerijen/water/zout/etc). Zet die NIET in de output.
+- Retourneer ALLEEN JSON volgens het schema hieronder.
+
+Herkomst buckets (l):
+- "G": NL/BE/DE (groen)
+- "O": rest van Europa (oranje)
+- "R": wereld/elders (buiten Europa) (rood)
+- Als herkomst onbekend is: kies de meest waarschijnlijke bucket (default "O"), tenzij het ingrediënt bijna altijd NL/BE/DE is.
+
+Pesticiden (p):
+- "L": geen/heel weinig
+- "M": wat
+- "H": veel
+
+OUTPUT_SCHEMA:
+${BIO_SCORE_OUTPUT_SCHEMA}`,
+  });
+}
+
+export function buildBioScoreUserPrompt(ingredients: string[]): string {
+  const list = (Array.isArray(ingredients) ? ingredients : [])
+    .map((x) => (typeof x === 'string' ? x.trim() : ''))
+    .filter(Boolean)
+    .slice(0, 40);
+  return `PURPOSE: bioScore
+
+INGREDIENTS:
+${JSON.stringify(list)}`;
+}
+
 export function buildWeekPlanUserPrompt(params: {
+  currentDate?: string;
   days: string[];
   recipes: Array<{
     id: number;
@@ -229,12 +345,16 @@ export function buildWeekPlanUserPrompt(params: {
   wishesText?: string;
   defaultServings?: number;
   recentlyUsedRecipeIds?: number[];
+  /** When the prompt embeds a capped subset of the library, tell the model what happened. */
+  selectionMeta?: { totalInLibrary: number; includedInPrompt: number };
 }): string {
   const days = Array.isArray(params.days) ? params.days : [];
   const pairBlocks: Array<{ cook_day: string; leftover_day: string }> = [];
   const soloDays: string[] = [];
   const isIsoDate = (s: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(s);
-  const daysNorm = days.map((d) => (typeof d === 'string' ? d.trim() : '')).filter((d) => isIsoDate(d));
+  const daysNorm = days
+    .map((d) => (typeof d === 'string' ? d.trim() : ''))
+    .filter((d) => isIsoDate(d));
   // Only pair within consecutive calendar-day runs.
   // For odd-length runs: make the FIRST day solo, so cooking days cluster (e.g. 3 days -> solo day1, pair day2-3).
   // This prevents "cook once, then 2-3 days nothing, then cook again" patterns.
@@ -242,7 +362,8 @@ export function buildWeekPlanUserPrompt(params: {
     const [y, m, d] = dateOnly.split('-').map((x) => Number.parseInt(x, 10));
     return new Date(y, (m ?? 1) - 1, d ?? 1).getTime();
   };
-  const dayDiff = (a: string, b: string): number => Math.round((asDateMs(a) - asDateMs(b)) / (24 * 60 * 60 * 1000));
+  const dayDiff = (a: string, b: string): number =>
+    Math.round((asDateMs(a) - asDateMs(b)) / (24 * 60 * 60 * 1000));
   const runs: string[][] = [];
   let cur: string[] = [];
   for (const d of daysNorm) {
@@ -275,12 +396,19 @@ export function buildWeekPlanUserPrompt(params: {
       pairBlocks.push({ cook_day: run[i] ?? '', leftover_day: run[i + 1] ?? '' });
     }
   }
-  const lastSoloDay = soloDays.length > 0 ? soloDays[soloDays.length - 1] ?? '' : '';
+  const lastSoloDay = soloDays.length > 0 ? (soloDays[soloDays.length - 1] ?? '') : '';
   const recent = Array.isArray(params.recentlyUsedRecipeIds) ? params.recentlyUsedRecipeIds : [];
   const recentlyUsedRecipeIds = Array.from(
-    new Set(recent.map((x) => (typeof x === 'number' && Number.isFinite(x) ? Math.round(x) : -1)).filter((x) => x > 0))
+    new Set(
+      recent
+        .map((x) => (typeof x === 'number' && Number.isFinite(x) ? Math.round(x) : -1))
+        .filter((x) => x > 0)
+    )
   ).slice(0, 40);
+  const sel = params.selectionMeta;
+  const currentDate = typeof params.currentDate === 'string' ? params.currentDate.trim() : '';
   const input = {
+    current_date: currentDate || null,
     days: daysNorm,
     wishes_text: (params.wishesText ?? '').trim(),
     servings_default: params.defaultServings ?? 2,
@@ -291,6 +419,16 @@ export function buildWeekPlanUserPrompt(params: {
       blocks: pairBlocks.filter((b) => b.cook_day && b.leftover_day),
       last_solo_day: lastSoloDay || null,
     },
+    ...(sel && sel.totalInLibrary > sel.includedInPrompt
+      ? {
+          selection_meta: {
+            total_in_library: sel.totalInLibrary,
+            included_in_prompt: sel.includedInPrompt,
+            note_nl:
+              'Niet je volledige receptenbibliotheek staat in deze lijst; alleen onderstaande recepten zijn meegestuurd (favorieten en recent eerst). Gebruik alleen recipe_id’s uit recipes.',
+          },
+        }
+      : {}),
   };
   return `PURPOSE: weekPlan
 
@@ -310,4 +448,3 @@ HARD RULES:
   - Ga er standaard van uit dat dit met 1× koken op gaat (dus verwerk het in maximaal 1 kookdag + eventuele restjesdag die daarvan afhangt).
   - Gebruik zulke ingrediënten NIET in alle gerechten, tenzij de gebruiker expliciet zegt dat het veel is of in meerdere gerechten moet.`;
 }
-

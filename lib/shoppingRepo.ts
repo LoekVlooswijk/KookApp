@@ -54,13 +54,10 @@ export async function addManualShoppingItem(params: {
   const db = await ensureDatabaseAsync();
   const name = params.name.trim();
   if (!name) return;
-  await db.runAsync('INSERT INTO shopping_items (plan_id, name, amount, unit, is_checked, category) VALUES (?, ?, ?, ?, 0, ?)', [
-    null,
-    name,
-    clampAmount(params.amount ?? null),
-    (params.unit ?? '').trim() || null,
-    null,
-  ]);
+  await db.runAsync(
+    'INSERT INTO shopping_items (plan_id, name, amount, unit, is_checked, category) VALUES (?, ?, ?, ?, 0, ?)',
+    [null, name, clampAmount(params.amount ?? null), (params.unit ?? '').trim() || null, null]
+  );
 }
 
 export async function toggleShoppingItemChecked(id: number, checked: boolean): Promise<void> {
@@ -75,10 +72,14 @@ export async function deleteShoppingItem(id: number): Promise<void> {
 
 export async function clearWeekShoppingItems(): Promise<void> {
   const db = await ensureDatabaseAsync();
-  await db.runAsync('DELETE FROM shopping_items WHERE category = ?', [SHOPPING_INTERNAL_CATEGORY_WEEK]);
+  await db.runAsync('DELETE FROM shopping_items WHERE category = ?', [
+    SHOPPING_INTERNAL_CATEGORY_WEEK,
+  ]);
 }
 
-export async function insertWeekShoppingItems(items: Array<{ name: string; amount: number | null; unit: string | null }>): Promise<void> {
+export async function insertWeekShoppingItems(
+  items: Array<{ name: string; amount: number | null; unit: string | null }>
+): Promise<void> {
   const merged = mergeAggregatedShoppingItems(items);
   const db = await ensureDatabaseAsync();
   await db.withTransactionAsync(async () => {
@@ -87,9 +88,14 @@ export async function insertWeekShoppingItems(items: Array<{ name: string; amoun
       if (!name) continue;
       await db.runAsync(
         'INSERT INTO shopping_items (plan_id, name, amount, unit, is_checked, category) VALUES (?, ?, ?, ?, 0, ?)',
-        [null, name, clampAmount(it.amount), (it.unit ?? '').trim() || null, SHOPPING_INTERNAL_CATEGORY_WEEK]
+        [
+          null,
+          name,
+          clampAmount(it.amount),
+          (it.unit ?? '').trim() || null,
+          SHOPPING_INTERNAL_CATEGORY_WEEK,
+        ]
       );
     }
   });
 }
-

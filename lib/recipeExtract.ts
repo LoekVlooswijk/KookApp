@@ -1,11 +1,16 @@
 import { callAiText } from './aiClient';
-import { buildAiRepairUserPrompt, buildRecipeExtractSystemPrompt, RECIPE_JSON_SCHEMA } from './aiPromptTemplates';
+import {
+  buildAiRepairUserPrompt,
+  buildRecipeExtractSystemPrompt,
+  RECIPE_JSON_SCHEMA,
+} from './aiPromptTemplates';
 import {
   extractApplicationLdJsonScripts,
   filterRecipePageHtml,
   JSON_LD_BLOCKS_MARKER,
 } from './recipePageHtmlFilter';
 import { extractDietFromTags, sanitizeImportedRecipeTags } from './recipeTagSanitize';
+import { coerceBioScoreColor, normalizeRecipeSavePayload } from './recipeSavePayload';
 import type { RecipeSavePayload } from './types';
 
 // Keep this low to avoid org-level TPM spikes when importing multiple recipes in a row.
@@ -70,9 +75,14 @@ function trimToFirstCompleteJsonObject(s: string): string {
 }
 
 /** Combineer: code fence weg, proza vóór "{", rest tot sluitende "}" van het root-object. */
-export function coerceAnthropicJsonText(raw: string): string {
+export function coerceModelJsonText(raw: string): string {
   const lead = stripLeadingProseBeforeJson(raw);
   return trimToFirstCompleteJsonObject(lead);
+}
+
+/** Backward-compat alias (older name; keep until next cleanup). */
+export function coerceAnthropicJsonText(raw: string): string {
+  return coerceModelJsonText(raw);
 }
 
 function isRecord(x: unknown): x is Record<string, unknown> {
@@ -184,13 +194,21 @@ export function parseExtractedRecipeJson(
     return { ok: false, reason: 'Er zijn geen bereidingsstappen gevonden om te importeren.' };
   }
 
+  const ingredientNamesForTags: string[] = [];
+  for (const g of ingredientGroups) {
+    for (const ing of g.ingredients) {
+      if (ing.name) ingredientNamesForTags.push(ing.name);
+    }
+  }
+
   const tagsIn = Array.isArray(root.tags) ? root.tags : [];
   const sanitizedTags = sanitizeImportedRecipeTags(
-    tagsIn.map((t) => (typeof t === 'string' ? t.trim() : '')).filter(Boolean)
+    tagsIn.map((t) => (typeof t === 'string' ? t.trim() : '')).filter(Boolean),
+    { ingredientNames: ingredientNamesForTags }
   );
   const { dietVegetarian, dietVegan, dietKeto, tagNames } = extractDietFromTags(sanitizedTags);
 
-  const payload: RecipeSavePayload = {
+  const payload = normalizeRecipeSavePayload({
     title,
     description: (description ?? '').trim(),
     sourceUrl: sourceUrl.trim(),
@@ -204,25 +222,34 @@ export function parseExtractedRecipeJson(
     dietKeto,
     isFavorite: false,
     wantToTry: false,
+    bioScoreColor: coerceBioScoreColor(root.bio_score_color),
+    bioScoreUpdatedAt: null,
+    bioScoreItems: null,
     notes: '',
     imageUri: '',
     tagNames,
     ingredientGroups,
     stepSections,
-  };
+  });
 
   return { ok: true, payload };
 }
 
 export type ExtractResult =
-  | { ok: true; payload: RecipeSavePayload }
+  | { ok: true; payload: RecipeSavePayload; sourceHtmlTruncated?: boolean }
   | { ok: false; message: string; rawModelText?: string; debugSnippet?: string };
 
 function isAhAllerhandeUrl(url: string): boolean {
   try {
     const u = new URL(url.trim());
     const h = u.hostname.toLowerCase();
-    return h === 'www.ah.nl' || h === 'ah.nl' || h.endsWith('.ah.nl') || h === 'allerhande.nl' || h.endsWith('.allerhande.nl');
+    return (
+      h === 'www.ah.nl' ||
+      h === 'ah.nl' ||
+      h.endsWith('.ah.nl') ||
+      h === 'allerhande.nl' ||
+      h.endsWith('.allerhande.nl')
+    );
   } catch {
     return false;
   }
@@ -399,24 +426,32 @@ function extractRecipeJsonLdOnlyFromScripts(jsonLdScripts: string[]): string[] {
   return [JSON.stringify(minimal.length > 0 ? minimal : recipes)];
 }
 
-function clipHtmlForModel(filtered: string): string {
-  const maxChars = filtered.startsWith(JSON_LD_BLOCKS_MARKER) ? MAX_JSONLD_ONLY_CHARS : MAX_HTML_CHARS;
-  if (filtered.length <= maxChars) return filtered;
+function clipHtmlForModel(filtered: string): { clipped: string; truncated: boolean } {
+  const maxChars = filtered.startsWith(JSON_LD_BLOCKS_MARKER)
+    ? MAX_JSONLD_ONLY_CHARS
+    : MAX_HTML_CHARS;
+  if (filtered.length <= maxChars) return { clipped: filtered, truncated: false };
   const i = filtered.indexOf(JSON_LD_BLOCKS_MARKER);
   if (i === -1) {
-    return `${filtered.slice(0, maxChars)}\n\n<!-- HTML ingekort -->`;
+    return {
+      clipped: `${filtered.slice(0, maxChars)}\n\n<!-- HTML ingekort -->`,
+      truncated: true,
+    };
   }
   const htmlPart = filtered.slice(0, i);
   const ldTail = filtered.slice(i);
   const budget = maxChars - ldTail.length - 80;
   if (budget < 500) {
-    return `${filtered.slice(0, maxChars)}\n\n<!-- HTML + JSON-LD ingekort -->`;
+    return {
+      clipped: `${filtered.slice(0, maxChars)}\n\n<!-- HTML + JSON-LD ingekort -->`,
+      truncated: true,
+    };
   }
   const clippedMain =
     htmlPart.length <= budget
       ? htmlPart
       : `${htmlPart.slice(0, budget)}\n\n<!-- HTML ingekort; JSON-LD hieronder volledig -->`;
-  return clippedMain + ldTail;
+  return { clipped: clippedMain + ldTail, truncated: true };
 }
 
 export async function extractRecipeFromPageHtml(
@@ -433,19 +468,20 @@ export async function extractRecipeFromPageHtml(
     preferJsonLdOnly && recipeOnly.length > 0
       ? `${JSON_LD_BLOCKS_MARKER}${recipeOnly.join('\n---JSONLD---\n')}`
       : filterRecipePageHtml(html);
-  const clipped = clipHtmlForModel(filtered);
+  const clip = clipHtmlForModel(filtered);
 
   const debug =
-    `debug_chars: filtered=${filtered.length} clipped=${clipped.length}` +
+    `debug_chars: filtered=${filtered.length} clipped=${clip.clipped.length}` +
     (preferJsonLdOnly
       ? ` jsonld_scripts=${jsonLdChunks.length} recipe_only=${recipeOnly.length > 0}`
       : '');
-  const user = `Bron-URL: ${sourceUrl}\n${debug}\n\nHTML:\n\n${clipped}`;
+  const user = `Bron-URL: ${sourceUrl}\n${debug}\n\nHTML:\n\n${clip.clipped}`;
 
   const ai = await callAiText({
     system: EXTRACT_SYSTEM_PROMPT,
     user,
     maxTokens: 8192,
+    task: 'import',
   });
 
   if (!ai.ok) {
@@ -469,16 +505,22 @@ export async function extractRecipeFromPageHtml(
       system: EXTRACT_SYSTEM_PROMPT,
       user: repairUser,
       maxTokens: 8192,
+      task: 'import',
     });
     if (!repaired.ok) {
-      return { ok: false, message: parsed.reason, rawModelText: ai.text, debugSnippet: repaired.debugSnippet };
+      return {
+        ok: false,
+        message: parsed.reason,
+        rawModelText: ai.text,
+        debugSnippet: repaired.debugSnippet,
+      };
     }
     const parsed2 = parseExtractedRecipeJson(repaired.text, sourceUrl);
     if (!parsed2.ok) {
       return { ok: false, message: parsed2.reason, rawModelText: repaired.text };
     }
-    return { ok: true, payload: parsed2.payload };
+    return { ok: true, payload: parsed2.payload, sourceHtmlTruncated: clip.truncated };
   }
 
-  return { ok: true, payload: parsed.payload };
+  return { ok: true, payload: parsed.payload, sourceHtmlTruncated: clip.truncated };
 }

@@ -65,9 +65,14 @@ export async function deleteManagedTagEverywhere(
   }
 
   const db = await ensureDatabaseAsync();
-  let out: { removedLinks: number; removedTagRow: boolean } = { removedLinks: 0, removedTagRow: false };
+  let out: { removedLinks: number; removedTagRow: boolean } = {
+    removedLinks: 0,
+    removedTagRow: false,
+  };
   await db.withTransactionAsync(async () => {
-    const tagRow = await db.getFirstAsync<{ id: number }>('SELECT id FROM tags WHERE name = ?', [n]);
+    const tagRow = await db.getFirstAsync<{ id: number }>('SELECT id FROM tags WHERE name = ?', [
+      n,
+    ]);
     if (!tagRow) {
       out = { removedLinks: 0, removedTagRow: false };
       return;
@@ -83,4 +88,3 @@ export async function deleteManagedTagEverywhere(
   });
   return out;
 }
-

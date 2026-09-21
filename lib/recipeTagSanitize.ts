@@ -98,17 +98,55 @@ function rewriteOneTag(raw: string): string {
   return TAG_SYNONYMS.get(t) ?? t;
 }
 
+const ING_WORD_RE = /[\p{L}]{2,}/gu;
+
+/**
+ * Verwijdert tags die hetzelfde zijn als een ingrediënt(woord) of een duidelijke
+ * samenstelling daarvan (bijv. tag `venkel` bij `venkelknol`). Geen match op
+ * alleen uitgang `-e` (bijv. `italiaans` vs `italiaanse kruiden`).
+ */
+export function shouldDropTagAsIngredientDuplicate(
+  tagNormalized: string,
+  ingredientNames: string[]
+): boolean {
+  const tag = norm(tagNormalized);
+  if (!tag || tag.length < 3 || !ingredientNames.length) return false;
+
+  for (const raw of ingredientNames) {
+    const line = norm(typeof raw === 'string' ? raw : '');
+    if (!line) continue;
+    const words = line.match(ING_WORD_RE) ?? [];
+    for (const word of words) {
+      const w = word.toLowerCase();
+      if (w === tag) return true;
+      // Samengestelde produktnamen (venkelknol), niet bijvoeglijke `-e`.
+      if (tag.length >= 4 && w.length > tag.length && w.startsWith(tag)) {
+        const suffix = w.slice(tag.length);
+        if (suffix.length === 1 && suffix === 'e') continue;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Na AI-extractie: herschrijven, dedup, gang vs resterend maaltijd, vegan > vegetarisch.
  * Behoudt volgorde van eerste voorkomen.
+ * Optioneel: laat tags weg die overeenkomen met ingrediëntnamen.
  */
-export function sanitizeImportedRecipeTags(rawTags: string[]): string[] {
+export function sanitizeImportedRecipeTags(
+  rawTags: string[],
+  options?: { ingredientNames?: string[] }
+): string[] {
+  const ingredientNames = options?.ingredientNames ?? [];
   const ordered: string[] = [];
   const seen = new Set<string>();
   for (const raw of rawTags) {
     if (typeof raw !== 'string') continue;
     const r = rewriteOneTag(raw);
     if (!r || seen.has(r)) continue;
+    if (shouldDropTagAsIngredientDuplicate(r, ingredientNames)) continue;
     seen.add(r);
     ordered.push(r);
   }

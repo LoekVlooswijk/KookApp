@@ -15,4 +15,3 @@ export async function getImportAhSiteSearchEnabled(): Promise<boolean> {
 export async function setImportAhSiteSearchEnabled(on: boolean): Promise<void> {
   await setAppMeta(META_IMPORT_AH_SITE_SEARCH, on ? '1' : '0');
 }
-

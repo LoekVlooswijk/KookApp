@@ -1,6 +1,7 @@
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
+import Slider from '@react-native-community/slider';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,15 +24,36 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
 import { callAiText, hasActiveAiKey } from '../../lib/aiClient';
-import { buildAiRepairUserPrompt, buildWeekPlanSystemPrompt, buildWeekPlanUserPrompt, WEEK_PLAN_OUTPUT_SCHEMA } from '../../lib/aiPromptTemplates';
+import {
+  buildAiRepairUserPrompt,
+  buildWeekPlanSystemPrompt,
+  buildWeekPlanUserPrompt,
+  WEEK_PLAN_OUTPUT_SCHEMA,
+} from '../../lib/aiPromptTemplates';
 import { getAiCookProfile, hydrateAiCookProfileFromDb } from '../../lib/aiCookProfile';
 import { ensureDatabaseAsync } from '../../lib/db';
+import { safeErrorMessage } from '../../lib/logSafe';
+import { getCustomDiets } from '../../lib/dietPrefs';
 import { parseExtractedRecipeJson } from '../../lib/recipeExtract';
 import { aggregateShoppingFromWeekPlans } from '../../lib/shopping';
 import { clearWeekShoppingItems, insertWeekShoppingItems } from '../../lib/shoppingRepo';
-import { createRecipe, getFullRecipe, listRecipes, listRecipesForWeekPlanningPrompt } from '../../lib/recipesRepo';
+import {
+  countRecipes,
+  createRecipe,
+  getFullRecipe,
+  listDistinctRecipeCategories,
+  listDistinctRecipeTags,
+  listRecipes,
+  listRecipesForWeekPlanningPrompt,
+  MAX_RECIPES_IN_WEEK_PLAN_PROMPT,
+  searchRecipes,
+  type RecipeBrowseFilters,
+} from '../../lib/recipesRepo';
 import type { FullRecipe, RecipeListItem, RecipeSavePayload } from '../../lib/types';
-import { getShoppingStaplesExcludeList, hydrateShoppingStaplesPrefsFromDb } from '../../lib/shoppingStaplesPrefs';
+import {
+  getShoppingStaplesExcludeList,
+  hydrateShoppingStaplesPrefsFromDb,
+} from '../../lib/shoppingStaplesPrefs';
 import {
   addDays,
   deleteWeekPlanByDate,
@@ -73,7 +95,10 @@ export default function PlannerScreen() {
   const today = useMemo(() => toIsoDateOnly(new Date()), []);
   const startDate = today;
   const endDate = useMemo(() => addDays(today, 6), [today]);
-  const dates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(startDate, i)), [startDate]);
+  const dates = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(startDate, i)),
+    [startDate]
+  );
 
   const [recipes, setRecipes] = useState<RecipeListItem[]>([]);
   const [plansByDate, setPlansByDate] = useState<
@@ -91,6 +116,20 @@ export default function PlannerScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
   const [activeDate, setActiveDate] = useState<string | null>(null);
+  const [pickerCategories, setPickerCategories] = useState<string[]>([]);
+  const [pickerRecipeTags, setPickerRecipeTags] = useState<string[]>([]);
+  const [pickerCustomDiets, setPickerCustomDiets] = useState<string[]>([]);
+  const [pickerCategoryKey, setPickerCategoryKey] = useState<string | null>(null);
+  const [pickerTagKeys, setPickerTagKeys] = useState<string[]>([]);
+  const [pickerDietKeys, setPickerDietKeys] = useState<string[]>([]);
+  const [pickerCustomDietKeys, setPickerCustomDietKeys] = useState<string[]>([]);
+  const [pickerFavoritesOnly, setPickerFavoritesOnly] = useState(false);
+  const [pickerWantToTryOnly, setPickerWantToTryOnly] = useState(false);
+  const [pickerMaxTotalTimeMin, setPickerMaxTotalTimeMin] = useState<number | null>(null);
+  const [pickerFiltersModalOpen, setPickerFiltersModalOpen] = useState(false);
+  const [pickerTagsPickerOpen, setPickerTagsPickerOpen] = useState(false);
+  const [pickerItems, setPickerItems] = useState<RecipeListItem[]>([]);
+  const [pickerBusy, setPickerBusy] = useState(false);
   const [busyExport, setBusyExport] = useState(false);
   const [busyGenerate, setBusyGenerate] = useState(false);
   const [wishesText, setWishesText] = useState('');
@@ -109,7 +148,9 @@ export default function PlannerScreen() {
       }
     >
   >({});
-  const [pendingLeftoverOfDateByDate, setPendingLeftoverOfDateByDate] = useState<Record<string, string>>({});
+  const [pendingLeftoverOfDateByDate, setPendingLeftoverOfDateByDate] = useState<
+    Record<string, string>
+  >({});
   const [pendingReplaceOpen, setPendingReplaceOpen] = useState(false);
   const [pendingReplaceDate, setPendingReplaceDate] = useState<string | null>(null);
   const [pendingReplaceText, setPendingReplaceText] = useState('');
@@ -117,9 +158,14 @@ export default function PlannerScreen() {
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewDate, setPreviewDate] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewRecipeId, setPreviewRecipeId] = useState<number | null>(null);
   const [previewTitle, setPreviewTitle] = useState('');
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
-  const [previewIngredients, setPreviewIngredients] = useState<RecipeSavePayload['ingredientGroups']>([]);
+  const [previewIngredients, setPreviewIngredients] = useState<
+    RecipeSavePayload['ingredientGroups']
+  >([]);
   const [previewSteps, setPreviewSteps] = useState<RecipeSavePayload['stepSections']>([]);
   const [previewServings, setPreviewServings] = useState<number>(2);
   const previewReqIdRef = useRef(0);
@@ -127,6 +173,7 @@ export default function PlannerScreen() {
   const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
   const [expandedByDate, setExpandedByDate] = useState<Record<string, boolean>>({});
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [weekPlanRecipeLibraryCount, setWeekPlanRecipeLibraryCount] = useState(0);
 
   const toggleExpandedForDate = useCallback((date: string) => {
     setExpandedByDate((prev) => ({ ...prev, [date]: !prev[date] }));
@@ -138,7 +185,8 @@ export default function PlannerScreen() {
 
   const [selectedByDate, setSelectedByDate] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
-    for (const d of Array.from({ length: 7 }, (_, i) => addDays(toIsoDateOnly(new Date()), i))) init[d] = false;
+    for (const d of Array.from({ length: 7 }, (_, i) => addDays(toIsoDateOnly(new Date()), i)))
+      init[d] = false;
     return init;
   });
 
@@ -156,9 +204,22 @@ export default function PlannerScreen() {
         await hydrateAiCookProfileFromDb();
         setDefaultServings(getAiCookProfile().defaultServings ?? 2);
 
-        const [rs, rows] = await Promise.all([listRecipes(), listWeekPlansBetween(startDate, endDate)]);
+        const [rs, rows, recipeTotal] = await Promise.all([
+          listRecipes(),
+          listWeekPlansBetween(startDate, endDate),
+          countRecipes(),
+        ]);
         setRecipes(rs);
-        const next: Record<string, { recipeId: number; servings: number; cooksForDays: number; leftoverOfDate?: string | null }> = {};
+        setWeekPlanRecipeLibraryCount(recipeTotal);
+        const next: Record<
+          string,
+          {
+            recipeId: number;
+            servings: number;
+            cooksForDays: number;
+            leftoverOfDate?: string | null;
+          }
+        > = {};
         for (const r of rows) {
           next[r.date] = {
             recipeId: r.recipeId,
@@ -267,8 +328,165 @@ export default function PlannerScreen() {
   const openPickerForDate = useCallback((date: string) => {
     setActiveDate(date);
     setPickerQuery('');
+    // Keep current filters, but ensure all picker-related sheets are closed.
+    setPickerFiltersModalOpen(false);
+    setPickerTagsPickerOpen(false);
     setPickerOpen(true);
   }, []);
+
+  const pickerSelectedTagSet = useMemo(() => new Set<string>(pickerTagKeys), [pickerTagKeys]);
+  const pickerSelectedDietSet = useMemo(() => new Set<string>(pickerDietKeys), [pickerDietKeys]);
+  const pickerSelectedCustomDietSet = useMemo(
+    () => new Set<string>(pickerCustomDietKeys),
+    [pickerCustomDietKeys]
+  );
+
+  const togglePickerTag = useCallback((t: string) => {
+    setPickerTagKeys((prev) => {
+      const s = new Set(prev);
+      if (s.has(t)) s.delete(t);
+      else s.add(t);
+      return Array.from(s);
+    });
+  }, []);
+  const clearPickerTags = useCallback(() => setPickerTagKeys([]), []);
+
+  const togglePickerDiet = useCallback((k: string) => {
+    setPickerDietKeys((prev) => {
+      const s = new Set(prev);
+      if (s.has(k)) s.delete(k);
+      else s.add(k);
+      return Array.from(s);
+    });
+  }, []);
+  const clearPickerDiet = useCallback(() => setPickerDietKeys([]), []);
+
+  const togglePickerCustomDiet = useCallback((name: string) => {
+    setPickerCustomDietKeys((prev) => {
+      const s = new Set(prev);
+      if (s.has(name)) s.delete(name);
+      else s.add(name);
+      return Array.from(s);
+    });
+  }, []);
+  const clearPickerCustomDiets = useCallback(() => setPickerCustomDietKeys([]), []);
+
+  const pickerSecondaryFilterCount = useMemo(() => {
+    let n = 0;
+    if (pickerMaxTotalTimeMin != null) n++;
+    if (pickerCategoryKey != null) n++;
+    n += pickerTagKeys.length;
+    n += pickerDietKeys.length;
+    n += pickerCustomDietKeys.length;
+    return n;
+  }, [
+    pickerMaxTotalTimeMin,
+    pickerCategoryKey,
+    pickerTagKeys.length,
+    pickerDietKeys.length,
+    pickerCustomDietKeys.length,
+  ]);
+
+  const pickerChipOnStyle = useMemo(
+    () => ({ backgroundColor: theme.accentSoft, borderColor: theme.accent }),
+    [theme.accentSoft, theme.accent]
+  );
+  const pickerChipTextOnStyle = useMemo(
+    () => ({ color: theme.accentSoftText }),
+    [theme.accentSoftText]
+  );
+
+  const pickerBrowseFilters = useMemo(
+    (): RecipeBrowseFilters => ({
+      query: pickerQuery,
+      category: pickerCategoryKey,
+      tagNames: pickerTagKeys,
+      dietKeys: pickerDietKeys,
+      customDietNames: pickerCustomDietKeys,
+      favoritesOnly: pickerFavoritesOnly,
+      wantToTryOnly: pickerWantToTryOnly,
+      maxTotalTimeMin: pickerMaxTotalTimeMin,
+      inListId: null,
+    }),
+    [
+      pickerQuery,
+      pickerCategoryKey,
+      pickerTagKeys,
+      pickerDietKeys,
+      pickerCustomDietKeys,
+      pickerFavoritesOnly,
+      pickerWantToTryOnly,
+      pickerMaxTotalTimeMin,
+    ]
+  );
+
+  const closePickerSheets = useCallback(() => {
+    setPickerFiltersModalOpen(false);
+    setPickerTagsPickerOpen(false);
+  }, []);
+
+  const clearPickerFilters = useCallback(() => {
+    setPickerQuery('');
+    setPickerCategoryKey(null);
+    setPickerTagKeys([]);
+    setPickerDietKeys([]);
+    setPickerCustomDietKeys([]);
+    setPickerFavoritesOnly(false);
+    setPickerWantToTryOnly(false);
+    setPickerMaxTotalTimeMin(null);
+    closePickerSheets();
+  }, [closePickerSheets]);
+
+  const pickerExtraTags = pickerRecipeTags;
+  const pickerTagKeyInExtra = pickerTagKeys.length > 0;
+
+  // Load picker filter options when opening the picker (kept local to avoid slowing down the main screen).
+  useEffect(() => {
+    if (!pickerOpen) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await ensureDatabaseAsync();
+        const [cats, tags, diets] = await Promise.all([
+          listDistinctRecipeCategories(),
+          listDistinctRecipeTags(),
+          getCustomDiets(),
+        ]);
+        if (cancelled) return;
+        setPickerCategories(cats);
+        setPickerRecipeTags(tags);
+        setPickerCustomDiets(diets.map((d) => d.name));
+        setPickerTagKeys((prev) => prev.filter((t) => tags.includes(t)));
+        setPickerCustomDietKeys((prev) => prev.filter((d) => diets.some((x) => x.name === d)));
+      } catch (e) {
+        console.error(safeErrorMessage(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pickerOpen]);
+
+  // Search recipes for the picker whenever the picker is open and filters change.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    let cancelled = false;
+    setPickerBusy(true);
+    void (async () => {
+      try {
+        await ensureDatabaseAsync();
+        const rows = await searchRecipes(pickerBrowseFilters);
+        if (!cancelled) setPickerItems(rows);
+      } catch (e) {
+        console.error(safeErrorMessage(e));
+      } finally {
+        if (!cancelled) setPickerBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pickerBrowseFilters, pickerOpen]);
 
   const syncLeftoversForCookDate = useCallback(
     async (cookDate: string, recipeId: number, servings: number) => {
@@ -302,6 +520,15 @@ export default function PlannerScreen() {
     [plansByDate]
   );
 
+  const closeRecipePreview = useCallback(() => {
+    previewReqIdRef.current += 1;
+    setPreviewOpen(false);
+    setPreviewLoading(false);
+    setPreviewDate(null);
+    setPreviewError(null);
+    setPreviewRecipeId(null);
+  }, []);
+
   const openRecipePreview = useCallback(
     (date: string) => {
       const plan = plansByDate[date] ?? null;
@@ -309,98 +536,131 @@ export default function PlannerScreen() {
       const pendingLeftoverSrc = pendingLeftoverOfDateByDate[date] ?? null;
       const cookDateForPendingLeftover = pendingLeftoverSrc ?? plan?.leftoverOfDate ?? null;
       const pendingCook =
-        !pendingNew && cookDateForPendingLeftover ? pendingNewByDate[cookDateForPendingLeftover] ?? null : null;
+        !pendingNew && cookDateForPendingLeftover
+          ? (pendingNewByDate[cookDateForPendingLeftover] ?? null)
+          : null;
 
-      const servings = plan?.servings ?? pendingNew?.servings ?? pendingCook?.servings ?? defaultServings;
-      setPreviewServings(servings);
-      setPreviewOpen(true);
-      setPreviewLoading(true);
+      const servings =
+        plan?.servings ?? pendingNew?.servings ?? pendingCook?.servings ?? defaultServings;
       const reqId = (previewReqIdRef.current += 1);
 
-      const withTimeout = async <T,>(p: Promise<T>, ms: number): Promise<T> => {
-        return await Promise.race([
-          p,
-          new Promise<T>((_, reject) =>
-            setTimeout(() => reject(new Error('Preview laden duurt te lang. Probeer opnieuw.')), ms)
-          ),
-        ]);
+      setPreviewDate(date);
+      setPreviewError(null);
+      setPreviewTitle('');
+      setPreviewImageUri(null);
+      setPreviewIngredients([]);
+      setPreviewSteps([]);
+      setPreviewServings(servings);
+      setPreviewRecipeId(plan?.recipeId ?? null);
+      setPreviewOpen(true);
+      setPreviewLoading(true);
+
+      const applyIfCurrent = (fn: () => void) => {
+        if (previewReqIdRef.current !== reqId) return;
+        fn();
+      };
+
+      const finishPreviewLoad = (error?: string) => {
+        if (previewReqIdRef.current !== reqId) return;
+        if (error) setPreviewError(error);
+        setPreviewLoading(false);
       };
 
       void (async () => {
         try {
-          // Pending AI recipe (not saved yet).
-          if (pendingNew || pendingCook) {
-            const src = pendingNew ?? pendingCook;
-            if (!src) return;
-            const parsed = parseExtractedRecipeJson(src.recipeJsonText, '');
-            if (!parsed.ok) {
-              Alert.alert('Preview mislukt', parsed.reason);
-              return;
-            }
-            const p = parsed.payload;
-            setPreviewTitle(p.title.trim() || 'Nieuw recept');
-            setPreviewImageUri((p.imageUri ?? '').trim() || null);
-            setPreviewIngredients(p.ingredientGroups);
-            setPreviewSteps(p.stepSections);
-            return;
-          }
+          await Promise.race([
+            (async () => {
+              await ensureDatabaseAsync();
 
-          if (!plan) return;
-          const full: FullRecipe | null = await withTimeout(getFullRecipe(plan.recipeId), 6000);
-          if (!full) {
-            Alert.alert('Preview mislukt', 'Recept niet gevonden.');
-            return;
-          }
-          setPreviewTitle(full.title);
-          setPreviewImageUri(full.imageUri);
-          setPreviewIngredients(
-            full.ingredientGroups.map((g) => ({
-              title: g.title ?? '',
-              ingredients: g.ingredients.map((i) => ({ name: i.name, amount: i.amount, unit: i.unit })),
-            }))
-          );
-          setPreviewSteps(
-            full.stepSections.map((s) => ({
-              title: s.title ?? '',
-              steps: s.steps.map((st) => ({ description: st.description, timerSeconds: st.timerSeconds })),
-            }))
-          );
+              if (pendingNew || pendingCook) {
+                applyIfCurrent(() => setPreviewRecipeId(null));
+                const src = pendingNew ?? pendingCook;
+                if (!src) throw new Error('Kon preview niet opbouwen.');
+                const parsed = parseExtractedRecipeJson(src.recipeJsonText, '');
+                if (!parsed.ok) throw new Error(parsed.reason);
+                const p = parsed.payload;
+                applyIfCurrent(() => {
+                  setPreviewTitle(p.title.trim() || 'Nieuw recept');
+                  setPreviewImageUri((p.imageUri ?? '').trim() || null);
+                  setPreviewIngredients(p.ingredientGroups);
+                  setPreviewSteps(p.stepSections);
+                });
+                return;
+              }
+
+              if (!plan) throw new Error('Kon preview niet opbouwen.');
+              const full: FullRecipe | null = await getFullRecipe(plan.recipeId);
+              if (!full) throw new Error('Recept niet gevonden.');
+              applyIfCurrent(() => {
+                setPreviewTitle(full.title);
+                setPreviewImageUri(full.imageUri);
+                setPreviewIngredients(
+                  full.ingredientGroups.map((g) => ({
+                    title: g.title ?? '',
+                    ingredients: g.ingredients.map((i) => ({
+                      name: i.name,
+                      amount: i.amount,
+                      unit: i.unit,
+                    })),
+                  }))
+                );
+                setPreviewSteps(
+                  full.stepSections.map((s) => ({
+                    title: s.title ?? '',
+                    steps: s.steps.map((st) => ({
+                      description: st.description,
+                      timerSeconds: st.timerSeconds,
+                    })),
+                  }))
+                );
+              });
+            })(),
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () => reject(new Error('Preview laden duurt te lang. Probeer opnieuw.')),
+                8000
+              )
+            ),
+          ]);
         } catch (e) {
-          Alert.alert('Preview mislukt', e instanceof Error ? e.message : 'Onbekende fout.');
-        } finally {
-          if (previewReqIdRef.current === reqId) {
-            setPreviewLoading(false);
-          }
+          finishPreviewLoad(e instanceof Error ? e.message : 'Onbekende fout.');
+          return;
         }
+        finishPreviewLoad();
       })();
     },
     [defaultServings, pendingLeftoverOfDateByDate, pendingNewByDate, plansByDate]
   );
 
-  const filteredRecipes = useMemo(() => {
-    const q = pickerQuery.trim().toLowerCase();
-    if (!q) return recipes;
-    return recipes.filter((r) => r.title.toLowerCase().includes(q));
-  }, [pickerQuery, recipes]);
+  const filteredRecipes = useMemo(() => pickerItems, [pickerItems]);
 
   const persistPlan = useCallback(
-    (params: { date: string; recipeId: number; servings: number; cooksForDays: number; leftoverOfDate?: string | null }) => {
-    void (async () => {
-      await upsertWeekPlan({
-        date: params.date,
-        recipeId: params.recipeId,
-        servings: Math.max(1, Math.min(99, Math.round(params.servings))),
-        cooksForDays: Math.max(1, Math.min(7, Math.round(params.cooksForDays))),
-        leftoverOfDate: params.leftoverOfDate ?? null,
-      });
-    })();
+    (params: {
+      date: string;
+      recipeId: number;
+      servings: number;
+      cooksForDays: number;
+      leftoverOfDate?: string | null;
+    }) => {
+      void (async () => {
+        await upsertWeekPlan({
+          date: params.date,
+          recipeId: params.recipeId,
+          servings: Math.max(1, Math.min(99, Math.round(params.servings))),
+          cooksForDays: Math.max(1, Math.min(7, Math.round(params.cooksForDays))),
+          leftoverOfDate: params.leftoverOfDate ?? null,
+        });
+      })();
     },
     []
   );
 
   const leftoversForDate = useCallback(
-    (date: string): Array<{ sourceDate: string; recipeId: number; title: string; servings: number }> => {
-      const out: Array<{ sourceDate: string; recipeId: number; title: string; servings: number }> = [];
+    (
+      date: string
+    ): Array<{ sourceDate: string; recipeId: number; title: string; servings: number }> => {
+      const out: Array<{ sourceDate: string; recipeId: number; title: string; servings: number }> =
+        [];
       for (const [sourceDate, plan] of Object.entries(plansByDate)) {
         if (!plan) continue;
         if ((plan.leftoverOfDate ?? null) != null) continue; // restjes-dagen genereren zelf geen restjes
@@ -445,19 +705,26 @@ export default function PlannerScreen() {
         await hydrateShoppingStaplesPrefsFromDb();
         const plans = await listWeekPlansBetween(startDate, endDate);
         if (plans.length === 0) {
-          Alert.alert('Geen planning', 'Plan eerst één of meer dagen voordat je de boodschappenlijst vult.');
+          Alert.alert(
+            'Geen planning',
+            'Plan eerst één of meer dagen voordat je de boodschappenlijst vult.'
+          );
           return;
         }
         const staplesExclude = getShoppingStaplesExcludeList();
         const agg = await aggregateShoppingFromWeekPlans({ plans, staplesExclude });
         if (agg.length === 0) {
-          Alert.alert('Niets om toe te voegen', 'Er zijn geen boodschappen gevonden (mogelijk door de uitsluitlijst).');
+          Alert.alert(
+            'Niets om toe te voegen',
+            'Er zijn geen boodschappen gevonden (mogelijk door de uitsluitlijst).'
+          );
           return;
         }
 
         const ok = await confirm({
           title: 'Op boodschappenlijstje zetten?',
-          message: 'Dit vervangt alleen de “week”-items op je boodschappenlijst. Handmatige items blijven staan.',
+          message:
+            'Dit vervangt alleen de “week”-items op je boodschappenlijst. Handmatige items blijven staan.',
           confirmText: 'Zet erop',
           cancelText: 'Annuleren',
         });
@@ -504,7 +771,10 @@ export default function PlannerScreen() {
         await ensureDatabaseAsync();
         const hasKey = await hasActiveAiKey();
         if (!hasKey) {
-          Alert.alert('AI niet ingesteld', 'Stel eerst een API-sleutel en model in bij Instellingen.');
+          Alert.alert(
+            'AI niet ingesteld',
+            'Stel eerst een API-sleutel en model in bij Instellingen.'
+          );
           return;
         }
 
@@ -514,9 +784,13 @@ export default function PlannerScreen() {
           return;
         }
 
-        const promptRecipes = await listRecipesForWeekPlanningPrompt();
+        const promptPack = await listRecipesForWeekPlanningPrompt();
+        const promptRecipes = promptPack.recipes;
         if (promptRecipes.length === 0) {
-          Alert.alert('Geen recepten', 'Voeg eerst één of meer recepten toe voordat je een weekmenu laat genereren.');
+          Alert.alert(
+            'Geen recepten',
+            'Voeg eerst één of meer recepten toe voordat je een weekmenu laat genereren.'
+          );
           return;
         }
 
@@ -544,14 +818,23 @@ export default function PlannerScreen() {
         const recipeIdSet = new Set(promptRecipes.map((r) => r.id));
         const system = buildWeekPlanSystemPrompt();
         const user = buildWeekPlanUserPrompt({
+          currentDate: toIsoDateOnly(new Date()),
           days: selectedDays,
           recipes: promptRecipes,
           wishesText,
           defaultServings,
           recentlyUsedRecipeIds,
+          selectionMeta: promptPack.capped
+            ? { totalInLibrary: promptPack.totalInLibrary, includedInPrompt: promptRecipes.length }
+            : undefined,
         });
 
-        const res = await callAiText({ system, user, maxTokens: 4096 });
+        const res = await callAiText({
+          system,
+          user,
+          maxTokens: 4096,
+          task: 'weekplan',
+        });
         if (!res.ok) {
           Alert.alert('AI-fout', res.message);
           return;
@@ -627,12 +910,18 @@ export default function PlannerScreen() {
             const date = typeof row.date === 'string' ? row.date.trim() : '';
             const recipeIdRaw = row.recipe_id;
             const recipeId =
-              typeof recipeIdRaw === 'string' ? recipeIdRaw.trim() : clampInt(recipeIdRaw, 1, 1_000_000_000, -1);
+              typeof recipeIdRaw === 'string'
+                ? recipeIdRaw.trim()
+                : clampInt(recipeIdRaw, 1, 1_000_000_000, -1);
             const servings = clampInt(row.servings, 1, 99, 2);
             const cooksForDays = clampInt(row.cooks_for_days, 1, 7, 1);
             const leftoverOfDateRaw = row.leftover_of_date;
             const leftoverOfDate =
-              typeof leftoverOfDateRaw === 'string' ? leftoverOfDateRaw.trim() : leftoverOfDateRaw == null ? null : null;
+              typeof leftoverOfDateRaw === 'string'
+                ? leftoverOfDateRaw.trim()
+                : leftoverOfDateRaw == null
+                  ? null
+                  : null;
 
             if (!date) {
               errs.push('Plan-item mist "date".');
@@ -664,7 +953,9 @@ export default function PlannerScreen() {
 
             if (leftoverOfDate) {
               if (!expected.has(leftoverOfDate)) {
-                errs.push(`leftover_of_date (${leftoverOfDate}) valt niet binnen de gekozen dagen (voor ${date}).`);
+                errs.push(
+                  `leftover_of_date (${leftoverOfDate}) valt niet binnen de gekozen dagen (voor ${date}).`
+                );
                 continue;
               }
               if (leftoverOfDate >= date) {
@@ -691,15 +982,21 @@ export default function PlannerScreen() {
               if (!p.leftoverOfDate) continue;
               const src = byDate.get(p.leftoverOfDate) ?? null;
               if (!src) {
-                errs.push(`Restjes-dag ${p.date} verwijst naar ontbrekende kookdag ${p.leftoverOfDate}.`);
+                errs.push(
+                  `Restjes-dag ${p.date} verwijst naar ontbrekende kookdag ${p.leftoverOfDate}.`
+                );
                 continue;
               }
               if (src.leftoverOfDate) {
-                errs.push(`Restjes-dag ${p.date} verwijst naar ${p.leftoverOfDate}, maar die is zelf ook een restjes-dag.`);
+                errs.push(
+                  `Restjes-dag ${p.date} verwijst naar ${p.leftoverOfDate}, maar die is zelf ook een restjes-dag.`
+                );
                 continue;
               }
               if (String(src.recipeId) !== String(p.recipeId)) {
-                errs.push(`Restjes-dag ${p.date} moet hetzelfde recept hebben als ${p.leftoverOfDate}.`);
+                errs.push(
+                  `Restjes-dag ${p.date} moet hetzelfde recept hebben als ${p.leftoverOfDate}.`
+                );
                 continue;
               }
               // Normalize: leftovers day servings must match the cooking day servings (servings = eaters, not total cooked portions).
@@ -725,13 +1022,20 @@ export default function PlannerScreen() {
             // If the same recipe is used again on a later day, treat it as leftovers of the first day.
             // This keeps the UX simple: second occurrence becomes "Restje:" and doesn't count as a new cooking day.
             const byDate = new Map(out.map((p) => [p.date, p] as const));
-            const firstCookByRecipeKey = new Map<string, { date: string; servings: number; cooksForDays: number }>();
+            const firstCookByRecipeKey = new Map<
+              string,
+              { date: string; servings: number; cooksForDays: number }
+            >();
             for (const p of out) {
               if (p.leftoverOfDate) continue;
               const key = String(p.recipeId);
               const first = firstCookByRecipeKey.get(key) ?? null;
               if (!first) {
-                firstCookByRecipeKey.set(key, { date: p.date, servings: p.servings, cooksForDays: p.cooksForDays });
+                firstCookByRecipeKey.set(key, {
+                  date: p.date,
+                  servings: p.servings,
+                  cooksForDays: p.cooksForDays,
+                });
                 continue;
               }
               const needed = diffDays(p.date, first.date) + 1;
@@ -755,7 +1059,9 @@ export default function PlannerScreen() {
               if (p.leftoverOfDate) continue;
               const key = String(p.recipeId);
               if (recentlyUsedSet.has(key)) {
-                errs.push(`Recept ${key} is recent gebruikt. Kies liever een ander recept (tenzij er te weinig opties zijn).`);
+                errs.push(
+                  `Recept ${key} is recent gebruikt. Kies liever een ander recept (tenzij er te weinig opties zijn).`
+                );
                 break;
               }
             }
@@ -778,6 +1084,7 @@ export default function PlannerScreen() {
             system: buildWeekPlanSystemPrompt(),
             user: repairUser,
             maxTokens: 4096,
+            task: 'weekplan',
           });
           if (!repaired.ok) {
             Alert.alert('AI-fout', repaired.message);
@@ -787,7 +1094,10 @@ export default function PlannerScreen() {
         }
 
         if (!parsed.ok) {
-          Alert.alert('AI-output niet bruikbaar', `Kon weekmenu niet verwerken:\n\n- ${parsed.errors.slice(0, 6).join('\n- ')}`);
+          Alert.alert(
+            'AI-output niet bruikbaar',
+            `Kon weekmenu niet verwerken:\n\n- ${parsed.errors.slice(0, 6).join('\n- ')}`
+          );
           return;
         }
 
@@ -795,7 +1105,10 @@ export default function PlannerScreen() {
         for (const nr of parsed.newRecipes) {
           const parsedRecipe = parseExtractedRecipeJson(nr.recipeJsonText, '');
           if (!parsedRecipe.ok) {
-            Alert.alert('Nieuw recept niet bruikbaar', `Kon nieuw recept niet verwerken (${nr.tempId}): ${parsedRecipe.reason}`);
+            Alert.alert(
+              'Nieuw recept niet bruikbaar',
+              `Kon nieuw recept niet verwerken (${nr.tempId}): ${parsedRecipe.reason}`
+            );
             return;
           }
           newRecipeByTemp.set(nr.tempId, {
@@ -820,7 +1133,8 @@ export default function PlannerScreen() {
         for (const p of parsed.plan) {
           if (typeof p.recipeId === 'number') {
             // Existing recipe: apply immediately.
-            if ((p.leftoverOfDate ?? null) == null) sessionSuggestedCookingRecipeIdsRef.current.add(p.recipeId);
+            if ((p.leftoverOfDate ?? null) == null)
+              sessionSuggestedCookingRecipeIdsRef.current.add(p.recipeId);
             await upsertWeekPlan({
               date: p.date,
               recipeId: p.recipeId,
@@ -833,7 +1147,10 @@ export default function PlannerScreen() {
 
           const nr = newRecipeByTemp.get(p.recipeId) ?? null;
           if (!nr) {
-            Alert.alert('Weekmenu niet compleet', `Kon een nieuw recept niet koppelen voor ${p.date}.`);
+            Alert.alert(
+              'Weekmenu niet compleet',
+              `Kon een nieuw recept niet koppelen voor ${p.date}.`
+            );
             return;
           }
           if ((p.leftoverOfDate ?? null) != null) {
@@ -938,10 +1255,14 @@ export default function PlannerScreen() {
         await ensureDatabaseAsync();
         const hasKey = await hasActiveAiKey();
         if (!hasKey) {
-          Alert.alert('AI niet ingesteld', 'Stel eerst een API-sleutel en model in bij Instellingen.');
+          Alert.alert(
+            'AI niet ingesteld',
+            'Stel eerst een API-sleutel en model in bij Instellingen.'
+          );
           return;
         }
-        const promptRecipes = await listRecipesForWeekPlanningPrompt();
+        const promptPack = await listRecipesForWeekPlanningPrompt();
+        const promptRecipes = promptPack.recipes;
         const recipeIdSet = new Set(promptRecipes.map((r) => r.id));
         const system = buildWeekPlanSystemPrompt();
         const fixedPlan = dates
@@ -964,16 +1285,26 @@ export default function PlannerScreen() {
         contextLines.push('');
         contextLines.push(`OUD VOORSTEL (vervangen, niet toevoegen): ${prev.title}`);
         contextLines.push('');
-        contextLines.push('INSTRUCTIE: pas ALLEEN deze dag aan. Houd je aan eerdere wensen/constraints uit wishes_text over de hele week.');
+        contextLines.push(
+          'INSTRUCTIE: pas ALLEEN deze dag aan. Houd je aan eerdere wensen/constraints uit wishes_text over de hele week.'
+        );
         const user = buildWeekPlanUserPrompt({
           days: [date],
           recipes: promptRecipes,
           wishesText: `${wishesText.trim() || ''}${comment ? `\n\nExtra wensen: ${comment}` : ''}\n\n${contextLines.join('\n')}\n\nMaak liever een ander nieuw recept dan het vorige voorstel. Geef een nieuw recept terug als new_recipes en plan het op deze dag.`,
           defaultServings,
           recentlyUsedRecipeIds: [],
+          selectionMeta: promptPack.capped
+            ? { totalInLibrary: promptPack.totalInLibrary, includedInPrompt: promptRecipes.length }
+            : undefined,
         });
 
-        const res = await callAiText({ system, user, maxTokens: 4096 });
+        const res = await callAiText({
+          system,
+          user,
+          maxTokens: 4096,
+          task: 'weekplan',
+        });
         if (!res.ok) {
           Alert.alert('AI-fout', res.message);
           return;
@@ -1037,7 +1368,9 @@ export default function PlannerScreen() {
             if (d !== date) continue;
             const recipeIdRaw = row.recipe_id;
             const recipeId =
-              typeof recipeIdRaw === 'string' ? recipeIdRaw.trim() : clampInt(recipeIdRaw, 1, 1_000_000_000, -1);
+              typeof recipeIdRaw === 'string'
+                ? recipeIdRaw.trim()
+                : clampInt(recipeIdRaw, 1, 1_000_000_000, -1);
             const servings = clampInt(row.servings, 1, 99, prev.servings);
             const cooksForDays = clampInt(row.cooks_for_days, 1, 7, prev.cooksForDays);
             const lodRaw = row.leftover_of_date;
@@ -1049,9 +1382,11 @@ export default function PlannerScreen() {
           // Validate recipe id exists or temp exists.
           const p0 = out[0];
           if (typeof p0.recipeId === 'number') {
-            if (!recipeIdSet.has(p0.recipeId)) return { ok: false, errors: ['Onbekende recipe_id.'] };
+            if (!recipeIdSet.has(p0.recipeId))
+              return { ok: false, errors: ['Onbekende recipe_id.'] };
           } else {
-            if (!seenTemp.has(p0.recipeId)) return { ok: false, errors: ['Onbekende temp recipe_id.'] };
+            if (!seenTemp.has(p0.recipeId))
+              return { ok: false, errors: ['Onbekende temp recipe_id.'] };
           }
           return { ok: true, plan: out, newRecipes };
         };
@@ -1064,7 +1399,12 @@ export default function PlannerScreen() {
             previousOutput: res.text,
             validationErrors: parsed.errors,
           });
-          const repaired = await callAiText({ system: buildWeekPlanSystemPrompt(), user: repairUser, maxTokens: 4096 });
+          const repaired = await callAiText({
+            system: buildWeekPlanSystemPrompt(),
+            user: repairUser,
+            maxTokens: 4096,
+            task: 'weekplan',
+          });
           if (!repaired.ok) {
             Alert.alert('AI-fout', repaired.message);
             return;
@@ -1072,7 +1412,10 @@ export default function PlannerScreen() {
           parsed = tryParse(repaired.text);
         }
         if (!parsed.ok) {
-          Alert.alert('AI-output niet bruikbaar', `Kon alternatief niet verwerken:\n\n- ${parsed.errors.slice(0, 6).join('\n- ')}`);
+          Alert.alert(
+            'AI-output niet bruikbaar',
+            `Kon alternatief niet verwerken:\n\n- ${parsed.errors.slice(0, 6).join('\n- ')}`
+          );
           return;
         }
 
@@ -1130,12 +1473,28 @@ export default function PlannerScreen() {
         setBusyReplace(false);
       }
     })();
-  }, [busyReplace, defaultServings, pendingNewByDate, pendingReplaceDate, pendingReplaceText, reload, wishesText]);
+  }, [
+    busyReplace,
+    defaultServings,
+    pendingNewByDate,
+    pendingReplaceDate,
+    pendingReplaceText,
+    reload,
+    wishesText,
+  ]);
 
   function weekdayNl(dateOnly: string): string {
     const [y, m, d] = dateOnly.split('-').map((x) => Number.parseInt(x, 10));
     const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
-    const days = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'] as const;
+    const days = [
+      'zondag',
+      'maandag',
+      'dinsdag',
+      'woensdag',
+      'donderdag',
+      'vrijdag',
+      'zaterdag',
+    ] as const;
     return days[dt.getDay()] ?? dateOnly;
   }
 
@@ -1151,10 +1510,7 @@ export default function PlannerScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <ConfirmDialog />
       <View
-        style={[
-          styles.loadingOverlay,
-          { paddingTop: 10 + insets.top, opacity: loading ? 1 : 0 },
-        ]}
+        style={[styles.loadingOverlay, { paddingTop: 10 + insets.top, opacity: loading ? 1 : 0 }]}
         pointerEvents="none"
       >
         <View style={styles.loadingRow}>
@@ -1163,7 +1519,12 @@ export default function PlannerScreen() {
         </View>
       </View>
 
-      <Modal visible={quickAddOpen} animationType="fade" transparent onRequestClose={clearQuickAddParam}>
+      <Modal
+        visible={quickAddOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={clearQuickAddParam}
+      >
         <View style={styles.quickBackdrop}>
           <Pressable style={styles.quickBackdropPress} onPress={clearQuickAddParam} />
           <View style={[styles.quickCard, { backgroundColor: theme.background }]}>
@@ -1237,28 +1598,26 @@ export default function PlannerScreen() {
       <ScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
         {dates.map((date, i) => {
           const plan = plansByDate[date] ?? null;
-          const recipe = plan ? recipeById.get(plan.recipeId) ?? null : null;
+          const recipe = plan ? (recipeById.get(plan.recipeId) ?? null) : null;
           const expanded = !!expandedByDate[date];
           const pendingNew = pendingNewByDate[date] ?? null;
           const pendingLeftoverSrc = pendingLeftoverOfDateByDate[date] ?? null;
           const cookDateForPendingLeftover = pendingLeftoverSrc ?? plan?.leftoverOfDate ?? null;
           const pendingCook =
-            !pendingNew && cookDateForPendingLeftover ? pendingNewByDate[cookDateForPendingLeftover] ?? null : null;
-          const displayTitle =
-            pendingNew
-              ? pendingNew.title
-              : pendingCook
-                ? `Restje: ${pendingCook.title}`
-                : plan && (plan.leftoverOfDate ?? null) != null
-                  ? `Restje: ${recipe?.title ?? 'Kies een recept…'}`
-                  : recipe?.title ?? 'Kies een recept…';
+            !pendingNew && cookDateForPendingLeftover
+              ? (pendingNewByDate[cookDateForPendingLeftover] ?? null)
+              : null;
+          const displayTitle = pendingNew
+            ? pendingNew.title
+            : pendingCook
+              ? `Restje: ${pendingCook.title}`
+              : plan && (plan.leftoverOfDate ?? null) != null
+                ? `Restje: ${recipe?.title ?? 'Kies een recept…'}`
+                : (recipe?.title ?? 'Kies een recept…');
           return (
             <View
               key={date}
-              style={[
-                styles.dayCard,
-                plan && expanded ? styles.dayCardExpanded : null,
-              ]}
+              style={[styles.dayCard, plan && expanded ? styles.dayCardExpanded : null]}
             >
               <View style={styles.dayTopRow}>
                 {plan ? (
@@ -1314,7 +1673,11 @@ export default function PlannerScreen() {
                   hitSlop={10}
                 >
                   <Text
-                    style={plan || pendingNew || pendingCook ? styles.dayRecipeTitle : styles.dayPlaceholderTitle}
+                    style={
+                      plan || pendingNew || pendingCook
+                        ? styles.dayRecipeTitle
+                        : styles.dayPlaceholderTitle
+                    }
                     numberOfLines={2}
                   >
                     {displayTitle}
@@ -1339,7 +1702,9 @@ export default function PlannerScreen() {
                     disabled={busyGenerate || busyReplace}
                   >
                     <MaterialIcons name="check" size={18} color={theme.accent} />
-                    <Text style={[styles.newRecipeApproveText, { color: theme.accent }]}>Toevoegen</Text>
+                    <Text style={[styles.newRecipeApproveText, { color: theme.accent }]}>
+                      Toevoegen
+                    </Text>
                   </Pressable>
                   <Pressable
                     style={[styles.newRecipeOtherBtn, { borderColor: theme.accentBorderMuted }]}
@@ -1373,7 +1738,10 @@ export default function PlannerScreen() {
                         style={styles.stepBtn}
                         onPress={() => {
                           const next = Math.max(1, plan.servings - 1);
-                          setPlansByDate((prev) => ({ ...prev, [date]: { ...plan, servings: next } }));
+                          setPlansByDate((prev) => ({
+                            ...prev,
+                            [date]: { ...plan, servings: next },
+                          }));
                           persistPlan({
                             date,
                             recipeId: plan.recipeId,
@@ -1391,7 +1759,10 @@ export default function PlannerScreen() {
                         style={styles.stepBtn}
                         onPress={() => {
                           const next = Math.min(99, plan.servings + 1);
-                          setPlansByDate((prev) => ({ ...prev, [date]: { ...plan, servings: next } }));
+                          setPlansByDate((prev) => ({
+                            ...prev,
+                            [date]: { ...plan, servings: next },
+                          }));
                           persistPlan({
                             date,
                             recipeId: plan.recipeId,
@@ -1412,7 +1783,10 @@ export default function PlannerScreen() {
                       onPress={() => {
                         const nextOn = plan.cooksForDays <= 1;
                         const next = nextOn ? 7 : 1;
-                        setPlansByDate((prev) => ({ ...prev, [date]: { ...plan, cooksForDays: next } }));
+                        setPlansByDate((prev) => ({
+                          ...prev,
+                          [date]: { ...plan, cooksForDays: next },
+                        }));
                         persistPlan({
                           date,
                           recipeId: plan.recipeId,
@@ -1455,17 +1829,20 @@ export default function PlannerScreen() {
         onRequestClose={() => setOverflowMenuOpen(false)}
       >
         <View style={styles.overflowRoot}>
-          <Pressable
-            style={styles.overflowDim}
-            onPress={() => setOverflowMenuOpen(false)}
-          />
+          <Pressable style={styles.overflowDim} onPress={() => setOverflowMenuOpen(false)} />
           <View
-            style={[
-              styles.overflowCard,
-              { top: insets.top + 8, right: 14 },
-            ]}
+            style={[styles.overflowCard, { top: insets.top + 8, right: 14 }]}
             pointerEvents="box-none"
           >
+            <Pressable
+              style={styles.overflowItem}
+              onPress={() => {
+                setOverflowMenuOpen(false);
+                router.push('/settings/cook-profile-ai');
+              }}
+            >
+              <Text style={styles.overflowItemText}>AI kookprofiel</Text>
+            </Pressable>
             <Pressable
               style={styles.overflowItem}
               onPress={() => {
@@ -1487,10 +1864,7 @@ export default function PlannerScreen() {
         onRequestClose={() => setGenerateSheetOpen(false)}
       >
         <View style={styles.sheetRoot}>
-          <Pressable
-            style={styles.sheetDim}
-            onPress={() => setGenerateSheetOpen(false)}
-          />
+          <Pressable style={styles.sheetDim} onPress={() => setGenerateSheetOpen(false)} />
           <View style={styles.generateSheet}>
             <Text style={styles.generateSheetTitle}>Maak weekmenu</Text>
             <TextInput
@@ -1501,6 +1875,13 @@ export default function PlannerScreen() {
               onChangeText={setWishesText}
               multiline
             />
+            {weekPlanRecipeLibraryCount > MAX_RECIPES_IN_WEEK_PLAN_PROMPT ? (
+              <Text style={styles.weekPlanAiHint}>
+                Je hebt {weekPlanRecipeLibraryCount} recepten. Voor weekmenu-AI worden maximaal{' '}
+                {MAX_RECIPES_IN_WEEK_PLAN_PROMPT} tegelijk meegestuurd (favorieten, &apos;wil
+                proberen&apos; en recent voorrang).
+              </Text>
+            ) : null}
             <View style={styles.welkeDagenHeader}>
               <Text style={styles.generateSectionLabelFlat}>Welke dagen?</Text>
               <View style={styles.allesNietsRow}>
@@ -1530,36 +1911,33 @@ export default function PlannerScreen() {
                 </Pressable>
               </View>
             </View>
-            <ScrollView
-              style={styles.genDayListScroll}
-              keyboardShouldPersistTaps="handled"
-            >
+            <ScrollView style={styles.genDayListScroll} keyboardShouldPersistTaps="handled">
               {dates.map((date, dayIdx) => {
                 const on = !!selectedByDate[date];
                 const isLast = dayIdx === dates.length - 1;
                 const plan = plansByDate[date] ?? null;
                 const pendingNew = pendingNewByDate[date] ?? null;
                 const pendingLeftoverSrc = pendingLeftoverOfDateByDate[date] ?? null;
-                const cookDateForPendingLeftover = pendingLeftoverSrc ?? plan?.leftoverOfDate ?? null;
+                const cookDateForPendingLeftover =
+                  pendingLeftoverSrc ?? plan?.leftoverOfDate ?? null;
                 const pendingCook =
-                  !pendingNew && cookDateForPendingLeftover ? pendingNewByDate[cookDateForPendingLeftover] ?? null : null;
-                const existingTitle =
-                  pendingNew
-                    ? pendingNew.title
-                    : pendingCook
-                      ? `Restje: ${pendingCook.title}`
-                      : plan
-                        ? plan.leftoverOfDate
-                          ? `Restje: ${recipeById.get(plan.recipeId)?.title ?? ''}`
-                          : recipeById.get(plan.recipeId)?.title ?? ''
-                        : '';
+                  !pendingNew && cookDateForPendingLeftover
+                    ? (pendingNewByDate[cookDateForPendingLeftover] ?? null)
+                    : null;
+                const existingTitle = pendingNew
+                  ? pendingNew.title
+                  : pendingCook
+                    ? `Restje: ${pendingCook.title}`
+                    : plan
+                      ? plan.leftoverOfDate
+                        ? `Restje: ${recipeById.get(plan.recipeId)?.title ?? ''}`
+                        : (recipeById.get(plan.recipeId)?.title ?? '')
+                      : '';
                 return (
                   <Pressable
                     key={date}
                     style={[styles.genDayRow, isLast ? styles.genDayRowLast : null]}
-                    onPress={() =>
-                      setSelectedByDate((prev) => ({ ...prev, [date]: !prev[date] }))
-                    }
+                    onPress={() => setSelectedByDate((prev) => ({ ...prev, [date]: !prev[date] }))}
                   >
                     <View
                       style={[
@@ -1583,10 +1961,7 @@ export default function PlannerScreen() {
               })}
             </ScrollView>
             <View style={styles.generateSheetActions}>
-              <Pressable
-                style={styles.generateCancel}
-                onPress={() => setGenerateSheetOpen(false)}
-              >
+              <Pressable style={styles.generateCancel} onPress={() => setGenerateSheetOpen(false)}>
                 <Text style={styles.generateCancelText}>Annuleren</Text>
               </Pressable>
               <Pressable
@@ -1616,19 +1991,77 @@ export default function PlannerScreen() {
         <View style={[styles.pickerRoot, { backgroundColor: theme.background }]}>
           <View style={styles.pickerHeader}>
             <Text style={styles.pickerTitle}>Kies recept</Text>
-            <Pressable onPress={() => setPickerOpen(false)} hitSlop={10}>
+            <Pressable
+              onPress={() => {
+                closePickerSheets();
+                setPickerOpen(false);
+              }}
+              hitSlop={10}
+            >
               <Text style={[styles.close, { color: theme.accent }]}>Sluiten</Text>
             </Pressable>
           </View>
           <TextInput
             style={styles.searchInput}
-            placeholder="Zoek recept…"
+            placeholder="Zoek recept..."
             placeholderTextColor="#999"
             value={pickerQuery}
             onChangeText={setPickerQuery}
             autoCorrect={false}
             autoCapitalize="none"
           />
+
+          <View style={styles.pickerChipRowMain}>
+            <View style={styles.pickerChipRowLeft}>
+              <Pressable
+                style={[styles.pickerChip, pickerFavoritesOnly ? pickerChipOnStyle : null]}
+                onPress={() => setPickerFavoritesOnly((v) => !v)}
+              >
+                <Text
+                  style={[
+                    styles.pickerChipText,
+                    pickerFavoritesOnly ? pickerChipTextOnStyle : null,
+                  ]}
+                >
+                  Favorieten
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.pickerChip, pickerWantToTryOnly ? pickerChipOnStyle : null]}
+                onPress={() => setPickerWantToTryOnly((v) => !v)}
+              >
+                <Text
+                  style={[
+                    styles.pickerChipText,
+                    pickerWantToTryOnly ? pickerChipTextOnStyle : null,
+                  ]}
+                >
+                  Wil proberen
+                </Text>
+              </Pressable>
+            </View>
+            <Pressable
+              style={[
+                styles.pickerChip,
+                styles.pickerChipFilterBtn,
+                pickerSecondaryFilterCount > 0 ? pickerChipOnStyle : null,
+              ]}
+              onPress={() => setPickerFiltersModalOpen(true)}
+            >
+              <Text
+                style={[
+                  styles.pickerChipText,
+                  pickerSecondaryFilterCount > 0 ? pickerChipTextOnStyle : null,
+                ]}
+                numberOfLines={1}
+              >
+                {pickerSecondaryFilterCount > 0
+                  ? `Filters · ${pickerSecondaryFilterCount}`
+                  : 'Filters'}
+              </Text>
+            </Pressable>
+          </View>
+
           <FlatList
             data={filteredRecipes}
             keyExtractor={(it) => String(it.id)}
@@ -1691,7 +2124,11 @@ export default function PlannerScreen() {
                   {options.map((opt) => (
                     <Pressable
                       key={`${opt.sourceDate}|${opt.recipeId}`}
-                      style={[styles.pickerRow, styles.leftoversRow, { borderColor: theme.accentBorderMuted }]}
+                      style={[
+                        styles.pickerRow,
+                        styles.leftoversRow,
+                        { borderColor: theme.accentBorderMuted },
+                      ]}
                       onPress={() => {
                         setPickerOpen(false);
                         setPlansByDate((prev) => ({
@@ -1718,25 +2155,344 @@ export default function PlannerScreen() {
                       <Text style={styles.pickerRowTitle} numberOfLines={2}>
                         Restjes {opt.title}
                       </Text>
-                      <Text style={[styles.pickerRowMeta, { color: theme.accent }]} numberOfLines={1}>
-                        van {daysBefore(opt.sourceDate)} dag{daysBefore(opt.sourceDate) === 1 ? '' : 'en'} ervoor
+                      <Text
+                        style={[styles.pickerRowMeta, { color: theme.accent }]}
+                        numberOfLines={1}
+                      >
+                        van {daysBefore(opt.sourceDate)} dag
+                        {daysBefore(opt.sourceDate) === 1 ? '' : 'en'} ervoor
                       </Text>
                     </Pressable>
                   ))}
                 </View>
               );
             }}
-            ListEmptyComponent={<Text style={styles.empty}>Geen recepten gevonden.</Text>}
+            ListEmptyComponent={
+              <Text style={styles.empty}>{pickerBusy ? 'Zoeken…' : 'Geen recepten gevonden.'}</Text>
+            }
           />
         </View>
       </Modal>
 
-      <Modal visible={pendingReplaceOpen} animationType="fade" transparent onRequestClose={() => setPendingReplaceOpen(false)}>
+      <Modal
+        visible={pickerFiltersModalOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setPickerFiltersModalOpen(false)}
+      >
+        <View style={styles.sheetRoot}>
+          <Pressable style={styles.sheetDim} onPress={() => setPickerFiltersModalOpen(false)} />
+          <View style={styles.pickerFiltersSheet}>
+            <Text style={styles.pickerFiltersSheetTitle}>Filters</Text>
+            <ScrollView
+              style={styles.pickerFiltersSheetScroll}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.pickerFiltersSheetScrollInner}
+            >
+              <Text style={styles.pickerFilterSubLabel}>Max. totale tijd (min.)</Text>
+              <View style={styles.pickerTimeSliderRow}>
+                <View style={styles.pickerTimeSliderCol}>
+                  <Slider
+                    style={styles.pickerTimeSlider}
+                    minimumValue={10}
+                    maximumValue={180}
+                    step={5}
+                    value={pickerMaxTotalTimeMin ?? 60}
+                    minimumTrackTintColor={theme.accent}
+                    maximumTrackTintColor="#e2ddd5"
+                    thumbTintColor={theme.accent}
+                    onValueChange={(v) => {
+                      const next = Math.round(v / 5) * 5;
+                      setPickerMaxTotalTimeMin(next);
+                    }}
+                  />
+                  <Text style={styles.pickerTimeSliderValue}>
+                    {pickerMaxTotalTimeMin == null
+                      ? 'Geen maximum'
+                      : `Max. ${pickerMaxTotalTimeMin} min`}
+                  </Text>
+                </View>
+                <Pressable
+                  style={[
+                    styles.pickerTimeSliderResetBtn,
+                    pickerMaxTotalTimeMin == null ? styles.pickerTimeSliderResetBtnOff : null,
+                  ]}
+                  onPress={() => setPickerMaxTotalTimeMin(null)}
+                  disabled={pickerMaxTotalTimeMin == null}
+                >
+                  <Text
+                    style={[
+                      styles.pickerTimeSliderResetText,
+                      pickerMaxTotalTimeMin == null ? styles.pickerTimeSliderResetTextOff : null,
+                    ]}
+                  >
+                    Reset
+                  </Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.pickerFilterSubLabel}>Dieet</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.pickerChipScroll}
+              >
+                <View style={styles.pickerChipRow}>
+                  <Pressable
+                    style={[
+                      styles.pickerChip,
+                      pickerDietKeys.length === 0 && pickerCustomDietKeys.length === 0
+                        ? pickerChipOnStyle
+                        : null,
+                    ]}
+                    onPress={() => {
+                      clearPickerDiet();
+                      clearPickerCustomDiets();
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.pickerChipText,
+                        pickerDietKeys.length === 0 && pickerCustomDietKeys.length === 0
+                          ? pickerChipTextOnStyle
+                          : null,
+                      ]}
+                    >
+                      Alle
+                    </Text>
+                  </Pressable>
+                  {['vegetarian', 'vegan', 'keto', ...pickerCustomDiets].map((k) => {
+                    const isBuiltIn = k === 'vegetarian' || k === 'vegan' || k === 'keto';
+                    const on = isBuiltIn
+                      ? pickerSelectedDietSet.has(k)
+                      : pickerSelectedCustomDietSet.has(k);
+                    const label =
+                      k === 'vegetarian'
+                        ? 'Vega'
+                        : k === 'vegan'
+                          ? 'Vegan'
+                          : k === 'keto'
+                            ? 'Keto'
+                            : k;
+                    return (
+                      <Pressable
+                        key={`picker-diet-${k}`}
+                        style={[styles.pickerChip, on ? pickerChipOnStyle : null]}
+                        onPress={() => {
+                          if (isBuiltIn) togglePickerDiet(k);
+                          else togglePickerCustomDiet(k);
+                        }}
+                      >
+                        <Text
+                          style={[styles.pickerChipText, on ? pickerChipTextOnStyle : null]}
+                          numberOfLines={1}
+                        >
+                          {label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+
+              {pickerCategories.length > 0 ? (
+                <>
+                  <Text style={styles.pickerFilterSubLabel}>Categorie</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.pickerChipScroll}
+                  >
+                    <View style={styles.pickerChipRow}>
+                      <Pressable
+                        style={[
+                          styles.pickerChip,
+                          pickerCategoryKey === null ? pickerChipOnStyle : null,
+                        ]}
+                        onPress={() => setPickerCategoryKey(null)}
+                      >
+                        <Text
+                          style={[
+                            styles.pickerChipText,
+                            pickerCategoryKey === null ? pickerChipTextOnStyle : null,
+                          ]}
+                        >
+                          Alle
+                        </Text>
+                      </Pressable>
+                      {pickerCategories.map((c) => (
+                        <Pressable
+                          key={`picker-cat-${c}`}
+                          style={[
+                            styles.pickerChip,
+                            pickerCategoryKey === c ? pickerChipOnStyle : null,
+                          ]}
+                          onPress={() => setPickerCategoryKey((cur) => (cur === c ? null : c))}
+                        >
+                          <Text
+                            style={[
+                              styles.pickerChipText,
+                              pickerCategoryKey === c ? pickerChipTextOnStyle : null,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {c}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </>
+              ) : null}
+
+              {pickerRecipeTags.length > 0 ? (
+                <>
+                  <Text style={styles.pickerFilterSubLabel}>Tag</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.pickerChipScroll}
+                  >
+                    <View style={styles.pickerChipRow}>
+                      <Pressable
+                        style={[
+                          styles.pickerChip,
+                          pickerTagKeys.length === 0 ? pickerChipOnStyle : null,
+                        ]}
+                        onPress={clearPickerTags}
+                      >
+                        <Text
+                          style={[
+                            styles.pickerChipText,
+                            pickerTagKeys.length === 0 ? pickerChipTextOnStyle : null,
+                          ]}
+                        >
+                          Alle
+                        </Text>
+                      </Pressable>
+                      {pickerTagKeys.map((t) => (
+                        <Pressable
+                          key={`picker-strip-tag-${t}`}
+                          style={[
+                            styles.pickerChip,
+                            pickerSelectedTagSet.has(t) ? pickerChipOnStyle : null,
+                          ]}
+                          onPress={() => togglePickerTag(t)}
+                        >
+                          <Text
+                            style={[
+                              styles.pickerChipText,
+                              pickerSelectedTagSet.has(t) ? pickerChipTextOnStyle : null,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {t}
+                          </Text>
+                        </Pressable>
+                      ))}
+                      {pickerExtraTags.length > 0 ? (
+                        <Pressable
+                          style={[
+                            styles.pickerChip,
+                            styles.pickerTagsMoreChip,
+                            pickerTagKeyInExtra ? pickerChipOnStyle : null,
+                          ]}
+                          onPress={() => setPickerTagsPickerOpen(true)}
+                        >
+                          <Text
+                            style={[
+                              styles.pickerChipText,
+                              styles.pickerTagsMoreChipText,
+                              pickerTagKeyInExtra ? pickerChipTextOnStyle : null,
+                            ]}
+                          >
+                            + tags
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  </ScrollView>
+                </>
+              ) : null}
+            </ScrollView>
+            <View style={styles.pickerFiltersSheetActions}>
+              <Pressable style={styles.pickerFilterClearAllBtn} onPress={clearPickerFilters}>
+                <Text style={styles.pickerFilterClearAllText}>Filters wissen</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.pickerFilterDoneBtn, { backgroundColor: theme.accent }]}
+                onPress={() => setPickerFiltersModalOpen(false)}
+              >
+                <Text style={styles.pickerFilterDoneBtnText}>Klaar</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={pickerTagsPickerOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setPickerTagsPickerOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.tagPickerCard}>
+            <Text style={styles.modalTitle}>Meer tags</Text>
+            <Text style={styles.tagPickerHint}>Tik op een tag om daarop te filteren.</Text>
+            <FlatList
+              data={pickerExtraTags}
+              numColumns={2}
+              keyExtractor={(item) => item}
+              style={styles.tagPickerList}
+              columnWrapperStyle={styles.tagGridRow}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <Pressable
+                  style={[
+                    styles.tagGridCell,
+                    pickerSelectedTagSet.has(item) ? pickerChipOnStyle : null,
+                  ]}
+                  onPress={() => togglePickerTag(item)}
+                >
+                  <Text
+                    style={[
+                      styles.tagGridCellText,
+                      pickerSelectedTagSet.has(item) ? pickerChipTextOnStyle : null,
+                    ]}
+                    numberOfLines={3}
+                  >
+                    {item}
+                  </Text>
+                </Pressable>
+              )}
+            />
+            <Pressable
+              style={styles.tagPickerCloseBtn}
+              onPress={() => setPickerTagsPickerOpen(false)}
+            >
+              <Text style={styles.tagPickerCloseBtnText}>Klaar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={pendingReplaceOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setPendingReplaceOpen(false)}
+      >
         <View style={styles.replaceBackdrop}>
-          <Pressable style={styles.replaceBackdropPress} onPress={() => setPendingReplaceOpen(false)} />
+          <Pressable
+            style={styles.replaceBackdropPress}
+            onPress={() => setPendingReplaceOpen(false)}
+          />
           <View style={styles.replaceCard}>
             <Text style={styles.replaceTitle}>Iets anders</Text>
-            <Text style={styles.replaceHint}>Wat wil je liever? (bijv. “geen vis”, “makkelijk”, “iets met aubergine”)</Text>
+            <Text style={styles.replaceHint}>
+              Wat wil je liever? (bijv. “geen vis”, “makkelijk”, “iets met aubergine”)
+            </Text>
             <TextInput
               style={styles.replaceInput}
               placeholder="Typ je wensen…"
@@ -1746,11 +2502,19 @@ export default function PlannerScreen() {
               multiline
             />
             <View style={styles.replaceActions}>
-              <Pressable style={styles.replaceCancel} onPress={() => setPendingReplaceOpen(false)} disabled={busyReplace}>
+              <Pressable
+                style={styles.replaceCancel}
+                onPress={() => setPendingReplaceOpen(false)}
+                disabled={busyReplace}
+              >
                 <Text style={styles.replaceCancelText}>Annuleren</Text>
               </Pressable>
               <Pressable
-                style={[styles.replaceAskBtn, { backgroundColor: theme.accent }, busyReplace && styles.btnOff]}
+                style={[
+                  styles.replaceAskBtn,
+                  { backgroundColor: theme.accent },
+                  busyReplace && styles.btnOff,
+                ]}
                 onPress={requestAlternativeRecipe}
                 disabled={busyReplace}
               >
@@ -1761,16 +2525,20 @@ export default function PlannerScreen() {
         </View>
       </Modal>
 
-      <Modal visible={previewOpen} animationType="slide" onRequestClose={() => setPreviewOpen(false)}>
+      <Modal
+        visible={previewOpen}
+        animationType="slide"
+        onRequestClose={closeRecipePreview}
+      >
         <View style={[styles.previewRoot, { backgroundColor: theme.background }]}>
-          <View style={styles.previewHeader}>
+          <View style={[styles.previewHeader, { paddingTop: 8 + insets.top }]}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.previewTitle} numberOfLines={2}>
                 {previewTitle || 'Preview'}
               </Text>
               <Text style={styles.previewMeta}>Voor {previewServings} p.</Text>
             </View>
-            <Pressable onPress={() => setPreviewOpen(false)} hitSlop={10}>
+            <Pressable onPress={closeRecipePreview} hitSlop={10}>
               <Text style={[styles.previewClose, { color: theme.accent }]}>Sluiten</Text>
             </Pressable>
           </View>
@@ -1780,8 +2548,26 @@ export default function PlannerScreen() {
               <ActivityIndicator color={theme.accent} />
               <Text style={styles.previewLoadingText}>Laden…</Text>
             </View>
+          ) : previewError ? (
+            <View style={styles.previewErrorWrap}>
+              <Text style={styles.previewErrorText}>{previewError}</Text>
+              {previewDate ? (
+                <Pressable
+                  onPress={() => openRecipePreview(previewDate)}
+                  style={[styles.previewRetryBtn, { borderColor: theme.accent }]}
+                >
+                  <Text style={[styles.previewRetryBtnText, { color: theme.accent }]}>
+                    Opnieuw proberen
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
           ) : (
-            <ScrollView contentContainerStyle={styles.previewScroll} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              style={styles.previewScrollView}
+              contentContainerStyle={[styles.previewScroll, { paddingBottom: 24 + insets.bottom }]}
+              keyboardShouldPersistTaps="handled"
+            >
               {previewImageUri ? (
                 <Image
                   source={{ uri: previewImageUri }}
@@ -1797,14 +2583,17 @@ export default function PlannerScreen() {
               ) : (
                 previewIngredients.map((g, gi) => (
                   <View key={`g-${gi}`} style={styles.previewGroup}>
-                    {g.title?.trim() ? <Text style={styles.previewGroupTitle}>{g.title.trim()}</Text> : null}
+                    {g.title?.trim() ? (
+                      <Text style={styles.previewGroupTitle}>{g.title.trim()}</Text>
+                    ) : null}
                     {g.ingredients.map((ing, ii) => {
                       const amount = ing.amount != null ? String(ing.amount) : '';
                       const unit = (ing.unit ?? '').trim();
                       const qty = amount ? `${amount}${unit ? ` ${unit}` : ''}` : '';
                       return (
                         <Text key={`ing-${gi}-${ii}`} style={styles.previewLine}>
-                          {qty ? `${qty} · ` : ''}{ing.name}
+                          {qty ? `${qty} · ` : ''}
+                          {ing.name}
                         </Text>
                       );
                     })}
@@ -1818,7 +2607,9 @@ export default function PlannerScreen() {
               ) : (
                 previewSteps.map((s, si) => (
                   <View key={`s-${si}`} style={styles.previewGroup}>
-                    {s.title?.trim() ? <Text style={styles.previewGroupTitle}>{s.title.trim()}</Text> : null}
+                    {s.title?.trim() ? (
+                      <Text style={styles.previewGroupTitle}>{s.title.trim()}</Text>
+                    ) : null}
                     {s.steps.map((st, idx) => (
                       <Text key={`st-${si}-${idx}`} style={styles.previewLine}>
                         {idx + 1}. {st.description}
@@ -1830,6 +2621,21 @@ export default function PlannerScreen() {
               <View style={{ height: 18 }} />
             </ScrollView>
           )}
+
+          {previewRecipeId != null && !previewLoading && !previewError ? (
+            <View style={[styles.previewFooter, { paddingBottom: 12 + insets.bottom }]}>
+              <Pressable
+                onPress={() => {
+                  const id = previewRecipeId;
+                  closeRecipePreview();
+                  router.push({ pathname: '/recipe/[id]', params: { id: String(id) } });
+                }}
+                style={[styles.previewGoBtn, { borderColor: theme.accent }]}
+              >
+                <Text style={[styles.previewGoBtnText, { color: theme.accent }]}>Volledig recept</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
       </Modal>
     </View>
@@ -1874,7 +2680,13 @@ const styles = StyleSheet.create({
     minWidth: 0,
     flexShrink: 1,
   },
-  primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 12, textAlign: 'center', flexShrink: 1 },
+  primaryBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+    textAlign: 'center',
+    flexShrink: 1,
+  },
   secondaryBtn: {
     paddingVertical: 8,
     paddingHorizontal: 8,
@@ -1948,6 +2760,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   overflowItem: { paddingVertical: 12, paddingHorizontal: 14 },
+  overflowItemText: { color: '#1a1a1a', fontWeight: '800', fontSize: 15 },
   overflowDestructive: { color: '#b00020', fontWeight: '800', fontSize: 15 },
   sheetRoot: { flex: 1, justifyContent: 'flex-end' },
   sheetDim: {
@@ -1965,6 +2778,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   generateSheetTitle: { fontSize: 20, fontWeight: '800', color: '#1a1a1a', marginBottom: 8 },
+  weekPlanAiHint: { fontSize: 13, color: '#666', lineHeight: 19, marginBottom: 10 },
   wishesInputSheet: {
     borderWidth: 1,
     borderColor: '#e2ddd5',
@@ -1983,7 +2797,13 @@ const styles = StyleSheet.create({
     marginBottom: 0,
     gap: 8,
   },
-  generateSectionLabelFlat: { fontSize: 13, fontWeight: '800', color: '#555', flex: 1, minWidth: 0 },
+  generateSectionLabelFlat: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#555',
+    flex: 1,
+    minWidth: 0,
+  },
   allesNietsRow: { flexDirection: 'row', gap: 8, flexShrink: 0 },
   genDayListScroll: { marginBottom: 8, maxHeight: 400 },
   genDayRow: {
@@ -2018,13 +2838,32 @@ const styles = StyleSheet.create({
     borderColor: '#e2ddd5',
   },
   hintChipText: { fontSize: 12, fontWeight: '800', color: '#444' },
-  generateSheetActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, gap: 12 },
+  generateSheetActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+    gap: 12,
+  },
   generateCancel: { padding: 10 },
   generateCancelText: { color: '#666', fontSize: 16, fontWeight: '600' },
-  generateGoBtn: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, minWidth: 120, alignItems: 'center' },
+  generateGoBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    minWidth: 120,
+    alignItems: 'center',
+  },
   generateGoBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   listContent: { paddingBottom: 30 },
-  dayCard: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#e2ddd5', padding: 10, marginBottom: 8 },
+  dayCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+    padding: 10,
+    marginBottom: 8,
+  },
   dayCardExpanded: { backgroundColor: '#f7f6f3' },
   dayTopRow: {
     flexDirection: 'row',
@@ -2032,7 +2871,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 8,
   },
-  dayLabelTop: { fontSize: 13, color: '#666', flex: 1, minWidth: 0 },
+  dayLabelTop: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#666',
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 8,
+    paddingVertical: 6,
+  },
   dayTopIcons: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   dayPickRow: {
     flexDirection: 'row',
@@ -2051,7 +2898,7 @@ const styles = StyleSheet.create({
   dayPickRowDisabled: { opacity: 0.5 },
   dayRecipeTitle: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '800', color: '#1a1a1a' },
   dayPlaceholderTitle: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '600', color: '#8a8a8a' },
-  daySubMeta: { fontSize: 12, color: '#8a8a8a', marginTop: 6, marginLeft: 2 },
+  daySubMeta: { fontSize: 12, color: '#8a8a8a', marginTop: 6, marginLeft: 8 },
   dayIconBtn: { padding: 6 },
   expandedBlock: {
     marginTop: 10,
@@ -2060,7 +2907,13 @@ const styles = StyleSheet.create({
     gap: 10,
     alignItems: 'flex-end',
   },
-  fieldsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', marginTop: 10 },
+  fieldsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    alignItems: 'flex-end',
+    marginTop: 10,
+  },
   field: { flex: 1, minWidth: 110 },
   fieldLabel: { fontSize: 12, fontWeight: '700', color: '#555', marginBottom: 4 },
   stepper: {
@@ -2075,9 +2928,22 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     minHeight: 48,
   },
-  stepBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#f7f6f3', alignItems: 'center', justifyContent: 'center' },
+  stepBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#f7f6f3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   stepBtnText: { fontSize: 18, fontWeight: '800', color: '#1a1a1a' },
-  stepValue: { fontSize: 16, fontWeight: '400', color: '#1a1a1a', minWidth: 30, textAlign: 'center' },
+  stepValue: {
+    fontSize: 16,
+    fontWeight: '400',
+    color: '#1a1a1a',
+    minWidth: 30,
+    textAlign: 'center',
+  },
   multiCookRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2105,18 +2971,183 @@ const styles = StyleSheet.create({
   checkboxMarkSmall: { color: '#fff', fontWeight: '800', fontSize: 14, lineHeight: 16 },
   multiCookLabel: { fontSize: 13, fontWeight: '400', color: '#1a1a1a' },
   pickerRoot: { flex: 1, padding: 14 },
-  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
   pickerTitle: { fontSize: 18, fontWeight: '800', color: '#1a1a1a' },
   close: { fontSize: 16, fontWeight: '700' },
-  searchInput: { borderWidth: 1, borderColor: '#e2ddd5', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, backgroundColor: '#fff', marginTop: 8, marginBottom: 10 },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    backgroundColor: '#fff',
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  pickerChipRowMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 8,
+  },
+  pickerChipRowLeft: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, flex: 1, minWidth: 0 },
+  pickerChipFilterBtn: { flexShrink: 0, marginLeft: 4 },
+  pickerChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+    backgroundColor: '#fff',
+  },
+  pickerChipText: { fontSize: 13, color: '#444', fontWeight: '600' },
   pickerList: { paddingBottom: 30 },
-  pickerRow: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: '#e2ddd5', backgroundColor: '#fff', marginBottom: 8 },
+  pickerRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+    backgroundColor: '#fff',
+    marginBottom: 8,
+  },
   leftoversRow: { backgroundColor: '#fdf0e9' },
   pickerRowTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
   pickerRowMeta: { fontSize: 12, color: '#666', marginTop: 3 },
   empty: { padding: 14, color: '#666' },
 
-  newRecipeActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' },
+  pickerFiltersSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '85%',
+    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+    zIndex: 1,
+    elevation: 4,
+  },
+  pickerFiltersSheetTitle: { fontSize: 20, fontWeight: '800', color: '#1a1a1a', marginBottom: 4 },
+  pickerFiltersSheetScroll: { maxHeight: 480 },
+  pickerFiltersSheetScrollInner: { paddingBottom: 8 },
+  pickerFilterSubLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  pickerTimeSliderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 4,
+    paddingBottom: 10,
+  },
+  pickerTimeSliderCol: { flex: 1, minWidth: 0 },
+  pickerTimeSlider: { width: '100%', height: 36 },
+  pickerTimeSliderValue: { fontSize: 12, color: '#666', fontWeight: '600', marginTop: -2 },
+  pickerTimeSliderResetBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+    backgroundColor: '#fff',
+  },
+  pickerTimeSliderResetBtnOff: { backgroundColor: '#f7f6f3', borderColor: '#eee9e1' },
+  pickerTimeSliderResetText: { fontSize: 13, color: '#444', fontWeight: '700' },
+  pickerTimeSliderResetTextOff: { color: '#9a958d' },
+  pickerChipScroll: { marginBottom: 6 },
+  pickerChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    gap: 8,
+    paddingVertical: 4,
+    alignItems: 'center',
+  },
+  pickerTagsMoreChip: { borderStyle: 'dashed', borderColor: '#c9c2b8' },
+  pickerTagsMoreChipText: { fontWeight: '700' },
+  pickerFiltersSheetActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 12,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#e2ddd5',
+  },
+  pickerFilterClearAllBtn: { paddingVertical: 12, paddingHorizontal: 8, flex: 1 },
+  pickerFilterClearAllText: {
+    color: '#9a3d3d',
+    fontWeight: '700',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  pickerFilterDoneBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  pickerFilterDoneBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  tagPickerCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    maxHeight: '88%',
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
+  },
+  modalTitle: { fontSize: 20, fontWeight: '700', marginBottom: 12 },
+  tagPickerHint: { fontSize: 13, color: '#666', marginBottom: 12 },
+  tagPickerList: { flexGrow: 0 },
+  tagGridRow: { gap: 8, marginBottom: 8 },
+  tagGridCell: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+    backgroundColor: '#fff',
+    marginHorizontal: 4,
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  tagGridCellText: { fontSize: 14, color: '#333', fontWeight: '600', textAlign: 'center' },
+  tagPickerCloseBtn: {
+    marginTop: 12,
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  tagPickerCloseBtnText: { fontSize: 16, color: '#666', fontWeight: '600' },
+
+  newRecipeActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 8,
+    flexWrap: 'wrap',
+  },
   newRecipeBadge: { fontSize: 12, fontWeight: '900', color: '#2a4a7a' },
   newRecipeApproveBtn: {
     flexDirection: 'row',
@@ -2138,9 +3169,20 @@ const styles = StyleSheet.create({
   },
   newRecipeOtherText: { fontSize: 13, fontWeight: '800', color: '#444' },
 
-  replaceBackdrop: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.4)' },
+  replaceBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
   replaceBackdropPress: { ...StyleSheet.absoluteFillObject },
-  replaceCard: { backgroundColor: '#fff', borderRadius: 12, padding: 18, borderWidth: 1, borderColor: '#e2ddd5' },
+  replaceCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+  },
   replaceTitle: { fontSize: 18, fontWeight: '800', color: '#1a1a1a', marginBottom: 6 },
   replaceHint: { fontSize: 13, color: '#666', lineHeight: 18, marginBottom: 10 },
   replaceInput: {
@@ -2154,22 +3196,77 @@ const styles = StyleSheet.create({
     minHeight: 80,
     textAlignVertical: 'top',
   },
-  replaceActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, gap: 12 },
+  replaceActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 14,
+    gap: 12,
+  },
   replaceCancel: { padding: 10 },
   replaceCancelText: { color: '#666', fontSize: 16, fontWeight: '600' },
-  replaceAskBtn: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, minWidth: 120, alignItems: 'center' },
+  replaceAskBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    minWidth: 120,
+    alignItems: 'center',
+  },
   replaceAskBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
 
-  previewRoot: { flex: 1, padding: 14 },
-  previewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 6 },
+  previewRoot: { flex: 1, paddingHorizontal: 14 },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingBottom: 6,
+  },
   previewTitle: { fontSize: 18, fontWeight: '900', color: '#1a1a1a' },
   previewMeta: { fontSize: 12, color: '#666', marginTop: 2 },
   previewClose: { fontSize: 16, fontWeight: '700' },
+  previewScrollView: { flex: 1 },
+  previewFooter: {
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#ddd',
+  },
+  previewGoBtn: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  previewGoBtnText: { fontSize: 16, fontWeight: '800' },
   previewLoadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14 },
   previewLoadingText: { fontSize: 14, color: '#666' },
+  previewErrorWrap: { flex: 1, justifyContent: 'center', paddingVertical: 24, gap: 14 },
+  previewErrorText: { fontSize: 15, color: '#666', textAlign: 'center', lineHeight: 22 },
+  previewRetryBtn: {
+    alignSelf: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  previewRetryBtnText: { fontSize: 15, fontWeight: '800' },
   previewScroll: { paddingBottom: 24 },
-  previewImage: { width: '100%', height: 180, borderRadius: 12, backgroundColor: '#e8e4dc', marginTop: 10, marginBottom: 12 },
-  previewSectionTitle: { fontSize: 15, fontWeight: '900', color: '#1a1a1a', marginTop: 8, marginBottom: 6 },
+  previewImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    backgroundColor: '#e8e4dc',
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  previewSectionTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#1a1a1a',
+    marginTop: 8,
+    marginBottom: 6,
+  },
   previewEmpty: { fontSize: 14, color: '#666', paddingVertical: 6 },
   previewGroup: { marginBottom: 10 },
   previewGroupTitle: { fontSize: 13, fontWeight: '800', color: '#555', marginBottom: 4 },

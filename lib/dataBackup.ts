@@ -2,11 +2,7 @@ import { Directory, File as FsFile, Paths } from 'expo-file-system';
 import * as SQLite from 'expo-sqlite';
 import { Platform, Share } from 'react-native';
 
-import {
-  closeAndResetDatabaseConnectionAsync,
-  DB_NAME,
-  ensureDatabaseAsync,
-} from './db';
+import { closeAndResetDatabaseConnectionAsync, DB_NAME, ensureDatabaseAsync } from './db';
 
 const SQLITE_MAGIC = new Uint8Array([
   0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00,

@@ -10,4 +10,3 @@ export async function getImportWebSearchEnabled(): Promise<boolean> {
 export async function setImportWebSearchEnabled(on: boolean): Promise<void> {
   await setAppMeta(META_IMPORT_WEB_SEARCH, on ? '1' : '0');
 }
-

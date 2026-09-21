@@ -1,6 +1,15 @@
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
@@ -80,7 +89,10 @@ export default function DataSettingsScreen() {
       try {
         await pickAndRestoreDatabaseBackupAsync();
         reloadAfterImportOrWipe();
-        Alert.alert('Klaar', 'De backup is ingelezen. Als ergens nog oude gegevens staan, sluit die schermen of herstart de app.');
+        Alert.alert(
+          'Klaar',
+          'De backup is ingelezen. Als ergens nog oude gegevens staan, sluit die schermen of herstart de app.'
+        );
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Importeren mislukt.';
         if (msg !== 'Geen bestand gekozen.') {
@@ -151,34 +163,54 @@ export default function DataSettingsScreen() {
       ) : (
         <>
           <Text style={styles.hint}>
-            Recepten en lijsten staan in een lokaal databasebestand. Gebruik een backup vóór grote wijzigingen of als je
-            van telefoon wisselt. Importeren vervangt alles in de database; je AI-sleutels blijven in de beveiligde
-            opslag staan tenzij je ze apart wist.
+            Recepten en lijsten staan in een lokaal databasebestand. Gebruik een backup vóór grote
+            wijzigingen of als je van telefoon wisselt. Importeren vervangt alles in de database; je
+            AI-sleutels blijven in de beveiligde opslag staan tenzij je ze apart wist.
           </Text>
 
           <Pressable
-            style={[styles.btnPrimary, { backgroundColor: theme.accent }, dataBusy && styles.btnDisabled]}
+            style={[
+              styles.btnPrimary,
+              { backgroundColor: theme.accent },
+              dataBusy && styles.btnDisabled,
+            ]}
             onPress={onExportBackup}
             disabled={dataBusy}
           >
             <Text style={styles.btnPrimaryText}>Backup maken en delen</Text>
           </Pressable>
           <Pressable
-            style={[styles.btnOutline, { borderColor: theme.accent }, dataBusy && styles.btnDisabled]}
+            style={[
+              styles.btnOutline,
+              { borderColor: theme.accent },
+              dataBusy && styles.btnDisabled,
+            ]}
             onPress={onExportJson}
             disabled={dataBusy}
           >
-            <Text style={[styles.btnOutlineText, { color: theme.accent }]}>Exporteer alles als JSON</Text>
+            <Text style={[styles.btnOutlineText, { color: theme.accent }]}>
+              Exporteer alles als JSON
+            </Text>
           </Pressable>
           <Pressable
-            style={[styles.btnOutline, { borderColor: theme.accent }, dataBusy && styles.btnDisabled]}
+            style={[
+              styles.btnOutline,
+              { borderColor: theme.accent },
+              dataBusy && styles.btnDisabled,
+            ]}
             onPress={onImportBackup}
             disabled={dataBusy}
           >
-            <Text style={[styles.btnOutlineText, { color: theme.accent }]}>Importeer van backupbestand</Text>
+            <Text style={[styles.btnOutlineText, { color: theme.accent }]}>
+              Importeer van backupbestand
+            </Text>
           </Pressable>
 
-          <Pressable style={[styles.btnDangerSolid, dataBusy && styles.btnDisabled]} onPress={onWipeAllData} disabled={dataBusy}>
+          <Pressable
+            style={[styles.btnDangerSolid, dataBusy && styles.btnDisabled]}
+            onPress={onWipeAllData}
+            disabled={dataBusy}
+          >
             <Text style={styles.btnDangerSolidText}>Alle lokale data wissen</Text>
           </Pressable>
 
@@ -243,4 +275,3 @@ const styles = StyleSheet.create({
   },
   busyHint: { fontSize: 14, color: '#666' },
 });
-

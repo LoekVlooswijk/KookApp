@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -19,6 +19,7 @@ import { buildCookingSystemPrompt } from '../lib/cookingAssistant';
 import { applyAdjustmentFromChat } from '../lib/recipeAdjust';
 import { applyAiAdjustedRecipe } from '../lib/recipesRepo';
 import type { FullRecipe } from '../lib/types';
+import { ChatSheetKeyboardWrap } from './ChatSheetKeyboardWrap';
 import { FormattedText } from './FormattedText';
 import { useAppTheme } from './ThemeContext';
 
@@ -54,6 +55,12 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
   const [adjustSuggested, setAdjustSuggested] = useState(false);
   const [applying, setApplying] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const sendInFlightRef = useRef(false);
+
+  const closePanel = useCallback(() => {
+    Keyboard.dismiss();
+    setOpen(false);
+  }, []);
 
   const systemPrompt = useMemo(
     () => buildCookingSystemPrompt(recipe, servings),
@@ -61,7 +68,10 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
   );
 
   useEffect(() => {
-    void hasActiveAiKey().then(setHasKey);
+    if (!open) return;
+    void hasActiveAiKey()
+      .then(setHasKey)
+      .catch(() => setHasKey(false));
   }, [open]);
 
   /** Bij ander recept of andere porties: chat leegmaken (andere context). */
@@ -77,11 +87,11 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
     async (userText: string) => {
       const trimmed = userText.trim();
       if (!trimmed || busy) return;
+      if (sendInFlightRef.current) return;
+      sendInFlightRef.current = true;
 
       const base =
-        turns.length > 0 && turns[turns.length - 1].role === 'user'
-          ? turns.slice(0, -1)
-          : turns;
+        turns.length > 0 && turns[turns.length - 1].role === 'user' ? turns.slice(0, -1) : turns;
 
       const nextHistory: AiChatTurn[] = [...base, { role: 'user', text: trimmed }];
       setTurns(nextHistory);
@@ -90,21 +100,26 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
       setAdjustSuggested(false);
       setLoading(true);
 
-      const res = await callAiChat({
-        system: systemPrompt,
-        messages: nextHistory,
-        maxTokens: 1536,
-      });
+      try {
+        const res = await callAiChat({
+          system: systemPrompt,
+          messages: nextHistory,
+          maxTokens: 1536,
+          task: 'adjust',
+        });
 
-      setLoading(false);
-      if (!res.ok) {
-        setError(res.message);
-        return;
+        if (!res.ok) {
+          setError(res.message);
+          return;
+        }
+
+        const { clean, isAdjustment } = stripAdjustTag(res.text.trim());
+        setTurns([...nextHistory, { role: 'assistant', text: clean }]);
+        setAdjustSuggested(isAdjustment);
+      } finally {
+        setLoading(false);
+        sendInFlightRef.current = false;
       }
-
-      const { clean, isAdjustment } = stripAdjustTag(res.text.trim());
-      setTurns([...nextHistory, { role: 'assistant', text: clean }]);
-      setAdjustSuggested(isAdjustment);
     },
     [busy, systemPrompt, turns]
   );
@@ -161,141 +176,141 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
         <Text style={styles.fabText}>Tips & vraag</Text>
       </Pressable>
 
-      <Modal
-        visible={open}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setOpen(false)}
-      >
-        <KeyboardAvoidingView
-          style={styles.modalRoot}
-          behavior="padding"
-        >
-          <Pressable style={styles.modalBackdrop} onPress={() => setOpen(false)} />
-          <View style={[styles.sheet, { backgroundColor: theme.background }]}>
+      <Modal visible={open} animationType="slide" transparent onRequestClose={closePanel}>
+        <View style={styles.modalRoot}>
+          <Pressable style={styles.modalBackdrop} onPress={closePanel} />
+          <ChatSheetKeyboardWrap style={[styles.sheet, { backgroundColor: theme.background }]}>
             <View style={styles.sheetInner}>
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Kookhulp</Text>
-              <View style={styles.headerActions}>
-                <Pressable
-                  style={styles.micBtn}
-                  disabled
-                  accessibilityLabel="Stem invoer (later beschikbaar)"
-                  accessibilityState={{ disabled: true }}
-                >
-                  <Text style={styles.micIcon}>🎤</Text>
-                </Pressable>
-                <Pressable onPress={() => setOpen(false)} hitSlop={12}>
-                  <Text style={styles.close}>Sluiten</Text>
-                </Pressable>
-              </View>
-            </View>
-            <Text style={styles.micHint}>Stem: later (Whisper)</Text>
-
-            {!hasKey ? (
-              <View style={styles.warnBox}>
-                <Text style={styles.warnText}>
-                  Zet een API-sleutel in Instellingen om tips te kunnen vragen.
-                </Text>
-                <Link href="/settings" asChild>
-                  <Pressable style={styles.linkBtn}>
-                    <Text style={styles.linkBtnText}>Naar instellingen</Text>
+              <View style={styles.sheetHeader}>
+                <Text style={styles.sheetTitle}>Kookhulp</Text>
+                <View style={styles.headerActions}>
+                  <Pressable
+                    style={styles.micBtn}
+                    disabled
+                    accessibilityLabel="Stem invoer (later beschikbaar)"
+                    accessibilityState={{ disabled: true }}
+                  >
+                    <Text style={styles.micIcon}>🎤</Text>
                   </Pressable>
-                </Link>
+                  <Pressable onPress={closePanel} hitSlop={12}>
+                    <Text style={styles.close}>Sluiten</Text>
+                  </Pressable>
+                </View>
               </View>
-            ) : null}
+              <Text style={styles.micHint}>Stem: later (Whisper)</Text>
 
-            <ScrollView
-              ref={scrollRef}
-              style={styles.chatScroll}
-              contentContainerStyle={styles.chatContent}
-              keyboardShouldPersistTaps="always"
-            >
-              <Text style={styles.intro}>
-                Stel een korte vraag over dit recept (je kookt voor {servings} persoon
-                {servings === 1 ? '' : 'en'}).
-              </Text>
-              {turns.map((m, i) => (
-                <View
-                  key={`${i}-${m.role}`}
-                  style={[styles.bubble, m.role === 'user' ? styles.bubbleUser : styles.bubbleAsst]}
-                >
-                  <Text style={styles.bubbleRole}>{m.role === 'user' ? 'Jij' : 'Kok'}</Text>
-                  <FormattedText text={m.text} style={styles.bubbleText} />
-                </View>
-              ))}
-              {loading ? (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator color={theme.accent} />
-                  <Text style={styles.loadingText}>Even geduld…</Text>
-                </View>
-              ) : null}
-              {applying ? (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator color="#2a6cb6" />
-                  <Text style={styles.loadingText}>Recept aanpassen…</Text>
-                </View>
-              ) : null}
-              {error ? (
-                <View style={styles.errorBox}>
-                  <Text style={styles.errorText}>{error}</Text>
-                  <Text style={styles.errorHint}>Verstuur je vraag nogmaals of probeer het later.</Text>
-                </View>
-              ) : null}
-            </ScrollView>
-
-            {adjustSuggested && !busy ? (
-              <View style={styles.adjustRow}>
-                <Pressable style={styles.adjustBtn} onPress={() => void onApplyAdjustment()}>
-                  <Text style={styles.adjustBtnText}>Recept aanpassen</Text>
-                </Pressable>
-              </View>
-            ) : null}
-
-            <View style={styles.quickRow}>
-              {QUICK_TIPS.map((q) => (
-                <Pressable
-                  key={q}
-                  style={[
-                    styles.quickChip,
-                    { backgroundColor: theme.accentSoft, borderColor: theme.accentBorderMuted },
-                  ]}
-                  onPress={() => void sendWithText(q)}
-                  disabled={busy || !hasKey}
-                >
-                  <Text style={[styles.quickChipText, { color: theme.accentSoftText }]} numberOfLines={2}>
-                    {q}
+              {!hasKey ? (
+                <View style={styles.warnBox}>
+                  <Text style={styles.warnText}>
+                    Zet een API-sleutel in Instellingen om tips te kunnen vragen.
                   </Text>
-                </Pressable>
-              ))}
-            </View>
+                  <Link href="/settings" asChild>
+                    <Pressable style={styles.linkBtn}>
+                      <Text style={styles.linkBtnText}>Naar instellingen</Text>
+                    </Pressable>
+                  </Link>
+                </View>
+              ) : null}
 
-            <View style={styles.inputRow}>
-              <TextInput
-                style={styles.input}
-                placeholder="Je vraag…"
-                placeholderTextColor="#999"
-                value={input}
-                onChangeText={setInput}
-                multiline
-                maxLength={800}
-                editable={hasKey && !busy}
-              />
-              <Pressable
-                style={[
-                  styles.sendBtn,
-                  { backgroundColor: theme.accent },
-                  (!input.trim() || busy || !hasKey) && styles.sendBtnOff,
-                ]}
-                onPress={onSend}
-                disabled={!input.trim() || busy || !hasKey}
+              <ScrollView
+                ref={scrollRef}
+                style={styles.chatScroll}
+                contentContainerStyle={styles.chatContent}
+                keyboardShouldPersistTaps="always"
               >
-                <Text style={styles.sendBtnText}>Verstuur</Text>
-              </Pressable>
+                <Text style={styles.intro}>
+                  Stel een korte vraag over dit recept (je kookt voor {servings} persoon
+                  {servings === 1 ? '' : 'en'}).
+                </Text>
+                {turns.map((m, i) => (
+                  <View
+                    key={`${i}-${m.role}`}
+                    style={[
+                      styles.bubble,
+                      m.role === 'user' ? styles.bubbleUser : styles.bubbleAsst,
+                    ]}
+                  >
+                    <Text style={styles.bubbleRole}>{m.role === 'user' ? 'Jij' : 'Kok'}</Text>
+                    <FormattedText text={m.text} style={styles.bubbleText} />
+                  </View>
+                ))}
+                {loading ? (
+                  <View style={styles.loadingRow}>
+                    <ActivityIndicator color={theme.accent} />
+                    <Text style={styles.loadingText}>Even geduld…</Text>
+                  </View>
+                ) : null}
+                {applying ? (
+                  <View style={styles.loadingRow}>
+                    <ActivityIndicator color="#2a6cb6" />
+                    <Text style={styles.loadingText}>Recept aanpassen…</Text>
+                  </View>
+                ) : null}
+                {error ? (
+                  <View style={styles.errorBox}>
+                    <Text style={styles.errorText}>{error}</Text>
+                    <Text style={styles.errorHint}>
+                      Verstuur je vraag nogmaals of probeer het later.
+                    </Text>
+                  </View>
+                ) : null}
+              </ScrollView>
+
+              {adjustSuggested && !busy ? (
+                <View style={styles.adjustRow}>
+                  <Pressable style={styles.adjustBtn} onPress={() => void onApplyAdjustment()}>
+                    <Text style={styles.adjustBtnText}>Recept aanpassen</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              <View style={styles.quickRow}>
+                {QUICK_TIPS.map((q) => (
+                  <Pressable
+                    key={q}
+                    style={[
+                      styles.quickChip,
+                      { backgroundColor: theme.accentSoft, borderColor: theme.accentBorderMuted },
+                    ]}
+                    onPress={() => void sendWithText(q)}
+                    disabled={busy || !hasKey}
+                  >
+                    <Text
+                      style={[styles.quickChipText, { color: theme.accentSoftText }]}
+                      numberOfLines={2}
+                    >
+                      {q}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Je vraag…"
+                  placeholderTextColor="#999"
+                  value={input}
+                  onChangeText={setInput}
+                  multiline
+                  maxLength={800}
+                  editable={hasKey && !busy}
+                />
+                <Pressable
+                  style={[
+                    styles.sendBtn,
+                    { backgroundColor: theme.accent },
+                    (!input.trim() || busy || !hasKey) && styles.sendBtnOff,
+                  ]}
+                  onPress={onSend}
+                  disabled={!input.trim() || busy || !hasKey}
+                >
+                  <Text style={styles.sendBtnText}>Verstuur</Text>
+                </Pressable>
+              </View>
             </View>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
+          </ChatSheetKeyboardWrap>
+        </View>
       </Modal>
     </>
   );
@@ -377,7 +392,12 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   bubbleUser: { backgroundColor: '#e8f0fc', alignSelf: 'flex-end' },
-  bubbleAsst: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2ddd5', alignSelf: 'flex-start' },
+  bubbleAsst: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+    alignSelf: 'flex-start',
+  },
   bubbleRole: { fontSize: 11, fontWeight: '700', color: '#888', marginBottom: 4 },
   bubbleText: { fontSize: 15, color: '#1a1a1a', lineHeight: 22 },
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 8 },

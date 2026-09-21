@@ -53,6 +53,14 @@ export type FullRecipe = {
   dietKeto: boolean;
   isFavorite: boolean;
   wantToTry: boolean;
+  bioScoreColor: 'red' | 'orange' | 'green' | null;
+  /** ISO timestamp of last bio-score compute (nullable). */
+  bioScoreUpdatedAt: string | null;
+  /**
+   * Compact breakdown of assessed produce-only ingredients (nullable).
+   * Stored as a JSON string in SQLite; parsed into an array here.
+   */
+  bioScoreItems: Array<{ n: string; l: 'G' | 'O' | 'R'; p: 'L' | 'M' | 'H' }> | null;
   notes: string | null;
   imageUri: string | null;
   createdAt: string;
@@ -69,6 +77,7 @@ export type RecipeListItem = {
   updatedAt: string;
   isFavorite: boolean;
   wantToTry: boolean;
+  bioScoreColor: 'red' | 'orange' | 'green' | null;
   /** Lokale file-URI of externe URL; null als geen omslag. */
   imageUri: string | null;
 };
@@ -109,6 +118,9 @@ export type RecipeSavePayload = {
   dietKeto: boolean;
   isFavorite: boolean;
   wantToTry: boolean;
+  bioScoreColor: 'red' | 'orange' | 'green' | null;
+  bioScoreUpdatedAt: string | null;
+  bioScoreItems: Array<{ n: string; l: 'G' | 'O' | 'R'; p: 'L' | 'M' | 'H' }> | null;
   notes: string;
   imageUri: string;
   tagNames: string[];

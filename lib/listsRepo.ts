@@ -89,9 +89,10 @@ export async function getRecipesInList(listId: number): Promise<RecipeListItem[]
     updated_at: string;
     is_favorite: number;
     want_to_try: number;
+    bio_score_color: string | null;
     image_uri: string | null;
   }>(
-    `SELECT r.id, r.title, r.category, r.updated_at, r.is_favorite, r.want_to_try, r.image_uri
+    `SELECT r.id, r.title, r.category, r.updated_at, r.is_favorite, r.want_to_try, r.bio_score_color, r.image_uri
      FROM recipes r
      INNER JOIN recipe_list_items i ON i.recipe_id = r.id
      WHERE i.list_id = ?
@@ -105,6 +106,12 @@ export async function getRecipesInList(listId: number): Promise<RecipeListItem[]
     updatedAt: r.updated_at,
     isFavorite: r.is_favorite === 1,
     wantToTry: r.want_to_try === 1,
+    bioScoreColor:
+      (r.bio_score_color ?? '').trim().toLowerCase() === 'red' ||
+      (r.bio_score_color ?? '').trim().toLowerCase() === 'orange' ||
+      (r.bio_score_color ?? '').trim().toLowerCase() === 'green'
+        ? ((r.bio_score_color ?? '').trim().toLowerCase() as 'red' | 'orange' | 'green')
+        : null,
     imageUri: r.image_uri,
   }));
 }
@@ -218,9 +225,10 @@ export async function listRecipesNotInList(listId: number): Promise<RecipeListIt
     updated_at: string;
     is_favorite: number;
     want_to_try: number;
+    bio_score_color: string | null;
     image_uri: string | null;
   }>(
-    `SELECT r.id, r.title, r.category, r.updated_at, r.is_favorite, r.want_to_try, r.image_uri
+    `SELECT r.id, r.title, r.category, r.updated_at, r.is_favorite, r.want_to_try, r.bio_score_color, r.image_uri
      FROM recipes r
      WHERE r.id NOT IN (
        SELECT recipe_id FROM recipe_list_items WHERE list_id = ?
@@ -235,6 +243,12 @@ export async function listRecipesNotInList(listId: number): Promise<RecipeListIt
     updatedAt: r.updated_at,
     isFavorite: r.is_favorite === 1,
     wantToTry: r.want_to_try === 1,
+    bioScoreColor:
+      (r.bio_score_color ?? '').trim().toLowerCase() === 'red' ||
+      (r.bio_score_color ?? '').trim().toLowerCase() === 'orange' ||
+      (r.bio_score_color ?? '').trim().toLowerCase() === 'green'
+        ? ((r.bio_score_color ?? '').trim().toLowerCase() as 'red' | 'orange' | 'green')
+        : null,
     imageUri: r.image_uri,
   }));
 }

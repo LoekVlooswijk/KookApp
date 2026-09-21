@@ -51,7 +51,10 @@ export async function deleteManagedCategoryEverywhere(
   const n = normalizeCategoryName(name);
   if (!n) return { clearedRecipes: 0, removedRow: false };
   const db = await ensureDatabaseAsync();
-  let out: { clearedRecipes: number; removedRow: boolean } = { clearedRecipes: 0, removedRow: false };
+  let out: { clearedRecipes: number; removedRow: boolean } = {
+    clearedRecipes: 0,
+    removedRow: false,
+  };
   await db.withTransactionAsync(async () => {
     const cleared = await db.runAsync(
       `UPDATE recipes
@@ -64,4 +67,3 @@ export async function deleteManagedCategoryEverywhere(
   });
   return out;
 }
-

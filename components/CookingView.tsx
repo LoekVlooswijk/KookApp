@@ -16,11 +16,7 @@ import { CookingChatPanel } from './CookingChatPanel';
 import { PortionScaler } from './PortionScaler';
 import { useAppTheme } from './ThemeContext';
 
-import {
-  effectiveBaseServings,
-  formatScaledIngredientLine,
-  servingFactor,
-} from '../lib/scaling';
+import { effectiveBaseServings, formatScaledIngredientLine, servingFactor } from '../lib/scaling';
 import type { FullRecipe } from '../lib/types';
 import { clearCookProgress, getFullRecipe } from '../lib/recipesRepo';
 import { formatStepTimerNl } from '../lib/timerFormat';
@@ -78,19 +74,31 @@ export function CookingView({ recipeId }: Props) {
     return finished;
   }, []);
 
+  const applyLoadedRecipe = useCallback((r: FullRecipe | null) => {
+    setRecipe(r);
+    if (!r) return;
+    setServings(effectiveBaseServings(r.baseServings));
+    setChecks({ ing: [], step: [] });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const r = await getFullRecipe(recipeId);
+      if (cancelled) return;
+      applyLoadedRecipe(r);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [recipeId, applyLoadedRecipe]);
+
   const reload = useCallback(() => {
     void (async () => {
       const r = await getFullRecipe(recipeId);
-      setRecipe(r);
-      if (!r) return;
-      setServings(effectiveBaseServings(r.baseServings));
-      setChecks({ ing: [], step: [] });
+      applyLoadedRecipe(r);
     })();
-  }, [recipeId]);
-
-  useEffect(() => {
-    reload();
-  }, [reload]);
+  }, [recipeId, applyLoadedRecipe]);
 
   useEffect(() => {
     return () => {
@@ -220,116 +228,141 @@ export function CookingView({ recipeId }: Props) {
 
   return (
     <View style={[styles.wrap, { backgroundColor: theme.background }]}>
-      <ScrollView contentContainerStyle={styles.scroll} style={styles.scrollFlex} keyboardShouldPersistTaps="handled">
-      {recipe.imageUri ? (
-        <Image
-          source={{ uri: recipe.imageUri }}
-          style={styles.coverImage}
-          resizeMode="cover"
-          accessibilityLabel="Receptfoto"
-        />
-      ) : null}
-      <Text style={styles.title}>{recipe.title}</Text>
-      {recipe.description ? <Text style={styles.desc}>{recipe.description}</Text> : null}
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        style={styles.scrollFlex}
+        keyboardShouldPersistTaps="handled"
+      >
+        {recipe.imageUri ? (
+          <Image
+            source={{ uri: recipe.imageUri }}
+            style={styles.coverImage}
+            resizeMode="cover"
+            accessibilityLabel="Receptfoto"
+          />
+        ) : null}
+        <Text style={styles.title}>{recipe.title}</Text>
+        {recipe.description ? <Text style={styles.desc}>{recipe.description}</Text> : null}
 
-      <PortionScaler baseServings={recipe.baseServings} value={servings} onChange={setServings} />
+        <PortionScaler baseServings={recipe.baseServings} value={servings} onChange={setServings} />
 
-      <Text style={[styles.section, { color: theme.accent }]}>Ingrediënten</Text>
-      {recipe.ingredientGroups.map((g) => (
-        <View key={g.id} style={styles.block}>
-          {g.title ? <Text style={styles.subHeader}>{g.title}</Text> : null}
-          {g.ingredients.map((i) => {
-            const line = formatScaledIngredientLine(i.amount, i.unit, i.name, factor);
-            return (
-              <Pressable
-                key={i.id}
-                style={[styles.row, ingChecked.has(i.id) && styles.rowDone]}
-                onPress={() => toggleIng(i.id)}
-              >
-                <Text style={styles.check}>{ingChecked.has(i.id) ? '☑' : '☐'}</Text>
-                <Text style={[styles.rowText, ingChecked.has(i.id) && styles.rowTextDone]}>{line}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      ))}
-
-      <Text style={[styles.section, { color: theme.accent }]}>Stappen</Text>
-      {recipe.stepSections.map((s) => (
-        <View key={s.id} style={styles.block}>
-          {s.title ? <Text style={styles.subHeader}>{s.title}</Text> : null}
-          {s.steps.map((st) => {
-            const timer = timersByStepIdRef.current[st.id];
-            const done = stepChecked.has(st.id);
-            const num = stepNumberById.get(st.id) ?? 0;
-            const remainingSec =
-              timer?.status === 'running'
-                ? remainingSecondsFromEnd(timer.endMs)
-                : timer?.status === 'paused'
-                  ? timer.remainingSec
-                  : null;
-            return (
-              <View key={st.id} style={styles.stepWrap}>
+        <Text style={[styles.section, { color: theme.accent }]}>Ingrediënten</Text>
+        {recipe.ingredientGroups.map((g) => (
+          <View key={g.id} style={styles.block}>
+            {g.title ? <Text style={styles.subHeader}>{g.title}</Text> : null}
+            {g.ingredients.map((i) => {
+              const line = formatScaledIngredientLine(i.amount, i.unit, i.name, factor);
+              return (
                 <Pressable
-                  style={[styles.row, done && styles.rowDone]}
-                  onPress={() => toggleStep(st.id)}
+                  key={i.id}
+                  style={[styles.row, ingChecked.has(i.id) && styles.rowDone]}
+                  onPress={() => toggleIng(i.id)}
                 >
-                  <Text style={[styles.stepNum, !done && { color: theme.accent }, done && styles.stepNumDone]}>
-                    {num}.
+                  <Text style={styles.check}>{ingChecked.has(i.id) ? '☑' : '☐'}</Text>
+                  <Text style={[styles.rowText, ingChecked.has(i.id) && styles.rowTextDone]}>
+                    {line}
                   </Text>
-                  <Text style={[styles.rowText, done && styles.stepRowTextDone]}>{st.description}</Text>
                 </Pressable>
-                {st.timerSeconds != null && st.timerSeconds > 0 ? (
-                  <View style={[styles.timerRow, done && styles.timerRowDone]}>
-                    {timer != null && remainingSec != null ? (
-                      <View style={styles.timerActiveRow}>
-                        <Text style={[styles.timerText, done && styles.timerTextDone]}>
-                          {formatRemain(remainingSec)}
-                        </Text>
-                        <View style={styles.timerIcons}>
-                          <Pressable
-                            onPress={() => togglePauseTimer(st.id)}
-                            hitSlop={6}
-                            accessibilityRole="button"
-                            accessibilityLabel={timer.status === 'running' ? 'Pauzeer timer' : 'Hervat timer'}
-                            style={styles.timerIconBtn}
-                          >
-                            <MaterialIcons
-                              name={timer.status === 'running' ? 'pause' : 'play-arrow'}
-                              size={30}
-                              color={done ? '#999' : theme.accent}
-                            />
-                          </Pressable>
-                          <Pressable
-                            onPress={() => resetTimer(st.id)}
-                            hitSlop={6}
-                            accessibilityRole="button"
-                            accessibilityLabel="Reset timer"
-                            style={styles.timerIconBtn}
-                          >
-                            <MaterialIcons name="refresh" size={28} color={done ? '#999' : '#666'} />
-                          </Pressable>
+              );
+            })}
+          </View>
+        ))}
+
+        <Text style={[styles.section, { color: theme.accent }]}>Stappen</Text>
+        {recipe.stepSections.map((s) => (
+          <View key={s.id} style={styles.block}>
+            {s.title ? <Text style={styles.subHeader}>{s.title}</Text> : null}
+            {s.steps.map((st) => {
+              const timer = timersByStepIdRef.current[st.id];
+              const done = stepChecked.has(st.id);
+              const num = stepNumberById.get(st.id) ?? 0;
+              const remainingSec =
+                timer?.status === 'running'
+                  ? remainingSecondsFromEnd(timer.endMs)
+                  : timer?.status === 'paused'
+                    ? timer.remainingSec
+                    : null;
+              return (
+                <View key={st.id} style={styles.stepWrap}>
+                  <Pressable
+                    style={[styles.row, done && styles.rowDone]}
+                    onPress={() => toggleStep(st.id)}
+                  >
+                    <Text
+                      style={[
+                        styles.stepNum,
+                        !done && { color: theme.accent },
+                        done && styles.stepNumDone,
+                      ]}
+                    >
+                      {num}.
+                    </Text>
+                    <Text style={[styles.rowText, done && styles.stepRowTextDone]}>
+                      {st.description}
+                    </Text>
+                  </Pressable>
+                  {st.timerSeconds != null && st.timerSeconds > 0 ? (
+                    <View style={[styles.timerRow, done && styles.timerRowDone]}>
+                      {timer != null && remainingSec != null ? (
+                        <View style={styles.timerActiveRow}>
+                          <Text style={[styles.timerText, done && styles.timerTextDone]}>
+                            {formatRemain(remainingSec)}
+                          </Text>
+                          <View style={styles.timerIcons}>
+                            <Pressable
+                              onPress={() => togglePauseTimer(st.id)}
+                              hitSlop={6}
+                              accessibilityRole="button"
+                              accessibilityLabel={
+                                timer.status === 'running' ? 'Pauzeer timer' : 'Hervat timer'
+                              }
+                              style={styles.timerIconBtn}
+                            >
+                              <MaterialIcons
+                                name={timer.status === 'running' ? 'pause' : 'play-arrow'}
+                                size={30}
+                                color={done ? '#999' : theme.accent}
+                              />
+                            </Pressable>
+                            <Pressable
+                              onPress={() => resetTimer(st.id)}
+                              hitSlop={6}
+                              accessibilityRole="button"
+                              accessibilityLabel="Reset timer"
+                              style={styles.timerIconBtn}
+                            >
+                              <MaterialIcons
+                                name="refresh"
+                                size={28}
+                                color={done ? '#999' : '#666'}
+                              />
+                            </Pressable>
+                          </View>
                         </View>
-                      </View>
-                    ) : (
-                      <Pressable
-                        style={styles.timerBtn}
-                        onPress={() => startTimer(st.id, st.timerSeconds!)}
-                      >
-                        <Text style={styles.timerBtnText}>
-                          Start timer ({formatStepTimerNl(st.timerSeconds)})
-                        </Text>
-                      </Pressable>
-                    )}
-                  </View>
-                ) : null}
-              </View>
-            );
-          })}
-        </View>
-      ))}
+                      ) : (
+                        <Pressable
+                          style={styles.timerBtn}
+                          onPress={() => startTimer(st.id, st.timerSeconds!)}
+                        >
+                          <Text style={styles.timerBtnText}>
+                            Start timer ({formatStepTimerNl(st.timerSeconds)})
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        ))}
       </ScrollView>
-      <CookingChatPanel recipe={recipe} recipeId={recipeId} servings={servings} onRecipeUpdated={reload} />
+      <CookingChatPanel
+        recipe={recipe}
+        recipeId={recipeId}
+        servings={servings}
+        onRecipeUpdated={reload}
+      />
     </View>
   );
 }

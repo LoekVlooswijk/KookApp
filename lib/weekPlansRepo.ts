@@ -39,7 +39,10 @@ export function addDays(dateOnly: string, days: number): string {
   return toIsoDateOnly(base);
 }
 
-export async function listWeekPlansBetween(startDate: string, endDate: string): Promise<WeekPlanRow[]> {
+export async function listWeekPlansBetween(
+  startDate: string,
+  endDate: string
+): Promise<WeekPlanRow[]> {
   const db = await ensureDatabaseAsync();
   const rows = await db.getAllAsync<{
     id: number;
@@ -82,9 +85,10 @@ export async function upsertWeekPlan(params: {
   const leftoverOfDate = (params.leftoverOfDate ?? null)?.trim() || null;
 
   // "Upsert" by date: for now one dinner per day (simple and predictable).
-  const existing = await db.getFirstAsync<{ id: number }>('SELECT id FROM week_plans WHERE date = ? LIMIT 1', [
-    date,
-  ]);
+  const existing = await db.getFirstAsync<{ id: number }>(
+    'SELECT id FROM week_plans WHERE date = ? LIMIT 1',
+    [date]
+  );
   if (existing?.id) {
     await db.runAsync(
       'UPDATE week_plans SET recipe_id = ?, servings = ?, cooks_for_days = ?, leftover_of_date = ? WHERE id = ?',
@@ -107,6 +111,8 @@ export async function deleteWeekPlanByDate(date: string): Promise<void> {
 
 export async function deleteWeekPlansBetween(startDate: string, endDate: string): Promise<void> {
   const db = await ensureDatabaseAsync();
-  await db.runAsync('DELETE FROM week_plans WHERE date >= ? AND date <= ?', [startDate.trim(), endDate.trim()]);
+  await db.runAsync('DELETE FROM week_plans WHERE date >= ? AND date <= ?', [
+    startDate.trim(),
+    endDate.trim(),
+  ]);
 }
-

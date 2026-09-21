@@ -1,9 +1,4 @@
-import {
-  canonicalIngredientUnit,
-  isMassUnit,
-  isNonScalableUnit,
-  isVolumeUnit,
-} from './units';
+import { canonicalIngredientUnit, isMassUnit, isNonScalableUnit, isVolumeUnit } from './units';
 
 export const MIN_SERVINGS = 1;
 export const MAX_SERVINGS = 99;
@@ -13,7 +8,10 @@ export function effectiveBaseServings(base: number | null | undefined): number {
   return Math.floor(base);
 }
 
-export function servingFactor(targetServings: number, baseServings: number | null | undefined): number {
+export function servingFactor(
+  targetServings: number,
+  baseServings: number | null | undefined
+): number {
   const b = effectiveBaseServings(baseServings);
   const t = Math.max(MIN_SERVINGS, Math.min(MAX_SERVINGS, Math.round(targetServings)));
   return t / b;

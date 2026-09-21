@@ -65,6 +65,9 @@ export function staplesTextToList(text: string): string[] {
 }
 
 export function staplesListToText(lines: string[]): string {
-  return (Array.isArray(lines) ? lines : []).map((x) => x.trim()).filter(Boolean).join('\n').trim();
+  return (Array.isArray(lines) ? lines : [])
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
 }
-

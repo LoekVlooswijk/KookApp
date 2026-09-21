@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -18,14 +18,11 @@ import { callAiChat, hasActiveAiKey, type AiChatTurn } from '../lib/aiClient';
 import { buildAdjustChatSystemPrompt, applyAdjustmentFromChat } from '../lib/recipeAdjust';
 import { applyAiAdjustedRecipe } from '../lib/recipesRepo';
 import type { FullRecipe } from '../lib/types';
+import { ChatSheetKeyboardWrap } from './ChatSheetKeyboardWrap';
 import { FormattedText } from './FormattedText';
 import { useAppTheme } from './ThemeContext';
 
-const QUICK_SUGGESTIONS = [
-  'Maak het sneller klaar',
-  'Maak het gezonder',
-  'Meer smaak / kruiden',
-];
+const QUICK_SUGGESTIONS = ['Maak het sneller klaar', 'Maak het gezonder', 'Meer smaak / kruiden'];
 
 type Props = {
   recipe: FullRecipe;
@@ -44,14 +41,15 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
   const [error, setError] = useState<string | null>(null);
   const [hasKey, setHasKey] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const sendInFlightRef = useRef(false);
 
-  const systemPrompt = useMemo(
-    () => buildAdjustChatSystemPrompt(recipe),
-    [recipe]
-  );
+  const systemPrompt = useMemo(() => buildAdjustChatSystemPrompt(recipe), [recipe]);
 
   useEffect(() => {
-    if (visible) void hasActiveAiKey().then(setHasKey);
+    if (!visible) return;
+    void hasActiveAiKey()
+      .then(setHasKey)
+      .catch(() => setHasKey(false));
   }, [visible]);
 
   useEffect(() => {
@@ -67,11 +65,11 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
     async (userText: string) => {
       const trimmed = userText.trim();
       if (!trimmed || busy) return;
+      if (sendInFlightRef.current) return;
+      sendInFlightRef.current = true;
 
       const base =
-        turns.length > 0 && turns[turns.length - 1].role === 'user'
-          ? turns.slice(0, -1)
-          : turns;
+        turns.length > 0 && turns[turns.length - 1].role === 'user' ? turns.slice(0, -1) : turns;
 
       const nextHistory: AiChatTurn[] = [...base, { role: 'user', text: trimmed }];
       setTurns(nextHistory);
@@ -79,18 +77,23 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
       setError(null);
       setLoading(true);
 
-      const res = await callAiChat({
-        system: systemPrompt,
-        messages: nextHistory,
-        maxTokens: 2048,
-      });
+      try {
+        const res = await callAiChat({
+          system: systemPrompt,
+          messages: nextHistory,
+          maxTokens: 2048,
+          task: 'adjust',
+        });
 
-      setLoading(false);
-      if (!res.ok) {
-        setError(res.message);
-        return;
+        if (!res.ok) {
+          setError(res.message);
+          return;
+        }
+        setTurns([...nextHistory, { role: 'assistant', text: res.text.trim() }]);
+      } finally {
+        setLoading(false);
+        sendInFlightRef.current = false;
       }
-      setTurns([...nextHistory, { role: 'assistant', text: res.text.trim() }]);
     },
     [busy, systemPrompt, turns]
   );
@@ -113,9 +116,7 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
     }
 
     try {
-      const summaryParts = turns
-        .filter((t) => t.role === 'user')
-        .map((t) => t.text);
+      const summaryParts = turns.filter((t) => t.role === 'user').map((t) => t.text);
       const adjustmentNote = summaryParts.join(' — ');
 
       await applyAiAdjustedRecipe(recipeId, result.payload, adjustmentNote);
@@ -142,128 +143,129 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
 
   const handleClose = useCallback(() => {
     if (busy) return;
+    Keyboard.dismiss();
     onClose();
   }, [busy, onClose]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
-      <KeyboardAvoidingView
-        style={styles.modalRoot}
-        behavior="padding"
-      >
+      <View style={styles.modalRoot}>
         <Pressable style={styles.modalBackdrop} onPress={handleClose} />
-        <View style={[styles.sheet, { backgroundColor: theme.background }]}>
+        <ChatSheetKeyboardWrap style={[styles.sheet, { backgroundColor: theme.background }]}>
           <View style={styles.sheetInner}>
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Recept aanpassen</Text>
-            <Pressable onPress={handleClose} hitSlop={12} disabled={busy}>
-              <Text style={[styles.close, busy && { opacity: 0.4 }]}>Sluiten</Text>
-            </Pressable>
-          </View>
-
-          {!hasKey ? (
-            <View style={styles.warnBox}>
-              <Text style={styles.warnText}>
-                Zet een API-sleutel in Instellingen om AI-aanpassingen te gebruiken.
-              </Text>
-              <Link href="/settings" asChild>
-                <Pressable style={styles.linkBtn}>
-                  <Text style={styles.linkBtnText}>Naar instellingen</Text>
-                </Pressable>
-              </Link>
-            </View>
-          ) : null}
-
-          <ScrollView
-            ref={scrollRef}
-            style={styles.chatScroll}
-            contentContainerStyle={styles.chatContent}
-            keyboardShouldPersistTaps="always"
-          >
-            <Text style={styles.intro}>
-              Beschrijf wat je wilt veranderen aan «{recipe.title}». De assistent bespreekt de aanpassingen met je —
-              daarna kun je ze toepassen.
-            </Text>
-            {turns.map((m, i) => (
-              <View
-                key={`${i}-${m.role}`}
-                style={[styles.bubble, m.role === 'user' ? styles.bubbleUser : styles.bubbleAsst]}
-              >
-                <Text style={styles.bubbleRole}>{m.role === 'user' ? 'Jij' : 'Chef'}</Text>
-                <FormattedText text={m.text} style={styles.bubbleText} />
-              </View>
-            ))}
-            {loading ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color={theme.accent} />
-                <Text style={styles.loadingText}>Even geduld…</Text>
-              </View>
-            ) : null}
-            {applying ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color="#2a6cb6" />
-                <Text style={styles.loadingText}>Aanpassingen doorvoeren…</Text>
-              </View>
-            ) : null}
-            {error ? (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            ) : null}
-          </ScrollView>
-
-          {hasAssistantReply && !busy ? (
-            <View style={styles.applyRow}>
-              <Pressable style={styles.applyBtn} onPress={() => void onApply()}>
-                <Text style={styles.applyBtnText}>Ja doen, voeg toe</Text>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Recept aanpassen</Text>
+              <Pressable onPress={handleClose} hitSlop={12} disabled={busy}>
+                <Text style={[styles.close, busy && { opacity: 0.4 }]}>Sluiten</Text>
               </Pressable>
             </View>
-          ) : null}
 
-          <View style={styles.quickRow}>
-            {QUICK_SUGGESTIONS.map((q) => (
-              <Pressable
-                key={q}
-                style={[
-                  styles.quickChip,
-                  { backgroundColor: theme.accentSoft, borderColor: theme.accentBorderMuted },
-                ]}
-                onPress={() => void sendWithText(q)}
-                disabled={busy || !hasKey}
-              >
-                <Text style={[styles.quickChipText, { color: theme.accentSoftText }]} numberOfLines={2}>
-                  {q}
+            {!hasKey ? (
+              <View style={styles.warnBox}>
+                <Text style={styles.warnText}>
+                  Zet een API-sleutel in Instellingen om AI-aanpassingen te gebruiken.
                 </Text>
-              </Pressable>
-            ))}
-          </View>
+                <Link href="/settings" asChild>
+                  <Pressable style={styles.linkBtn}>
+                    <Text style={styles.linkBtnText}>Naar instellingen</Text>
+                  </Pressable>
+                </Link>
+              </View>
+            ) : null}
 
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.input}
-              placeholder="Bijv. meer knoflook, kortere bereidingstijd…"
-              placeholderTextColor="#999"
-              value={input}
-              onChangeText={setInput}
-              multiline
-              maxLength={800}
-              editable={hasKey && !busy}
-            />
-            <Pressable
-              style={[
-                styles.sendBtn,
-                { backgroundColor: theme.accent },
-                (!input.trim() || busy || !hasKey) && styles.sendBtnOff,
-              ]}
-              onPress={onSend}
-              disabled={!input.trim() || busy || !hasKey}
+            <View style={styles.inputRowTop}>
+              <TextInput
+                style={styles.input}
+                placeholder="Bijv. meer knoflook, kortere bereidingstijd…"
+                placeholderTextColor="#999"
+                value={input}
+                onChangeText={setInput}
+                multiline
+                maxLength={800}
+                editable={hasKey && !busy}
+              />
+              <Pressable
+                style={[
+                  styles.sendBtn,
+                  { backgroundColor: theme.accent },
+                  (!input.trim() || busy || !hasKey) && styles.sendBtnOff,
+                ]}
+                onPress={onSend}
+                disabled={!input.trim() || busy || !hasKey}
+              >
+                <Text style={styles.sendBtnText}>Verstuur</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView
+              ref={scrollRef}
+              style={styles.chatScroll}
+              contentContainerStyle={styles.chatContent}
+              keyboardShouldPersistTaps="always"
             >
-              <Text style={styles.sendBtnText}>Verstuur</Text>
-            </Pressable>
+              <Text style={styles.intro}>
+                Beschrijf wat je wilt veranderen aan «{recipe.title}». De assistent bespreekt de
+                aanpassingen met je — daarna kun je ze toepassen.
+              </Text>
+              {turns.map((m, i) => (
+                <View
+                  key={`${i}-${m.role}`}
+                  style={[styles.bubble, m.role === 'user' ? styles.bubbleUser : styles.bubbleAsst]}
+                >
+                  <Text style={styles.bubbleRole}>{m.role === 'user' ? 'Jij' : 'Chef'}</Text>
+                  <FormattedText text={m.text} style={styles.bubbleText} />
+                </View>
+              ))}
+              {loading ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator color={theme.accent} />
+                  <Text style={styles.loadingText}>Even geduld…</Text>
+                </View>
+              ) : null}
+              {applying ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator color="#2a6cb6" />
+                  <Text style={styles.loadingText}>Aanpassingen doorvoeren…</Text>
+                </View>
+              ) : null}
+              {error ? (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorText}>{error}</Text>
+                </View>
+              ) : null}
+            </ScrollView>
+
+            {hasAssistantReply && !busy ? (
+              <View style={styles.applyRow}>
+                <Pressable style={styles.applyBtn} onPress={() => void onApply()}>
+                  <Text style={styles.applyBtnText}>Ja doen, voeg toe</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            <View style={styles.quickRow}>
+              {QUICK_SUGGESTIONS.map((q) => (
+                <Pressable
+                  key={q}
+                  style={[
+                    styles.quickChip,
+                    { backgroundColor: theme.accentSoft, borderColor: theme.accentBorderMuted },
+                  ]}
+                  onPress={() => void sendWithText(q)}
+                  disabled={busy || !hasKey}
+                >
+                  <Text
+                    style={[styles.quickChipText, { color: theme.accentSoftText }]}
+                    numberOfLines={2}
+                  >
+                    {q}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
+        </ChatSheetKeyboardWrap>
+      </View>
     </Modal>
   );
 }
@@ -308,7 +310,7 @@ const styles = StyleSheet.create({
   warnText: { fontSize: 14, color: '#5c4a1a', marginBottom: 10 },
   linkBtn: { alignSelf: 'flex-start' },
   linkBtnText: { color: '#2a6cb6', fontWeight: '700', fontSize: 15 },
-  chatScroll: { maxHeight: 340 },
+  chatScroll: { maxHeight: 340, minHeight: 160 },
   chatContent: { paddingHorizontal: 16, paddingBottom: 12 },
   intro: { fontSize: 13, color: '#666', marginBottom: 12, lineHeight: 19 },
   bubble: {
@@ -318,7 +320,12 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   bubbleUser: { backgroundColor: '#e8f0fc', alignSelf: 'flex-end' },
-  bubbleAsst: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2ddd5', alignSelf: 'flex-start' },
+  bubbleAsst: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+    alignSelf: 'flex-start',
+  },
   bubbleRole: { fontSize: 11, fontWeight: '700', color: '#888', marginBottom: 4 },
   bubbleText: { fontSize: 15, color: '#1a1a1a', lineHeight: 22 },
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 8 },
@@ -360,14 +367,14 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   quickChipText: { fontSize: 12, fontWeight: '600' },
-  inputRow: {
+  inputRowTop: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 10,
     paddingHorizontal: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e2ddd5',
-    paddingTop: 10,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2ddd5',
   },
   input: {
     flex: 1,

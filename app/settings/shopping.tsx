@@ -1,11 +1,27 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { useHeaderHeight } from '@react-navigation/elements';
+import { useFocusEffect } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation/elements';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
 import { ensureDatabaseAsync } from '../../lib/db';
+import {
+  getShoppingOrganicAlwaysList,
+  hydrateShoppingOrganicPrefsFromDb,
+  organicListToText,
+  organicTextToList,
+  setShoppingOrganicAlwaysList,
+} from '../../lib/shoppingOrganicPrefs';
 import {
   getShoppingStaplesExcludeList,
   hydrateShoppingStaplesPrefsFromDb,
@@ -21,15 +37,19 @@ export default function ShoppingSettingsScreen() {
   const headerHeight = useHeaderHeight();
 
   const [text, setText] = useState('');
+  const [organicText, setOrganicText] = useState('');
   const [loaded, setLoaded] = useState(false);
   const loadedRef = useRef(false);
   const nextTextRef = useRef('');
+  const nextOrganicTextRef = useRef('');
 
   const reload = useCallback(() => {
     void (async () => {
       await ensureDatabaseAsync();
       await hydrateShoppingStaplesPrefsFromDb();
+      await hydrateShoppingOrganicPrefsFromDb();
       setText(staplesListToText(getShoppingStaplesExcludeList()));
+      setOrganicText(organicListToText(getShoppingOrganicAlwaysList()));
       setLoaded(true);
     })();
   }, []);
@@ -39,6 +59,7 @@ export default function ShoppingSettingsScreen() {
   }, [loaded]);
 
   nextTextRef.current = text;
+  nextOrganicTextRef.current = organicText;
 
   useFocusEffect(
     useCallback(() => {
@@ -48,6 +69,9 @@ export default function ShoppingSettingsScreen() {
         void (async () => {
           const list = staplesTextToList(nextTextRef.current);
           await setShoppingStaplesExcludeList(list);
+
+          const organicList = organicTextToList(nextOrganicTextRef.current);
+          await setShoppingOrganicAlwaysList(organicList);
         })();
       };
     }, [reload])
@@ -69,6 +93,22 @@ export default function ShoppingSettingsScreen() {
     })();
   }, [confirm, reload, web]);
 
+  const onClearOrganic = useCallback(() => {
+    if (web) return;
+    void (async () => {
+      const ok = await confirm({
+        title: 'Biologisch-lijst leegmaken?',
+        message: 'Dit wist alle regels in “Altijd biologisch”.',
+        confirmText: 'Leegmaken',
+        cancelText: 'Annuleren',
+        destructive: true,
+      });
+      if (!ok) return;
+      await setShoppingOrganicAlwaysList([]);
+      reload();
+    })();
+  }, [confirm, reload, web]);
+
   return (
     <KeyboardAvoidingView
       style={[styles.scroll, { backgroundColor: theme.background }]}
@@ -78,8 +118,9 @@ export default function ShoppingSettingsScreen() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ConfirmDialog />
         <Text style={styles.lead}>
-          Items in deze lijst worden <Text style={styles.bold}>niet</Text> automatisch toegevoegd aan je boodschappenlijst
-          als ze in een gepland recept staan (handig voor zout, olie, water, enz.). Eén per regel.
+          Items in deze lijst worden <Text style={styles.bold}>niet</Text> automatisch toegevoegd
+          aan je boodschappenlijst als ze in een gepland recept staan (handig voor zout, olie,
+          water, enz.). Eén per regel.
         </Text>
         {!web ? (
           <Text style={styles.autoSaveHint}>
@@ -87,28 +128,58 @@ export default function ShoppingSettingsScreen() {
           </Text>
         ) : null}
 
-      {web ? (
-        <View style={styles.notice}>
-          <Text style={styles.noticeText}>Op web worden instellingen alleen weergegeven. Gebruik iOS of Android om op te slaan.</Text>
+        {web ? (
+          <View style={styles.notice}>
+            <Text style={styles.noticeText}>
+              Op web worden instellingen alleen weergegeven. Gebruik iOS of Android om op te slaan.
+            </Text>
+          </View>
+        ) : null}
+
+        <Text style={styles.section}>Altijd op voorraad (uitsluiten)</Text>
+        <TextInput
+          style={[styles.input, styles.multiline]}
+          value={text}
+          onChangeText={setText}
+          placeholder={'Bijv.\n- zout\n- peper\n- olijfolie\n- water'}
+          placeholderTextColor="#999"
+          multiline
+          editable={!web}
+        />
+
+        <View style={styles.row}>
+          <Pressable
+            style={[styles.btnOutline, web && styles.btnDisabled]}
+            onPress={onReset}
+            disabled={web}
+          >
+            <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>Reset</Text>
+          </Pressable>
         </View>
-      ) : null}
 
-      <Text style={styles.section}>Altijd op voorraad (uitsluiten)</Text>
-      <TextInput
-        style={[styles.input, styles.multiline]}
-        value={text}
-        onChangeText={setText}
-        placeholder={'Bijv.\n- zout\n- peper\n- olijfolie\n- water'}
-        placeholderTextColor="#999"
-        multiline
-        editable={!web}
-      />
-
-      <View style={styles.row}>
-        <Pressable style={[styles.btnOutline, web && styles.btnDisabled]} onPress={onReset} disabled={web}>
-          <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>Reset</Text>
-        </Pressable>
-      </View>
+        <Text style={[styles.section, { marginTop: 18 }]}>Altijd biologisch</Text>
+        <Text style={styles.lead}>
+          Items in deze lijst krijgen een <Text style={styles.bold}>groen blaadje</Text> op je
+          boodschappenlijst (ook als ze via de weekplanner komen). Eén per regel.
+        </Text>
+        <TextInput
+          style={[styles.input, styles.multiline]}
+          value={organicText}
+          onChangeText={setOrganicText}
+          placeholder={'Bijv.\n- paprika\n- aardbeien\n- druiven'}
+          placeholderTextColor="#999"
+          multiline
+          editable={!web}
+        />
+        <View style={styles.row}>
+          <Pressable
+            style={[styles.btnOutline, web && styles.btnDisabled]}
+            onPress={onClearOrganic}
+            disabled={web}
+          >
+            <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>Leegmaken</Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -118,7 +189,13 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { padding: 16, paddingBottom: 40 },
   lead: { fontSize: 14, color: '#555', lineHeight: 21, marginBottom: 16 },
-  autoSaveHint: { fontSize: 13, color: '#666', lineHeight: 19, marginBottom: 16, fontStyle: 'italic' },
+  autoSaveHint: {
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 19,
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
   bold: { fontWeight: '800', color: '#1a1a1a' },
   notice: {
     backgroundColor: '#fff8e6',
@@ -154,4 +231,3 @@ const styles = StyleSheet.create({
   btnOutlineText: { fontWeight: '700', fontSize: 15 },
   btnDisabled: { opacity: 0.45 },
 });
-

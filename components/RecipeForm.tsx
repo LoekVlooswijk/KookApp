@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -17,19 +18,23 @@ import {
   View,
 } from 'react-native';
 
-import {
-  type NavigationAction,
-  useNavigation,
-  usePreventRemove,
-} from '@react-navigation/native';
 import { useAppTheme } from './ThemeContext';
 import { disposeImportSession, getImportSession } from '../lib/importDraft';
-import { isAppManagedCoverUri, persistPickedRecipeCover, tryDeleteManagedCover } from '../lib/recipeCoverStorage';
+import {
+  isAppManagedCoverUri,
+  persistPickedRecipeCover,
+  tryDeleteManagedCover,
+} from '../lib/recipeCoverStorage';
 import { getCustomDiets } from '../lib/dietPrefs';
 import { addManagedCategory, listManagedCategories } from '../lib/categoriesRepo';
 import { addRecipeToList } from '../lib/listsRepo';
 import { timerSecondsToMinuteDraftStr } from '../lib/timerFormat';
 import type { RecipeSavePayload } from '../lib/types';
+import { checkHasInternet } from '../lib/internetCheck';
+import {
+  assessProduceLocalityAndPesticides,
+  finalizeBioScoreFromAssessment,
+} from '../lib/bioScore';
 import {
   createRecipe,
   fullRecipeToPayload,
@@ -137,6 +142,9 @@ function buildPayload(
     dietKeto,
     isFavorite,
     wantToTry,
+    bioScoreColor: null,
+    bioScoreUpdatedAt: null,
+    bioScoreItems: null,
     notes,
     imageUri,
     tagNames,
@@ -176,7 +184,6 @@ type Props = {
 
 export function RecipeForm({ recipeId, importSessionId, addToListId, addToListName }: Props) {
   const router = useRouter();
-  const navigation = useNavigation();
   const theme = useAppTheme();
   const [loading, setLoading] = useState(!!(recipeId || importSessionId?.trim()));
   const [saving, setSaving] = useState(false);
@@ -198,6 +205,10 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
   const [dietKeto, setDietKeto] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [wantToTry, setWantToTry] = useState(false);
+  const [bioScoreColor, setBioScoreColor] = useState<RecipeSavePayload['bioScoreColor']>(null);
+  const [bioScoreItems, setBioScoreItems] = useState<RecipeSavePayload['bioScoreItems']>(null);
+  const [bioScoreUpdatedAt, setBioScoreUpdatedAt] = useState<string | null>(null);
+  const [bioBusy, setBioBusy] = useState(false);
   const [notes, setNotes] = useState('');
   const [imageUri, setImageUri] = useState('');
   const [pickingCover, setPickingCover] = useState(false);
@@ -228,6 +239,9 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
     setDietKeto(p.dietKeto);
     setIsFavorite(p.isFavorite);
     setWantToTry(p.wantToTry);
+    setBioScoreColor(p.bioScoreColor ?? null);
+    setBioScoreItems(p.bioScoreItems ?? null);
+    setBioScoreUpdatedAt(p.bioScoreUpdatedAt ?? null);
     setNotes(p.notes);
     setImageUri(p.imageUri);
     const normalTags = p.tagNames.filter((t) => !t.toLowerCase().startsWith('diet:'));
@@ -447,7 +461,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
 
   const buildCurrentPayload = useCallback((): RecipeSavePayload => {
     const vega = dietVegetarian || dietVegan;
-    return buildPayload(
+    const base = buildPayload(
       title,
       description,
       sourceUrl,
@@ -468,6 +482,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
       groups,
       sections
     );
+    return { ...base, bioScoreColor, bioScoreItems, bioScoreUpdatedAt };
   }, [
     title,
     description,
@@ -482,6 +497,9 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
     dietKeto,
     isFavorite,
     wantToTry,
+    bioScoreColor,
+    bioScoreItems,
+    bioScoreUpdatedAt,
     notes,
     imageUri,
     customDietKeys,
@@ -490,6 +508,40 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
     sections,
   ]);
 
+  const onComputeBioScore = useCallback(() => {
+    if (bioBusy || saving || loading) return;
+    setBioBusy(true);
+    void (async () => {
+      try {
+        const hasInternet = await checkHasInternet();
+        if (!hasInternet) {
+          Alert.alert('Geen internet', 'Bio score berekenen vereist internetverbinding.');
+          return;
+        }
+        const ingNames: string[] = [];
+        for (const g of groups) {
+          for (const i of g.ingredients) {
+            const n = i.name.trim();
+            if (n) ingNames.push(n);
+          }
+        }
+        const assessed = await assessProduceLocalityAndPesticides(ingNames);
+        if (!assessed.ok) {
+          Alert.alert('Fout', assessed.message);
+          return;
+        }
+        const { items, color } = await finalizeBioScoreFromAssessment(assessed.items);
+        setBioScoreColor(color);
+        setBioScoreItems(items);
+        setBioScoreUpdatedAt(new Date().toISOString());
+      } catch (e) {
+        Alert.alert('Fout', e instanceof Error ? e.message : 'Bio score berekenen mislukt.');
+      } finally {
+        setBioBusy(false);
+      }
+    })();
+  }, [bioBusy, groups, loading, saving]);
+
   const isDirty =
     !loading &&
     !saving &&
@@ -497,15 +549,11 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
     JSON.stringify(buildCurrentPayload()) !== baselineJson;
 
   const persistFromForm = useCallback(
-    async (pendingRemove?: { action: NavigationAction }): Promise<void> => {
+    async (): Promise<void> => {
       const payload = buildCurrentPayload();
       if (recipeId) {
         await updateRecipe(recipeId, payload);
-        if (pendingRemove) {
-          navigation.dispatch(pendingRemove.action);
-        } else {
-          router.back();
-        }
+        router.back();
         return;
       }
       const id = await createRecipe(payload);
@@ -518,46 +566,51 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
         router.replace(`/recipe/${id}`);
       }
     },
-    [buildCurrentPayload, recipeId, importSessionId, addToListId, navigation, router]
+    [buildCurrentPayload, recipeId, importSessionId, addToListId, router]
   );
 
-  usePreventRemove(isDirty, ({ data }) => {
-    Alert.alert(
-      'Niet-opgeslagen wijzigingen',
-      'Wil je je wijzigingen opslaan voordat je de pagina verlaat?',
-      [
-        { text: 'Annuleren', style: 'cancel' },
-        {
-          text: 'Niet opslaan',
-          style: 'destructive',
-          onPress: () => navigation.dispatch(data.action),
-        },
-        {
-          text: 'Opslaan',
-          onPress: () => {
-            void (async () => {
-              setError(null);
-              setSaving(true);
-              try {
-                await persistFromForm(data);
-              } catch (e) {
-                setError(e instanceof Error ? e.message : 'Opslaan mislukt.');
-              } finally {
-                setSaving(false);
-              }
-            })();
+  useEffect(() => {
+    if (!isDirty) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      Alert.alert(
+        'Niet-opgeslagen wijzigingen',
+        'Wil je je wijzigingen opslaan voordat je de pagina verlaat?',
+        [
+          { text: 'Annuleren', style: 'cancel' },
+          {
+            text: 'Niet opslaan',
+            style: 'destructive',
+            onPress: () => router.back(),
           },
-        },
-      ]
-    );
-  });
+          {
+            text: 'Opslaan',
+            onPress: () => {
+              void (async () => {
+                setError(null);
+                setSaving(true);
+                try {
+                  await persistFromForm();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : 'Opslaan mislukt.');
+                } finally {
+                  setSaving(false);
+                }
+              })();
+            },
+          },
+        ]
+      );
+      return true;
+    });
+    return () => subscription.remove();
+  }, [isDirty, router, persistFromForm, setSaving, setError]);
 
   const onSave = useCallback(() => {
     setError(null);
     setSaving(true);
     void (async () => {
       try {
-        await persistFromForm(undefined);
+        await persistFromForm();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Opslaan mislukt.');
       } finally {
@@ -566,30 +619,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
     })();
   }, [persistFromForm]);
 
-  useLayoutEffect(() => {
-    if (!recipeId) return;
-    navigation.setOptions({
-      headerRight: () => (
-        <Pressable
-          onPress={onSave}
-          disabled={saving}
-          accessibilityRole="button"
-          accessibilityLabel="Opslaan"
-          style={({ pressed }) => [
-            styles.headerSaveBtn,
-            { opacity: saving ? 0.5 : pressed ? 0.6 : 1 },
-          ]}
-          hitSlop={10}
-        >
-          {saving ? (
-            <ActivityIndicator size="small" color={theme.accent} />
-          ) : (
-            <Text style={[styles.headerSaveIcon, { color: theme.accent }]}>💾</Text>
-          )}
-        </Pressable>
-      ),
-    });
-  }, [navigation, onSave, recipeId, saving, theme.accent]);
+  // headerRight is configured in the parent screen layout (new.tsx / edit.tsx)
 
   if (loading) {
     return (
@@ -631,7 +661,10 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
                   autoCorrect={false}
                 />
                 <Pressable
-                  style={[styles.modalAddBtn, !newCategoryInput.trim() ? styles.modalAddBtnOff : null]}
+                  style={[
+                    styles.modalAddBtn,
+                    !newCategoryInput.trim() ? styles.modalAddBtnOff : null,
+                  ]}
                   onPress={() => {
                     const n = newCategoryInput.trim();
                     if (!n) return;
@@ -640,7 +673,9 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
                         const next = await addManagedCategory(n);
                         setCategories((prev) => {
                           const cur = category.trim();
-                          const all = new Set<string>([...prev, ...next, ...(cur ? [cur] : [])].filter(Boolean));
+                          const all = new Set<string>(
+                            [...prev, ...next, ...(cur ? [cur] : [])].filter(Boolean)
+                          );
                           return Array.from(all).sort((a, b) => a.localeCompare(b, 'nl'));
                         });
                         setCategory(n.toLowerCase().trim().replace(/\s+/g, ' '));
@@ -663,11 +698,18 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
           </View>
         </Modal>
 
-        <Modal visible={tagsPickerOpen} animationType="fade" transparent onRequestClose={() => setTagsPickerOpen(false)}>
+        <Modal
+          visible={tagsPickerOpen}
+          animationType="fade"
+          transparent
+          onRequestClose={() => setTagsPickerOpen(false)}
+        >
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>Tags kiezen</Text>
-              <Text style={styles.modalHint}>Tik om aan/uit te zetten. Je kunt meerdere tags selecteren.</Text>
+              <Text style={styles.modalHint}>
+                Tik om aan/uit te zetten. Je kunt meerdere tags selecteren.
+              </Text>
 
               <View style={styles.modalRow}>
                 <TextInput
@@ -684,7 +726,9 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
                     const n = newTagInput.trim().toLowerCase().replace(/\\s+/g, ' ');
                     if (!n) return;
                     setAllTags((prev) =>
-                      prev.includes(n) ? prev : [...prev, n].sort((a, b) => a.localeCompare(b, 'nl'))
+                      prev.includes(n)
+                        ? prev
+                        : [...prev, n].sort((a, b) => a.localeCompare(b, 'nl'))
                     );
                     setTagKeys((prev) => (prev.includes(n) ? prev : [...prev, n]));
                     setNewTagInput('');
@@ -715,7 +759,10 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
                         });
                       }}
                     >
-                      <Text style={[styles.gridCellText, on ? styles.chipTextOn : null]} numberOfLines={3}>
+                      <Text
+                        style={[styles.gridCellText, on ? styles.chipTextOn : null]}
+                        numberOfLines={3}
+                      >
                         {item}
                       </Text>
                     </Pressable>
@@ -739,7 +786,32 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
         ) : null}
 
         <Text style={styles.label}>Titel</Text>
-        <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Bijv. Pasta pesto" />
+        <TextInput
+          style={styles.input}
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Bijv. Pasta pesto"
+        />
+
+        {recipeId && !bioScoreColor ? (
+          <View style={styles.bioRow}>
+            <Pressable
+              style={[
+                styles.bioBtn,
+                { borderColor: theme.accent },
+                (bioBusy || saving) && styles.saveBtnDisabled,
+              ]}
+              onPress={onComputeBioScore}
+              disabled={bioBusy || saving}
+              accessibilityRole="button"
+              accessibilityLabel="Bio score berekenen"
+            >
+              <Text style={[styles.bioBtnText, { color: theme.accent }]}>
+                {bioBusy ? 'Bio score berekenen…' : 'Bio score berekenen'}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <Text style={styles.label}>Beschrijving</Text>
         <TextInput
@@ -784,11 +856,17 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
               onPress={onTakeCoverPhoto}
               disabled={pickingCover}
             >
-              <Text style={[styles.coverPickBtnOutlineText, { color: theme.accent }]}>Maak foto</Text>
+              <Text style={[styles.coverPickBtnOutlineText, { color: theme.accent }]}>
+                Maak foto
+              </Text>
             </Pressable>
           ) : null}
           {imageUri ? (
-            <Pressable style={styles.coverRemoveBtn} onPress={() => setImageUri('')} disabled={pickingCover}>
+            <Pressable
+              style={styles.coverRemoveBtn}
+              onPress={() => setImageUri('')}
+              disabled={pickingCover}
+            >
               <Text style={styles.coverRemoveBtnText}>Verwijderen</Text>
             </Pressable>
           ) : null}
@@ -806,15 +884,30 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
         <View style={styles.row3}>
           <View style={styles.row3Item}>
             <Text style={styles.label}>Voorbereiding (min)</Text>
-            <TextInput style={styles.input} value={prepStr} onChangeText={setPrepStr} keyboardType="number-pad" />
+            <TextInput
+              style={styles.input}
+              value={prepStr}
+              onChangeText={setPrepStr}
+              keyboardType="number-pad"
+            />
           </View>
           <View style={styles.row3Item}>
             <Text style={styles.label}>Koken (min)</Text>
-            <TextInput style={styles.input} value={cookStr} onChangeText={setCookStr} keyboardType="number-pad" />
+            <TextInput
+              style={styles.input}
+              value={cookStr}
+              onChangeText={setCookStr}
+              keyboardType="number-pad"
+            />
           </View>
           <View style={styles.row3Item}>
             <Text style={styles.label}>Totaal (min)</Text>
-            <TextInput style={styles.input} value={totalStr} onChangeText={setTotalStr} keyboardType="number-pad" />
+            <TextInput
+              style={styles.input}
+              value={totalStr}
+              onChangeText={setTotalStr}
+              keyboardType="number-pad"
+            />
           </View>
         </View>
 
@@ -825,7 +918,9 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
               style={[styles.chip, !category.trim() ? styles.chipOn : null]}
               onPress={() => setCategory('')}
             >
-              <Text style={[styles.chipText, !category.trim() ? styles.chipTextOn : null]}>Geen</Text>
+              <Text style={[styles.chipText, !category.trim() ? styles.chipTextOn : null]}>
+                Geen
+              </Text>
             </Pressable>
             {categories.map((c) => {
               const on = category.trim() === c;
@@ -841,7 +936,10 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
                 </Pressable>
               );
             })}
-            <Pressable style={[styles.chip, styles.chipAdd]} onPress={() => setCategoryPickerOpen(true)}>
+            <Pressable
+              style={[styles.chip, styles.chipAdd]}
+              onPress={() => setCategoryPickerOpen(true)}
+            >
               <Text style={[styles.chipText, styles.chipAddText]}>+ nieuw</Text>
             </Pressable>
           </View>
@@ -873,7 +971,10 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
           >
             <Text style={[styles.chipText, dietVegan ? styles.chipTextOn : null]}>Vegan</Text>
           </Pressable>
-          <Pressable style={[styles.chip, dietKeto ? styles.chipOn : null]} onPress={() => setDietKeto((v) => !v)}>
+          <Pressable
+            style={[styles.chip, dietKeto ? styles.chipOn : null]}
+            onPress={() => setDietKeto((v) => !v)}
+          >
             <Text style={[styles.chipText, dietKeto ? styles.chipTextOn : null]}>Keto</Text>
           </Pressable>
           {customDiets.map((d) => {
@@ -901,11 +1002,19 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
 
         <Text style={styles.label}>Status</Text>
         <View style={styles.chipRow}>
-          <Pressable style={[styles.chip, isFavorite ? styles.chipOn : null]} onPress={() => setIsFavorite((v) => !v)}>
+          <Pressable
+            style={[styles.chip, isFavorite ? styles.chipOn : null]}
+            onPress={() => setIsFavorite((v) => !v)}
+          >
             <Text style={[styles.chipText, isFavorite ? styles.chipTextOn : null]}>Favoriet</Text>
           </Pressable>
-          <Pressable style={[styles.chip, wantToTry ? styles.chipOn : null]} onPress={() => setWantToTry((v) => !v)}>
-            <Text style={[styles.chipText, wantToTry ? styles.chipTextOn : null]}>Wil proberen</Text>
+          <Pressable
+            style={[styles.chip, wantToTry ? styles.chipOn : null]}
+            onPress={() => setWantToTry((v) => !v)}
+          >
+            <Text style={[styles.chipText, wantToTry ? styles.chipTextOn : null]}>
+              Wil proberen
+            </Text>
           </Pressable>
         </View>
 
@@ -928,10 +1037,20 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
         </View>
 
         <Text style={styles.label}>Notities</Text>
-        <TextInput style={[styles.input, styles.multiline]} value={notes} onChangeText={setNotes} multiline />
+        <TextInput
+          style={[styles.input, styles.multiline]}
+          value={notes}
+          onChangeText={setNotes}
+          multiline
+        />
 
         <Text style={styles.label}>Bron-URL (optioneel)</Text>
-        <TextInput style={styles.input} value={sourceUrl} onChangeText={setSourceUrl} placeholder="https://…" />
+        <TextInput
+          style={styles.input}
+          value={sourceUrl}
+          onChangeText={setSourceUrl}
+          placeholder="https://…"
+        />
 
         <Text style={styles.sectionTitle}>Ingrediënten</Text>
         {groups.map((g, gi) => (
@@ -1156,14 +1275,20 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
         </Pressable>
 
         <Pressable
-          style={[styles.saveBtn, { backgroundColor: theme.accent }, saving && styles.saveBtnDisabled]}
+          style={[
+            styles.saveBtn,
+            { backgroundColor: theme.accent },
+            saving && styles.saveBtnDisabled,
+          ]}
           onPress={onSave}
           disabled={saving}
         >
           {saving ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.saveBtnText}>{recipeId ? 'Wijzigingen opslaan' : 'Recept opslaan'}</Text>
+            <Text style={styles.saveBtnText}>
+              {recipeId ? 'Wijzigingen opslaan' : 'Recept opslaan'}
+            </Text>
           )}
         </Pressable>
       </ScrollView>
@@ -1226,6 +1351,15 @@ const styles = StyleSheet.create({
   chipTextOn: { color: '#1b4b7a' },
   chipAdd: { borderStyle: 'dashed', borderColor: '#c9c2b8' },
   chipAddText: { fontWeight: '800' },
+  bioRow: { marginTop: 10, marginBottom: 6 },
+  bioBtn: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignSelf: 'flex-start',
+  },
+  bioBtnText: { fontSize: 14, fontWeight: '700' },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
@@ -1267,7 +1401,13 @@ const styles = StyleSheet.create({
   gridCellText: { fontSize: 14, color: '#333', fontWeight: '700', textAlign: 'center' },
   modalCloseBtn: { marginTop: 10, alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 20 },
   modalCloseBtnText: { fontSize: 16, color: '#666', fontWeight: '700' },
-  sectionTitle: { fontSize: 18, fontWeight: '700', marginTop: 20, marginBottom: 8, color: '#1a1a1a' },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 20,
+    marginBottom: 8,
+    color: '#1a1a1a',
+  },
   card: {
     borderWidth: 1,
     borderColor: '#e2ddd5',

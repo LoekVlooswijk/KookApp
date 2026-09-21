@@ -101,12 +101,7 @@ export function useConfirmDialog(): {
   const ConfirmDialog = useCallback(() => {
     if (!state) return null;
     return (
-      <Modal
-        visible
-        transparent
-        animationType="none"
-        onRequestClose={onCancel}
-      >
+      <Modal visible transparent animationType="none" onRequestClose={onCancel}>
         <View style={styles.backdrop}>
           <Pressable style={styles.backdropPressable} onPress={onCancel} disabled={closing} />
           <Animated.View
@@ -130,17 +125,30 @@ export function useConfirmDialog(): {
             {state.opts.message ? <Text style={styles.message}>{state.opts.message}</Text> : null}
             <View style={styles.actions}>
               <Pressable style={styles.btnGhost} onPress={onCancel} disabled={closing}>
-                <Text style={[styles.btnGhostText, closing && { opacity: 0.55 }]}>{state.opts.cancelText}</Text>
+                <Text style={[styles.btnGhostText, closing && { opacity: 0.55 }]}>
+                  {state.opts.cancelText}
+                </Text>
               </Pressable>
               <Pressable style={confirmBtnStyle} onPress={onConfirm} disabled={closing}>
-                <Text style={[confirmBtnTextStyle, closing && { opacity: 0.55 }]}>{state.opts.confirmText}</Text>
+                <Text style={[confirmBtnTextStyle, closing && { opacity: 0.55 }]}>
+                  {state.opts.confirmText}
+                </Text>
               </Pressable>
             </View>
           </Animated.View>
         </View>
       </Modal>
     );
-  }, [anim, closing, confirmBtnStyle, confirmBtnTextStyle, onCancel, onConfirm, state, theme.background]);
+  }, [
+    anim,
+    closing,
+    confirmBtnStyle,
+    confirmBtnTextStyle,
+    onCancel,
+    onConfirm,
+    state,
+    theme.background,
+  ]);
 
   return { confirm, ConfirmDialog, busy: state != null };
 }
@@ -186,4 +194,3 @@ const styles = StyleSheet.create({
   btnGhost: { paddingHorizontal: 10, paddingVertical: 10 },
   btnGhostText: { fontWeight: '800', fontSize: 15, color: '#666' },
 });
-

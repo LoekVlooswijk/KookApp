@@ -132,12 +132,15 @@ export async function downloadRecipeCoverFromUrl(
 
 export async function tryDeleteManagedCover(uri: string | null | undefined): Promise<void> {
   if (!uri || !isAppManagedCoverUri(uri)) return;
-  try {
-    const info = await FileSystem.getInfoAsync(uri);
-    if (info.exists) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const info = await FileSystem.getInfoAsync(uri);
+      if (!info.exists) return;
       await FileSystem.deleteAsync(uri, { idempotent: true });
+      return;
+    } catch {
+      if (attempt === 2) return;
+      await new Promise<void>((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
     }
-  } catch {
-    // ignore missing or permission errors
   }
 }

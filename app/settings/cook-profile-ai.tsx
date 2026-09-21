@@ -1,5 +1,5 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { useHeaderHeight } from '@react-navigation/elements';
+import { useFocusEffect } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation/elements';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -87,9 +87,25 @@ export default function AiCookProfileSettingsScreen() {
       shopOptions: customShopOptions,
       defaultServings: Math.max(1, Math.min(99, Math.round(defaultServings))),
       weekPlanningTimeNotes: weekPlanningTimeNotes.trim(),
-      appliesTo: { tipsChat: applyTips, adjustRecipe: applyAdjust, recipeSuggestions: applySuggest },
+      appliesTo: {
+        tipsChat: applyTips,
+        adjustRecipe: applyAdjust,
+        recipeSuggestions: applySuggest,
+      },
     }),
-    [applyAdjust, applySuggest, applyTips, avoidText, customShopOptions, defaultServings, freeText, mustNotText, nearbyShops, preferText, weekPlanningTimeNotes]
+    [
+      applyAdjust,
+      applySuggest,
+      applyTips,
+      avoidText,
+      customShopOptions,
+      defaultServings,
+      freeText,
+      mustNotText,
+      nearbyShops,
+      preferText,
+      weekPlanningTimeNotes,
+    ]
   );
 
   nextProfileRef.current = nextProfile;
@@ -177,31 +193,32 @@ export default function AiCookProfileSettingsScreen() {
       behavior={web ? undefined : Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={web ? 0 : headerHeight}
     >
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ConfirmDialog />
         <Text style={styles.lead}>
-          Stel hier je vaste voorkeuren in. De app voegt dit automatisch toe aan AI-prompts (bijv. kooktips en recept
-          aanpassen), zodat de antwoorden beter bij jou passen.
+          Stel hier je vaste voorkeuren in. De app voegt dit automatisch toe aan AI-prompts (bijv.
+          kooktips en recept aanpassen), zodat de antwoorden beter bij jou passen.
         </Text>
         {!web ? (
           <Text style={styles.autoSaveHint}>
-            Wijzigingen worden automatisch opgeslagen wanneer je teruggaat naar de vorige pagina (los van de knop
-            Opslaan).
+            Wijzigingen worden automatisch opgeslagen wanneer je teruggaat naar de vorige pagina
+            (los van de knop Opslaan).
           </Text>
         ) : null}
 
         {web ? (
           <View style={styles.notice}>
-            <Text style={styles.noticeText}>Op web worden instellingen alleen weergegeven. Gebruik iOS of Android om op te slaan.</Text>
+            <Text style={styles.noticeText}>
+              Op web worden instellingen alleen weergegeven. Gebruik iOS of Android om op te slaan.
+            </Text>
           </View>
         ) : null}
 
         <View style={styles.card}>
           <Text style={styles.h2}>Standaard porties</Text>
-          <Text style={styles.p}>Dit getal gebruikt de app als standaard bij AI weekmenu’s en suggesties.</Text>
+          <Text style={styles.p}>
+            Dit getal gebruikt de app als standaard bij AI weekmenu’s en suggesties.
+          </Text>
           <View style={styles.stepperRow}>
             <Pressable
               style={[styles.stepBtn, defaultServings <= 1 && styles.stepBtnOff]}
@@ -212,195 +229,215 @@ export default function AiCookProfileSettingsScreen() {
               <Text style={styles.stepBtnText}>−</Text>
             </Pressable>
             <Text style={styles.stepValue}>{defaultServings}</Text>
-            <Pressable style={styles.stepBtn} onPress={() => setDefaultServings((v) => Math.min(99, v + 1))} hitSlop={10}>
+            <Pressable
+              style={styles.stepBtn}
+              onPress={() => setDefaultServings((v) => Math.min(99, v + 1))}
+              hitSlop={10}
+            >
               <Text style={styles.stepBtnText}>+</Text>
             </Pressable>
           </View>
         </View>
 
-      <Text style={styles.section}>Waar toepassen?</Text>
-      <View style={styles.switchRow}>
-        <View style={styles.switchTextCol}>
-          <Text style={styles.switchLabel}>Tips & chat tijdens het koken</Text>
-          <Text style={styles.hint}>Bij vragen zoals vervangingen, timing, techniek en smaakbalans.</Text>
+        <Text style={styles.section}>Waar toepassen?</Text>
+        <View style={styles.switchRow}>
+          <View style={styles.switchTextCol}>
+            <Text style={styles.switchLabel}>Tips & chat tijdens het koken</Text>
+            <Text style={styles.hint}>
+              Bij vragen zoals vervangingen, timing, techniek en smaakbalans.
+            </Text>
+          </View>
+          <Switch
+            value={applyTips && !web}
+            onValueChange={(v) => {
+              if (!web) setApplyTips(v);
+            }}
+            disabled={web}
+            trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
+            thumbColor={applyTips && !web ? theme.accent : '#f4f3f4'}
+          />
         </View>
-        <Switch
-          value={applyTips && !web}
-          onValueChange={(v) => {
-            if (!web) setApplyTips(v);
-          }}
-          disabled={web}
-          trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
-          thumbColor={applyTips && !web ? theme.accent : '#f4f3f4'}
-        />
-      </View>
 
-      <View style={styles.switchRow}>
-        <View style={styles.switchTextCol}>
-          <Text style={styles.switchLabel}>Recept aanpassen</Text>
-          <Text style={styles.hint}>Als je een recept laat wijzigen op basis van je notitie of chat.</Text>
+        <View style={styles.switchRow}>
+          <View style={styles.switchTextCol}>
+            <Text style={styles.switchLabel}>Recept aanpassen</Text>
+            <Text style={styles.hint}>
+              Als je een recept laat wijzigen op basis van je notitie of chat.
+            </Text>
+          </View>
+          <Switch
+            value={applyAdjust && !web}
+            onValueChange={(v) => {
+              if (!web) setApplyAdjust(v);
+            }}
+            disabled={web}
+            trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
+            thumbColor={applyAdjust && !web ? theme.accent : '#f4f3f4'}
+          />
         </View>
-        <Switch
-          value={applyAdjust && !web}
-          onValueChange={(v) => {
-            if (!web) setApplyAdjust(v);
-          }}
-          disabled={web}
-          trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
-          thumbColor={applyAdjust && !web ? theme.accent : '#f4f3f4'}
-        />
-      </View>
 
-      <View style={styles.switchRow}>
-        <View style={styles.switchTextCol}>
-          <Text style={styles.switchLabel}>Receptsuggesties (later)</Text>
-          <Text style={styles.hint}>Voor weekplanning of “wat zal ik eten?”-suggesties.</Text>
+        <View style={styles.switchRow}>
+          <View style={styles.switchTextCol}>
+            <Text style={styles.switchLabel}>Receptsuggesties (later)</Text>
+            <Text style={styles.hint}>Voor weekplanning of “wat zal ik eten?”-suggesties.</Text>
+          </View>
+          <Switch
+            value={applySuggest && !web}
+            onValueChange={(v) => {
+              if (!web) setApplySuggest(v);
+            }}
+            disabled={web}
+            trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
+            thumbColor={applySuggest && !web ? theme.accent : '#f4f3f4'}
+          />
         </View>
-        <Switch
-          value={applySuggest && !web}
-          onValueChange={(v) => {
-            if (!web) setApplySuggest(v);
-          }}
-          disabled={web}
-          trackColor={{ false: '#ddd', true: theme.accentBorderMuted }}
-          thumbColor={applySuggest && !web ? theme.accent : '#f4f3f4'}
-        />
-      </View>
 
-      <Text style={styles.section}>Weekplanning — tijdschema (optioneel)</Text>
-      <Text style={styles.hint}>
-        Vrij tekstveld. Bijvoorbeeld welke dagen je meestal weinig of juist veel tijd hebt om te koken. Dit wordt alleen
-        gebruikt bij weekplanning/suggesties.
-      </Text>
-      <TextInput
-        style={[styles.input, styles.multiline]}
-        placeholder={'Bijv.\n- ma/di: weinig tijd (max 20–30 min)\n- do/za: uitgebreid koken kan'}
-        placeholderTextColor="#999"
-        value={weekPlanningTimeNotes}
-        onChangeText={setWeekPlanningTimeNotes}
-        editable={!web}
-        multiline
-      />
-
-      <Text style={styles.section}>Winkels in de buurt (optioneel)</Text>
-      <Text style={styles.hint}>
-        Kies waar je meestal boodschappen doet. De AI kan dan rekening houden met wat daar verkrijgbaar is.
-      </Text>
-      <View style={styles.addRow}>
+        <Text style={styles.section}>Weekplanning — tijdschema (optioneel)</Text>
+        <Text style={styles.hint}>
+          Vrij tekstveld. Bijvoorbeeld welke dagen je meestal weinig of juist veel tijd hebt om te
+          koken. Dit wordt alleen gebruikt bij weekplanning/suggesties.
+        </Text>
         <TextInput
-          style={[styles.input, styles.addInput]}
-          placeholder="Voeg een winkel toe…"
+          style={[styles.input, styles.multiline]}
+          placeholder={'Bijv.\n- ma/di: weinig tijd (max 20–30 min)\n- do/za: uitgebreid koken kan'}
           placeholderTextColor="#999"
-          value={newShopText}
-          onChangeText={setNewShopText}
+          value={weekPlanningTimeNotes}
+          onChangeText={setWeekPlanningTimeNotes}
           editable={!web}
-          returnKeyType="done"
-          onSubmitEditing={addShopOption}
+          multiline
         />
-        <Pressable
-          style={[styles.addBtn, { backgroundColor: theme.accent }, (web || !newShopText.trim()) && styles.btnDisabled]}
-          onPress={addShopOption}
-          disabled={web || !newShopText.trim()}
-        >
-          <Text style={styles.addBtnText}>Toevoegen</Text>
-        </Pressable>
-      </View>
-      <View style={styles.chipWrap}>
-        {shopOptions.map((opt) => {
-          const on = selectedShops.has(opt);
-          return (
-            <Pressable
-              key={opt}
-              style={[
-                styles.chip,
-                on ? { backgroundColor: theme.accentSoft, borderColor: theme.accent } : null,
-              ]}
-              onPress={() => {
-                if (!web) toggleShop(opt);
-              }}
-              disabled={web}
-            >
-              <Text
+
+        <Text style={styles.section}>Winkels in de buurt (optioneel)</Text>
+        <Text style={styles.hint}>
+          Kies waar je meestal boodschappen doet. De AI kan dan rekening houden met wat daar
+          verkrijgbaar is.
+        </Text>
+        <View style={styles.addRow}>
+          <TextInput
+            style={[styles.input, styles.addInput]}
+            placeholder="Voeg een winkel toe…"
+            placeholderTextColor="#999"
+            value={newShopText}
+            onChangeText={setNewShopText}
+            editable={!web}
+            returnKeyType="done"
+            onSubmitEditing={addShopOption}
+          />
+          <Pressable
+            style={[
+              styles.addBtn,
+              { backgroundColor: theme.accent },
+              (web || !newShopText.trim()) && styles.btnDisabled,
+            ]}
+            onPress={addShopOption}
+            disabled={web || !newShopText.trim()}
+          >
+            <Text style={styles.addBtnText}>Toevoegen</Text>
+          </Pressable>
+        </View>
+        <View style={styles.chipWrap}>
+          {shopOptions.map((opt) => {
+            const on = selectedShops.has(opt);
+            return (
+              <Pressable
+                key={opt}
                 style={[
-                  styles.chipText,
-                  on ? { color: theme.accentSoftText } : null,
+                  styles.chip,
+                  on ? { backgroundColor: theme.accentSoft, borderColor: theme.accent } : null,
                 ]}
+                onPress={() => {
+                  if (!web) toggleShop(opt);
+                }}
+                disabled={web}
               >
-                {opt}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+                <Text style={[styles.chipText, on ? { color: theme.accentSoftText } : null]}>
+                  {opt}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
-      <Text style={styles.section}>Harde grenzen</Text>
-      <Text style={styles.hint}>
-        Zet hier allergieën of ingrediënten die je nooit wil. Eén per regel. Voorbeeld: “paprika (allergie)”.
-      </Text>
-      <TextInput
-        style={[styles.input, styles.multiline]}
-        placeholder={'Bijv.\n- paprika (allergie)\n- schaaldieren'}
-        placeholderTextColor="#999"
-        value={mustNotText}
-        onChangeText={setMustNotText}
-        editable={!web}
-        multiline
-      />
+        <Text style={styles.section}>Harde grenzen</Text>
+        <Text style={styles.hint}>
+          Zet hier allergieën of ingrediënten die je nooit wil. Eén per regel. Voorbeeld: “paprika
+          (allergie)”.
+        </Text>
+        <TextInput
+          style={[styles.input, styles.multiline]}
+          placeholder={'Bijv.\n- paprika (allergie)\n- schaaldieren'}
+          placeholderTextColor="#999"
+          value={mustNotText}
+          onChangeText={setMustNotText}
+          editable={!web}
+          multiline
+        />
 
-      <Text style={styles.section}>Liever vermijden</Text>
-      <Text style={styles.hint}>Dislikes die meestal vermeden moeten worden. Eén per regel. Voorbeeld: “zuurkool”.</Text>
-      <TextInput
-        style={[styles.input, styles.multiline]}
-        placeholder={'Bijv.\n- zuurkool\n- lever'}
-        placeholderTextColor="#999"
-        value={avoidText}
-        onChangeText={setAvoidText}
-        editable={!web}
-        multiline
-      />
+        <Text style={styles.section}>Liever vermijden</Text>
+        <Text style={styles.hint}>
+          Dislikes die meestal vermeden moeten worden. Eén per regel. Voorbeeld: “zuurkool”.
+        </Text>
+        <TextInput
+          style={[styles.input, styles.multiline]}
+          placeholder={'Bijv.\n- zuurkool\n- lever'}
+          placeholderTextColor="#999"
+          value={avoidText}
+          onChangeText={setAvoidText}
+          editable={!web}
+          multiline
+        />
 
-      <Text style={styles.section}>Voorkeuren</Text>
-      <Text style={styles.hint}>
-        Zachte voorkeuren (“meestal vega”, “pittig”, “liefst 30 min”). Eén per regel. Voorbeeld: “meestal vegetarisch,
-        ongeveer 1× per week vlees”.
-      </Text>
-      <TextInput
-        style={[styles.input, styles.multiline]}
-        placeholder={'Bijv.\n- meestal vegetarisch (1× per week vlees)\n- hou van pittig'}
-        placeholderTextColor="#999"
-        value={preferText}
-        onChangeText={setPreferText}
-        editable={!web}
-        multiline
-      />
+        <Text style={styles.section}>Voorkeuren</Text>
+        <Text style={styles.hint}>
+          Zachte voorkeuren (“meestal vega”, “pittig”, “liefst 30 min”). Eén per regel. Voorbeeld:
+          “meestal vegetarisch, ongeveer 1× per week vlees”.
+        </Text>
+        <TextInput
+          style={[styles.input, styles.multiline]}
+          placeholder={'Bijv.\n- meestal vegetarisch (1× per week vlees)\n- hou van pittig'}
+          placeholderTextColor="#999"
+          value={preferText}
+          onChangeText={setPreferText}
+          editable={!web}
+          multiline
+        />
 
-      <Text style={styles.section}>Extra instructie (optioneel)</Text>
-      <Text style={styles.hint}>Vrij tekstveld voor nuance. Houd het kort; het wordt bij elke AI-aanroep meegestuurd.</Text>
-      <TextInput
-        style={[styles.input, styles.multiline]}
-        placeholder="Bijv. graag simpele stappen en zo min mogelijk pannen."
-        placeholderTextColor="#999"
-        value={freeText}
-        onChangeText={setFreeText}
-        editable={!web}
-        multiline
-      />
+        <Text style={styles.section}>Extra instructie (optioneel)</Text>
+        <Text style={styles.hint}>
+          Vrij tekstveld voor nuance. Houd het kort; het wordt bij elke AI-aanroep meegestuurd.
+        </Text>
+        <TextInput
+          style={[styles.input, styles.multiline]}
+          placeholder="Bijv. graag simpele stappen en zo min mogelijk pannen."
+          placeholderTextColor="#999"
+          value={freeText}
+          onChangeText={setFreeText}
+          editable={!web}
+          multiline
+        />
 
-      <View style={styles.row}>
-        <Pressable style={[styles.btnOutline, web && styles.btnDisabled]} onPress={onClear} disabled={web || !loaded}>
-          <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>Wissen</Text>
+        <View style={styles.row}>
+          <Pressable
+            style={[styles.btnOutline, web && styles.btnDisabled]}
+            onPress={onClear}
+            disabled={web || !loaded}
+          >
+            <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>Wissen</Text>
+          </Pressable>
+        </View>
+
+        <Pressable
+          style={[styles.btnPrompts, { borderColor: theme.accent }]}
+          onPress={() => setPromptsModalOpen(true)}
+          accessibilityRole="button"
+        >
+          <Text style={[styles.btnPromptsText, { color: theme.accent }]}>Bekijk AI-prompts</Text>
         </Pressable>
-      </View>
 
-      <Pressable
-        style={[styles.btnPrompts, { borderColor: theme.accent }]}
-        onPress={() => setPromptsModalOpen(true)}
-        accessibilityRole="button"
-      >
-        <Text style={[styles.btnPromptsText, { color: theme.accent }]}>Bekijk AI-prompts</Text>
-      </Pressable>
-
-      <AiPromptsCatalogModal visible={promptsModalOpen} onClose={() => setPromptsModalOpen(false)} />
+        <AiPromptsCatalogModal
+          visible={promptsModalOpen}
+          onClose={() => setPromptsModalOpen(false)}
+        />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -410,7 +447,13 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { padding: 16, paddingBottom: 40 },
   lead: { fontSize: 14, color: '#555', lineHeight: 21, marginBottom: 10 },
-  autoSaveHint: { fontSize: 13, color: '#666', lineHeight: 19, marginBottom: 16, fontStyle: 'italic' },
+  autoSaveHint: {
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 19,
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
   notice: {
     backgroundColor: '#fff8e6',
     borderWidth: 1,
@@ -472,7 +515,13 @@ const styles = StyleSheet.create({
   },
   stepBtnOff: { opacity: 0.4 },
   stepBtnText: { fontSize: 20, fontWeight: '900', color: '#1a1a1a' },
-  stepValue: { fontSize: 18, fontWeight: '900', color: '#1a1a1a', minWidth: 30, textAlign: 'center' },
+  stepValue: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#1a1a1a',
+    minWidth: 30,
+    textAlign: 'center',
+  },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -503,4 +552,3 @@ const styles = StyleSheet.create({
   },
   btnPromptsText: { fontWeight: '700', fontSize: 15 },
 });
-

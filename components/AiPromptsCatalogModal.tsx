@@ -1,12 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppTheme } from './ThemeContext';
 import { getAiPromptCatalog } from '../lib/aiPromptsCatalog';
@@ -39,8 +32,9 @@ export function AiPromptsCatalogModal({ visible, onClose }: Props) {
         <View style={[styles.card, { backgroundColor: theme.background }]}>
           <Text style={styles.title}>AI-prompts in deze app</Text>
           <Text style={styles.subtitle}>
-            Per functie zie je het systeembericht (of samengestelde prompt) zoals de app die nu opbouwt. Onder elke tab
-            staat welke context en welk deel van je kookprofiel (indien van toepassing) worden meegestuurd.
+            Per functie zie je het systeembericht (of samengestelde prompt) zoals de app die nu
+            opbouwt. Onder elke tab staat welke context en welk deel van je kookprofiel (indien van
+            toepassing) worden meegestuurd.
           </Text>
 
           <ScrollView
@@ -57,11 +51,16 @@ export function AiPromptsCatalogModal({ visible, onClose }: Props) {
                   onPress={() => setActiveId(e.id)}
                   style={[
                     styles.tab,
-                    on ? { backgroundColor: theme.accent, borderColor: theme.accent } : styles.tabOff,
+                    on
+                      ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                      : styles.tabOff,
                   ]}
                 >
                   <Text
-                    style={[styles.tabText, on ? { color: '#fff', fontWeight: '700' } : { color: '#333' }]}
+                    style={[
+                      styles.tabText,
+                      on ? { color: '#fff', fontWeight: '700' } : { color: '#333' },
+                    ]}
                     numberOfLines={2}
                   >
                     {e.title}
@@ -71,7 +70,11 @@ export function AiPromptsCatalogModal({ visible, onClose }: Props) {
             })}
           </ScrollView>
 
-          <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            style={styles.body}
+            contentContainerStyle={styles.bodyContent}
+            keyboardShouldPersistTaps="handled"
+          >
             <Text style={styles.section}>Context en meegestuurde informatie</Text>
             {active.contextLines.map((line, i) => (
               <Text key={i} style={styles.bullet}>
@@ -89,7 +92,9 @@ export function AiPromptsCatalogModal({ visible, onClose }: Props) {
 
             {active.userExample ? (
               <>
-                <Text style={[styles.section, styles.sectionSpaced]}>Voorbeeld of fragment user-bericht</Text>
+                <Text style={[styles.section, styles.sectionSpaced]}>
+                  Voorbeeld of fragment user-bericht
+                </Text>
                 <View style={styles.codeBox}>
                   <Text selectable style={styles.code}>
                     {active.userExample}

@@ -1,5 +1,5 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { useAppTheme } from '../../components/ThemeContext';
@@ -10,10 +10,18 @@ import {
   resolveAppTheme,
 } from '../../lib/appearancePrefs';
 import { ensureDatabaseAsync } from '../../lib/db';
+import {
+  getStartTabId,
+  persistStartTabId,
+  START_TAB_LABELS,
+  START_TAB_ORDER,
+  type StartTabId,
+} from '../../lib/startTabPrefs';
 
 export default function AppearanceSettingsScreen() {
   const theme = useAppTheme();
   const { width: windowWidth } = useWindowDimensions();
+  const [startTabId, setStartTabId] = useState<StartTabId>('shopping');
 
   const chipOnStyle = { backgroundColor: theme.accentSoft, borderColor: theme.accent };
   const chipTextOnStyle = { color: theme.accentSoftText };
@@ -23,7 +31,10 @@ export default function AppearanceSettingsScreen() {
   const contentPad = 16; // matches styles.content padding
   const accentColWidth = Math.max(
     44,
-    Math.floor((windowWidth - contentPad * 2 - accentGap * Math.max(0, accentIds.length - 1)) / accentIds.length)
+    Math.floor(
+      (windowWidth - contentPad * 2 - accentGap * Math.max(0, accentIds.length - 1)) /
+        accentIds.length
+    )
   );
   const swatchSize = Math.max(28, Math.min(36, Math.round(accentColWidth * 0.62)));
   const accentLabelFontSize = Math.max(8, Math.min(11, Math.round(accentColWidth / 6.5)));
@@ -32,6 +43,7 @@ export default function AppearanceSettingsScreen() {
     void (async () => {
       await ensureDatabaseAsync();
       await theme.reloadThemeFromDatabase();
+      setStartTabId(await getStartTabId());
     })();
   }, [theme]);
 
@@ -49,8 +61,8 @@ export default function AppearanceSettingsScreen() {
     >
       <Text style={styles.section}>Uiterlijk</Text>
       <Text style={styles.hint}>
-        Accentkleur voor knoppen, filters en gemarkeerde elementen. Achtergrond bepaalt de basiskleur van schermen en de
-        tabbalk.
+        Accentkleur voor knoppen, filters en gemarkeerde elementen. Achtergrond bepaalt de
+        basiskleur van schermen en de tabbalk.
       </Text>
 
       <Text style={styles.subLabel}>Accentkleur</Text>
@@ -71,7 +83,12 @@ export default function AppearanceSettingsScreen() {
               <View
                 style={[
                   styles.accentSwatch,
-                  { backgroundColor: sw.accent, width: swatchSize, height: swatchSize, borderRadius: Math.round(swatchSize / 2) },
+                  {
+                    backgroundColor: sw.accent,
+                    width: swatchSize,
+                    height: swatchSize,
+                    borderRadius: Math.round(swatchSize / 2),
+                  },
                   selected ? styles.accentSwatchSelected : null,
                 ]}
               />
@@ -107,6 +124,30 @@ export default function AppearanceSettingsScreen() {
           </Pressable>
         ))}
       </View>
+
+      <Text style={[styles.subLabel, styles.startPageLabel]}>Startpagina</Text>
+      <Text style={styles.hintSmall}>
+        Welk tabblad opent als je de app start (na een volledige herstart).
+      </Text>
+      <View style={[styles.chipRow, styles.startTabChipRow]}>
+        {START_TAB_ORDER.map((id) => (
+          <Pressable
+            key={id}
+            style={[styles.chip, startTabId === id ? chipOnStyle : null]}
+            onPress={() => {
+              void (async () => {
+                await ensureDatabaseAsync();
+                await persistStartTabId(id);
+                setStartTabId(id);
+              })();
+            }}
+          >
+            <Text style={[styles.chipText, startTabId === id ? chipTextOnStyle : null]}>
+              {START_TAB_LABELS[id]}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
     </ScrollView>
   );
 }
@@ -116,8 +157,11 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 40 },
   section: { fontSize: 17, fontWeight: '700', color: '#1a1a1a', marginTop: 20, marginBottom: 8 },
   hint: { fontSize: 13, color: '#666', lineHeight: 19, marginBottom: 10 },
+  hintSmall: { fontSize: 12, color: '#666', lineHeight: 18, marginBottom: 8 },
   subLabel: { fontSize: 13, fontWeight: '600', color: '#444', marginBottom: 6, marginTop: 4 },
+  startPageLabel: { marginTop: 18 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  startTabChipRow: { marginBottom: 4 },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 9,
@@ -152,4 +196,3 @@ const styles = StyleSheet.create({
   },
   accentMiniLabelOn: { color: '#1a1a1a' },
 });
-

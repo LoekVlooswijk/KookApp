@@ -1,4 +1,4 @@
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -14,14 +14,29 @@ import {
   View,
 } from 'react-native';
 
+import { Ionicons } from '@expo/vector-icons';
 import { useConfirmDialog } from '../../../components/ConfirmDialog';
 import { PortionScaler } from '../../../components/PortionScaler';
 import { RecipeAdjustChat } from '../../../components/RecipeAdjustChat';
 import { ScaledIngredientsList } from '../../../components/ScaledIngredientsList';
 import { useAppTheme } from '../../../components/ThemeContext';
+import {
+  assessProduceLocalityAndPesticides,
+  finalizeBioScoreFromAssessment,
+  recomputeBioScoreFromPreparedItems,
+} from '../../../lib/bioScore';
+import { addToBioScoreExcludeList } from '../../../lib/bioScoreExcludePrefs';
+import { ensureDatabaseAsync } from '../../../lib/db';
+import { checkHasInternet } from '../../../lib/internetCheck';
 import { getRecipeListMembership, setRecipeInList } from '../../../lib/listsRepo';
 import { effectiveBaseServings } from '../../../lib/scaling';
-import { deleteRecipe, getFullRecipe, listRecipeVersions, restoreRecipeFromVersion, setRecipeFavoriteFlag } from '../../../lib/recipesRepo';
+import {
+  deleteRecipe,
+  getFullRecipe,
+  listRecipeVersions,
+  restoreRecipeFromVersion,
+  setRecipeFavoriteFlag,
+} from '../../../lib/recipesRepo';
 import { formatStepTimerNl } from '../../../lib/timerFormat';
 import type { FullRecipe } from '../../../lib/types';
 
@@ -44,6 +59,8 @@ export default function RecipeDetailScreen() {
   const [historyRows, setHistoryRows] = useState<
     Array<{ id: number; versionNumber: number; note: string | null; createdAt: string }>
   >([]);
+  const [bioDetailsOpen, setBioDetailsOpen] = useState(false);
+  const [bioRecomputeBusy, setBioRecomputeBusy] = useState(false);
 
   /** Eerste focus per recept: alleen `useEffect` laadt data; volgende focus = verversen (o.a. na bewerken). */
   const recipeDetailInitialFocus = useRef(true);
@@ -70,7 +87,9 @@ export default function RecipeDetailScreen() {
 
   const refreshLists = useCallback(() => {
     if (!Number.isFinite(recipeId)) return;
-    void getRecipeListMembership(recipeId).then(setListRows);
+    void getRecipeListMembership(recipeId)
+      .then(setListRows)
+      .catch(() => setListRows([]));
   }, [recipeId]);
 
   useFocusEffect(
@@ -162,7 +181,7 @@ export default function RecipeDetailScreen() {
       });
       if (!ok) return;
       await deleteRecipe(recipeId);
-      router.replace('/');
+      router.replace('/(tabs)/recipes');
     })();
   }, [confirm, recipeId, router]);
 
@@ -182,7 +201,12 @@ export default function RecipeDetailScreen() {
   const formatHistoryDate = useCallback((iso: string) => {
     const dt = new Date(iso);
     if (Number.isNaN(dt.getTime())) return iso;
-    return dt.toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return dt.toLocaleString('nl-NL', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }, []);
 
   if (!Number.isFinite(recipeId)) {
@@ -236,180 +260,327 @@ export default function RecipeDetailScreen() {
     metaChips.push({ key: 'tot', label: `Totaal ${recipe.totalTimeMin} min`, variant: 'neutral' });
   }
   return (
-  <>
-    <ConfirmDialog />
-    <ScrollView
-      contentContainerStyle={styles.scroll}
-      style={[styles.flex, { backgroundColor: theme.background }]}
-    >
-      {recipe.imageUri ? (
-        <Image
-          source={{ uri: recipe.imageUri }}
-          style={styles.coverImage}
-          resizeMode="cover"
-          accessibilityLabel="Receptfoto"
-        />
-      ) : null}
-      <Text style={styles.title}>{recipe.title}</Text>
-      <View style={styles.metaRowOuter}>
-        <View style={styles.metaChipsWrap}>
+    <>
+      <ConfirmDialog />
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        style={[styles.flex, { backgroundColor: theme.background }]}
+      >
+        {recipe.imageUri ? (
+          <Image
+            source={{ uri: recipe.imageUri }}
+            style={styles.coverImage}
+            resizeMode="cover"
+            accessibilityLabel="Receptfoto"
+          />
+        ) : null}
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>{recipe.title}</Text>
+          {recipe.bioScoreColor ? (
+            <Pressable
+              style={styles.titleLeafWrap}
+              onPress={() => setBioDetailsOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Bio-score details openen"
+              hitSlop={8}
+            >
+              <Ionicons
+                name="leaf"
+                size={20}
+                color={
+                  recipe.bioScoreColor === 'green'
+                    ? '#2e7d32'
+                    : recipe.bioScoreColor === 'red'
+                      ? '#b00020'
+                      : theme.accent
+                }
+                accessibilityLabel={
+                  recipe.bioScoreColor === 'green'
+                    ? 'Bio-score: groen'
+                    : recipe.bioScoreColor === 'red'
+                      ? 'Bio-score: rood'
+                      : 'Bio-score: oranje'
+                }
+              />
+            </Pressable>
+          ) : null}
           <Pressable
+            style={styles.titleFavBtn}
+            hitSlop={10}
             onPress={toggleFavorite}
-            style={[
-              styles.favToggle,
-              recipe.isFavorite
-                ? { backgroundColor: theme.accentSoft, borderColor: theme.accentBorderMuted }
-                : styles.favToggleOff,
-            ]}
             accessibilityRole="button"
             accessibilityState={{ selected: recipe.isFavorite }}
             accessibilityLabel={
               recipe.isFavorite ? 'Verwijderen uit favorieten' : 'Toevoegen aan favorieten'
             }
           >
-            <Text
-              style={
-                recipe.isFavorite
-                  ? [styles.favToggleTextOn, { color: theme.accent }]
-                  : styles.favToggleTextOff
-              }
-            >
-              Favoriet
-            </Text>
+            <Ionicons
+              name={recipe.isFavorite ? 'heart' : 'heart-outline'}
+              size={24}
+              color={recipe.isFavorite ? theme.accent : '#9a958d'}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            />
           </Pressable>
-          {metaChips.map((c) => (
-            <View
-              key={c.key}
-              style={
-                c.variant === 'accent'
-                  ? [
-                      styles.metaChip,
-                      { borderColor: theme.accentBorderMuted, backgroundColor: theme.accentSoft },
-                    ]
-                  : styles.metaChip
-              }
-            >
-              <Text
+        </View>
+        <View style={styles.metaRowOuter}>
+          <View style={styles.metaChipsWrap}>
+            {metaChips.map((c) => (
+              <View
+                key={c.key}
                 style={
                   c.variant === 'accent'
-                    ? [styles.metaChipText, { color: theme.accent, fontWeight: '700' as const }]
-                    : styles.metaChipText
+                    ? [
+                        styles.metaChip,
+                        { borderColor: theme.accentBorderMuted, backgroundColor: theme.accentSoft },
+                      ]
+                    : styles.metaChip
                 }
               >
-                {c.label}
-              </Text>
-            </View>
-          ))}
-          {recipe.tags.map((tag, i) => (
-            <View key={`tag-${i}`} style={styles.metaChip}>
-              <Text style={styles.metaChipText}>{tag}</Text>
-            </View>
-          ))}
+                <Text
+                  style={
+                    c.variant === 'accent'
+                      ? [styles.metaChipText, { color: theme.accent, fontWeight: '700' as const }]
+                      : styles.metaChipText
+                  }
+                >
+                  {c.label}
+                </Text>
+              </View>
+            ))}
+            {recipe.tags.map((tag, i) => (
+              <View key={`tag-${i}`} style={styles.metaChip}>
+                <Text style={styles.metaChipText}>{tag}</Text>
+              </View>
+            ))}
+          </View>
+          <Pressable
+            style={[
+              styles.listsCountBtn,
+              styles.listsCountBtnTall,
+              listRows.length === 0 && styles.listsCountBtnMuted,
+            ]}
+            onPress={() => setListsModalOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Lijsten, ${selectedLists.length} van ${listRows.length}`}
+          >
+            <Text style={styles.listsCountNum}>{selectedLists.length}</Text>
+            <Text style={styles.listsCountLabel}>lijsten</Text>
+          </Pressable>
         </View>
-        <Pressable
-          style={[
-            styles.listsCountBtn,
-            styles.listsCountBtnTall,
-            listRows.length === 0 && styles.listsCountBtnMuted,
-          ]}
-          onPress={() => setListsModalOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel={`Lijsten, ${selectedLists.length} van ${listRows.length}`}
-        >
-          <Text style={styles.listsCountNum}>{selectedLists.length}</Text>
-          <Text style={styles.listsCountLabel}>lijsten</Text>
-        </Pressable>
-      </View>
-      {recipe.description ? <Text style={styles.body}>{recipe.description}</Text> : null}
+        {recipe.description ? <Text style={styles.body}>{recipe.description}</Text> : null}
 
-      <View style={styles.toolsRow}>
-        <PortionScaler
-          compact
-          baseServings={recipe.baseServings}
-          value={servings}
-          onChange={setServings}
-        />
-        <Pressable
-          style={[styles.shareOutlineBtn, { borderColor: theme.accentBorderMuted }]}
-          onPress={onShare}
-          accessibilityRole="button"
-          accessibilityLabel="Recept delen"
-        >
-          <Text style={[styles.shareOutlineBtnText, { color: theme.accent }]}>Delen</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.aiOutlineBtn, { borderColor: theme.accent }]}
-          onPress={() => setAdjustOpen(true)}
-        >
-          <Text style={[styles.aiOutlineBtnText, { color: theme.accent }]} numberOfLines={2}>
-            Recept aanpassen met AI
-          </Text>
-        </Pressable>
-      </View>
-
-      <ScaledIngredientsList recipe={recipe} targetServings={servings} />
-
-      {recipe.notes ? (
-        <View style={styles.notesBox}>
-          <Text style={styles.notesLabel}>Notities</Text>
-          <Text style={styles.notesBody}>{recipe.notes}</Text>
+        <View style={styles.toolsRow}>
+          <PortionScaler
+            compact
+            baseServings={recipe.baseServings}
+            value={servings}
+            onChange={setServings}
+          />
+          <Pressable
+            style={[styles.shareOutlineBtn, { borderColor: theme.accentBorderMuted }]}
+            onPress={onShare}
+            accessibilityRole="button"
+            accessibilityLabel="Recept delen"
+          >
+            <Text style={[styles.shareOutlineBtnText, { color: theme.accent }]}>Delen</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.aiOutlineBtn, { borderColor: theme.accent }]}
+            onPress={() => setAdjustOpen(true)}
+          >
+            <Text style={[styles.aiOutlineBtnText, { color: theme.accent }]} numberOfLines={2}>
+              Recept aanpassen met AI
+            </Text>
+          </Pressable>
         </View>
-      ) : null}
 
-      <Text style={[styles.stepsScreenTitle, { color: theme.accent }]}>Stappen</Text>
-      {recipe.stepSections.map((section) => (
-        <View key={section.id} style={styles.stepSection}>
-          {section.title ? <Text style={styles.stepSectionHeading}>{section.title}</Text> : null}
-          {section.steps.map((st, idx) => (
-            <View key={st.id} style={styles.stepBlock}>
+        {recipe.bioScoreColor && recipe.bioScoreItems && recipe.bioScoreItems.length > 0 ? (
+          <Pressable
+            style={[styles.bioDetailsBtn, { borderColor: theme.accentBorderMuted }]}
+            onPress={() => setBioDetailsOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Waarom deze bio-score?"
+          >
+            <Text style={[styles.bioDetailsBtnText, { color: theme.accent }]}>
+              Waarom deze bio-score?
+            </Text>
+          </Pressable>
+        ) : null}
+
+        <ScaledIngredientsList recipe={recipe} targetServings={servings} />
+
+        {recipe.notes ? (
+          <View style={styles.notesBox}>
+            <Text style={styles.notesLabel}>Notities</Text>
+            <Text style={styles.notesBody}>{recipe.notes}</Text>
+          </View>
+        ) : null}
+
+        <Text style={[styles.stepsScreenTitle, { color: theme.accent }]}>Stappen</Text>
+        {recipe.stepSections.map((section) => (
+          <View key={section.id} style={styles.stepSection}>
+            {section.title ? <Text style={styles.stepSectionHeading}>{section.title}</Text> : null}
+            {section.steps.map((st, idx) => (
+              <View key={st.id} style={styles.stepBlock}>
                 <Text style={styles.stepLine}>
-                <Text style={[styles.stepIndex, { color: theme.accent }]}>{idx + 1}. </Text>
-                {st.description}
-              </Text>
-              {st.timerSeconds != null && st.timerSeconds > 0 ? (
-                <Text style={styles.stepTimer}>Timer: {formatStepTimerNl(st.timerSeconds)}</Text>
-              ) : null}
-            </View>
-          ))}
-        </View>
-      ))}
+                  <Text style={[styles.stepIndex, { color: theme.accent }]}>{idx + 1}. </Text>
+                  {st.description}
+                </Text>
+                {st.timerSeconds != null && st.timerSeconds > 0 ? (
+                  <Text style={styles.stepTimer}>Timer: {formatStepTimerNl(st.timerSeconds)}</Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ))}
 
-      <Modal visible={listsModalOpen} animationType="fade" transparent>
-        <View style={styles.listsModalRoot}>
-          <Pressable style={styles.listsModalBackdrop} onPress={() => setListsModalOpen(false)} />
-          <View style={[styles.listsModalCard, { backgroundColor: theme.background }]}>
-            <Text style={styles.listsModalTitle}>Lijsten voor dit recept</Text>
+        <Modal visible={listsModalOpen} animationType="fade" transparent>
+          <View style={styles.listsModalRoot}>
+            <Pressable style={styles.listsModalBackdrop} onPress={() => setListsModalOpen(false)} />
+            <View style={[styles.listsModalCard, { backgroundColor: theme.background }]}>
+              <Text style={styles.listsModalTitle}>Lijsten voor dit recept</Text>
+              <ScrollView
+                style={styles.listsModalScroll}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+              >
+                {listRows.length === 0 ? (
+                  <Text style={styles.listsModalEmpty}>
+                    Nog geen lijsten. Maak er een aan op de receptenpagina.
+                  </Text>
+                ) : null}
+                {listRows.map((row) => (
+                  <Pressable
+                    key={row.id}
+                    style={styles.listPickRow}
+                    onPress={() => {
+                      void (async () => {
+                        await setRecipeInList(row.id, recipeId, !row.member);
+                        refreshLists();
+                      })();
+                    }}
+                  >
+                    <Text style={[styles.listPickCheck, { color: theme.accent }]}>
+                      {row.member ? '☑' : '☐'}
+                    </Text>
+                    <Text style={styles.listPickText} numberOfLines={2}>
+                      {row.name}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+              <Pressable
+                style={[styles.listsModalClose, { backgroundColor: theme.accent }]}
+                onPress={() => setListsModalOpen(false)}
+              >
+                <Text style={styles.listsModalCloseText}>Sluiten</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+
+        <View style={styles.actions}>
+          <Link href={`/recipe/cook/${recipeId}`} asChild>
+            <Pressable
+              style={StyleSheet.flatten([styles.primaryBtn, { backgroundColor: theme.accent }])}
+            >
+              <Text style={styles.primaryBtnText}>Kookmodus</Text>
+            </Pressable>
+          </Link>
+          <Pressable
+            style={StyleSheet.flatten([styles.secondaryBtn, { borderColor: theme.accent }])}
+            onPress={openHistory}
+          >
+            <Text style={[styles.secondaryBtnText, { color: theme.accent }]}>Geschiedenis</Text>
+          </Pressable>
+          <Link href={`/recipe/${recipeId}/edit`} asChild>
+            <Pressable
+              style={StyleSheet.flatten([styles.secondaryBtn, { borderColor: theme.accent }])}
+            >
+              <Text style={[styles.secondaryBtnText, { color: theme.accent }]}>Bewerken</Text>
+            </Pressable>
+          </Link>
+          <Pressable style={styles.dangerBtn} onPress={onDelete}>
+            <Text style={styles.dangerBtnText}>Verwijderen</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+
+      <Modal
+        visible={historyOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setHistoryOpen(false)}
+      >
+        <View style={styles.historyRoot}>
+          <Pressable style={styles.historyBackdrop} onPress={() => setHistoryOpen(false)} />
+          <View style={[styles.historyCard, { backgroundColor: theme.background }]}>
+            <Text style={styles.historyTitle}>Geschiedenis</Text>
+            {historyLoading ? (
+              <ActivityIndicator color={theme.accent} style={{ marginTop: 10 }} />
+            ) : null}
+            {!historyLoading && historyRows.length === 0 ? (
+              <Text style={styles.historyEmpty}>Nog geen opgeslagen versies.</Text>
+            ) : null}
             <ScrollView
-              style={styles.listsModalScroll}
+              style={styles.historyScroll}
               keyboardShouldPersistTaps="handled"
               nestedScrollEnabled
             >
-              {listRows.length === 0 ? (
-                <Text style={styles.listsModalEmpty}>Nog geen lijsten. Maak er een aan op de receptenpagina.</Text>
-              ) : null}
-              {listRows.map((row) => (
-                <Pressable
-                  key={row.id}
-                  style={styles.listPickRow}
-                  onPress={() => {
-                    void (async () => {
-                      await setRecipeInList(row.id, recipeId, !row.member);
-                      refreshLists();
-                    })();
-                  }}
-                >
-                  <Text style={[styles.listPickCheck, { color: theme.accent }]}>
-                    {row.member ? '☑' : '☐'}
-                  </Text>
-                  <Text style={styles.listPickText} numberOfLines={2}>
-                    {row.name}
-                  </Text>
-                </Pressable>
+              {historyRows.map((row) => (
+                <View key={row.id} style={styles.historyRow}>
+                  <View style={styles.historyRowMain}>
+                    <Text style={styles.historyRowTitle} numberOfLines={2}>
+                      Versie {row.versionNumber}
+                    </Text>
+                    <Text style={styles.historyRowMeta} numberOfLines={1}>
+                      {formatHistoryDate(row.createdAt)}
+                      {row.note?.trim() ? ` · ${row.note.trim()}` : ''}
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={StyleSheet.flatten([
+                      styles.historyRestoreBtn,
+                      { borderColor: theme.accent },
+                    ])}
+                    onPress={() => {
+                      void (async () => {
+                        const ok = await confirm({
+                          title: 'Terugzetten?',
+                          message:
+                            'De huidige versie wordt eerst opgeslagen als snapshot (\"Vóór terugzetten\").',
+                          confirmText: 'Terugzetten',
+                          cancelText: 'Annuleren',
+                          destructive: true,
+                        });
+                        if (!ok) return;
+                        try {
+                          await restoreRecipeFromVersion({ recipeId, versionId: row.id });
+                          setHistoryOpen(false);
+                          setRecipeTick((t) => t + 1);
+                        } catch (e) {
+                          Alert.alert(
+                            'Terugzetten mislukt',
+                            e instanceof Error ? e.message : 'Onbekende fout.'
+                          );
+                        }
+                      })();
+                    }}
+                  >
+                    <Text style={[styles.historyRestoreText, { color: theme.accent }]}>
+                      Terugzetten
+                    </Text>
+                  </Pressable>
+                </View>
               ))}
             </ScrollView>
             <Pressable
-              style={[styles.listsModalClose, { backgroundColor: theme.accent }]}
-              onPress={() => setListsModalOpen(false)}
+              style={StyleSheet.flatten([
+                styles.listsModalClose,
+                { backgroundColor: theme.accent },
+              ])}
+              onPress={() => setHistoryOpen(false)}
             >
               <Text style={styles.listsModalCloseText}>Sluiten</Text>
             </Pressable>
@@ -417,100 +588,168 @@ export default function RecipeDetailScreen() {
         </View>
       </Modal>
 
-      <View style={styles.actions}>
-        <Link href={`/recipe/cook/${recipeId}`} asChild>
-          <Pressable
-            style={StyleSheet.flatten([styles.primaryBtn, { backgroundColor: theme.accent }])}
-          >
-            <Text style={styles.primaryBtnText}>Kookmodus</Text>
-          </Pressable>
-        </Link>
-        <Pressable
-          style={StyleSheet.flatten([styles.secondaryBtn, { borderColor: theme.accent }])}
-          onPress={openHistory}
-        >
-          <Text style={[styles.secondaryBtnText, { color: theme.accent }]}>Geschiedenis</Text>
-        </Pressable>
-        <Link href={`/recipe/${recipeId}/edit`} asChild>
-          <Pressable
-            style={StyleSheet.flatten([styles.secondaryBtn, { borderColor: theme.accent }])}
-          >
-            <Text style={[styles.secondaryBtnText, { color: theme.accent }]}>Bewerken</Text>
-          </Pressable>
-        </Link>
-        <Pressable style={styles.dangerBtn} onPress={onDelete}>
-          <Text style={styles.dangerBtnText}>Verwijderen</Text>
-        </Pressable>
-      </View>
+      <RecipeAdjustChat
+        recipe={recipe}
+        recipeId={recipeId}
+        visible={adjustOpen}
+        onClose={() => setAdjustOpen(false)}
+        onApplied={onAdjustApplied}
+      />
 
-    </ScrollView>
+      <Modal
+        visible={bioDetailsOpen}
+        animationType="slide"
+        onRequestClose={() => setBioDetailsOpen(false)}
+      >
+        <View style={[styles.modalWrap, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Bio-score details</Text>
+            <Pressable
+              style={[
+                styles.modalClosePill,
+                { borderColor: theme.accentBorderMuted },
+                bioRecomputeBusy && styles.modalPillDisabled,
+              ]}
+              onPress={() => {
+                if (bioRecomputeBusy) return;
+                setBioRecomputeBusy(true);
+                void (async () => {
+                  try {
+                    const ok = await checkHasInternet();
+                    if (!ok) {
+                      Alert.alert(
+                        'Geen internet',
+                        'Bio score herberekenen vereist internetverbinding.'
+                      );
+                      return;
+                    }
+                    const r = recipe;
+                    const ingNames: string[] = [];
+                    for (const g of r.ingredientGroups) {
+                      for (const i of g.ingredients) {
+                        if (i.name?.trim()) ingNames.push(i.name.trim());
+                      }
+                    }
+                    const assessed = await assessProduceLocalityAndPesticides(ingNames);
+                    if (!assessed.ok) {
+                      Alert.alert('Fout', assessed.message);
+                      return;
+                    }
+                    const { items, color } = await finalizeBioScoreFromAssessment(assessed.items);
+                    const now = new Date().toISOString();
+                    const db = await ensureDatabaseAsync();
+                    await db.runAsync(
+                      'UPDATE recipes SET bio_score_color = ?, bio_score_updated_at = ?, bio_score_items_json = ?, updated_at = ? WHERE id = ?',
+                      [color, now, JSON.stringify(items), now, recipeId]
+                    );
+                    setRecipeTick((t) => t + 1);
+                  } catch (e) {
+                    Alert.alert(
+                      'Fout',
+                      e instanceof Error ? e.message : 'Bio score herberekenen mislukt.'
+                    );
+                  } finally {
+                    setBioRecomputeBusy(false);
+                  }
+                })();
+              }}
+              disabled={bioRecomputeBusy}
+              accessibilityRole="button"
+              accessibilityLabel="Bio score herberekenen"
+            >
+              <Text style={[styles.modalClosePillText, { color: theme.accent }]}>
+                {bioRecomputeBusy ? 'Herberekenen…' : 'Herberekenen'}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.modalClosePill, { borderColor: theme.accentBorderMuted }]}
+              onPress={() => setBioDetailsOpen(false)}
+            >
+              <Text style={[styles.modalClosePillText, { color: theme.accent }]}>Sluiten</Text>
+            </Pressable>
+          </View>
 
-    <Modal visible={historyOpen} animationType="fade" transparent onRequestClose={() => setHistoryOpen(false)}>
-      <View style={styles.historyRoot}>
-        <Pressable style={styles.historyBackdrop} onPress={() => setHistoryOpen(false)} />
-        <View style={[styles.historyCard, { backgroundColor: theme.background }]}>
-          <Text style={styles.historyTitle}>Geschiedenis</Text>
-          {historyLoading ? <ActivityIndicator color={theme.accent} style={{ marginTop: 10 }} /> : null}
-          {!historyLoading && historyRows.length === 0 ? (
-            <Text style={styles.historyEmpty}>Nog geen opgeslagen versies.</Text>
-          ) : null}
-          <ScrollView style={styles.historyScroll} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
-            {historyRows.map((row) => (
-              <View key={row.id} style={styles.historyRow}>
-                <View style={styles.historyRowMain}>
-                  <Text style={styles.historyRowTitle} numberOfLines={2}>
-                    Versie {row.versionNumber}
-                  </Text>
-                  <Text style={styles.historyRowMeta} numberOfLines={1}>
-                    {formatHistoryDate(row.createdAt)}
-                    {row.note?.trim() ? ` · ${row.note.trim()}` : ''}
-                  </Text>
+          <ScrollView contentContainerStyle={styles.modalContent}>
+            {recipe.bioScoreUpdatedAt ? (
+              <Text style={styles.modalHint}>
+                Laatst berekend: {new Date(recipe.bioScoreUpdatedAt).toLocaleDateString('nl-NL')}
+              </Text>
+            ) : null}
+
+            {!recipe.bioScoreItems || recipe.bioScoreItems.length === 0 ? (
+              <Text style={styles.modalHint}>
+                Nog geen details opgeslagen. Druk op “Herberekenen” om uitleg op te slaan.
+              </Text>
+            ) : null}
+
+            {(recipe.bioScoreItems ?? []).map((it, idx) => (
+              <View key={`${it.n}-${idx}`} style={styles.bioRow}>
+                <View style={styles.bioRowMain}>
+                  <Text style={styles.bioName}>{it.n}</Text>
+                  <View style={styles.bioBadges}>
+                    <Text
+                      style={[
+                        styles.bioBadge,
+                        it.l === 'G'
+                          ? styles.bioBadgeGreen
+                          : it.l === 'O'
+                            ? styles.bioBadgeOrange
+                            : styles.bioBadgeRed,
+                      ]}
+                    >
+                      herkomst {it.l}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.bioBadge,
+                        it.p === 'L'
+                          ? styles.bioBadgeGreen
+                          : it.p === 'M'
+                            ? styles.bioBadgeOrange
+                            : styles.bioBadgeRed,
+                      ]}
+                    >
+                      pesticide {it.p}
+                    </Text>
+                  </View>
                 </View>
                 <Pressable
-                  style={StyleSheet.flatten([styles.historyRestoreBtn, { borderColor: theme.accent }])}
+                  style={[styles.bioExcludeBtn, { borderColor: theme.accentBorderMuted }]}
                   onPress={() => {
                     void (async () => {
-                      const ok = await confirm({
-                        title: 'Terugzetten?',
-                        message: 'De huidige versie wordt eerst opgeslagen als snapshot (\"Vóór terugzetten\").',
-                        confirmText: 'Terugzetten',
-                        cancelText: 'Annuleren',
-                        destructive: true,
-                      });
-                      if (!ok) return;
                       try {
-                        await restoreRecipeFromVersion({ recipeId, versionId: row.id });
-                        setHistoryOpen(false);
+                        await addToBioScoreExcludeList(it.n);
+                        const { items, color } = await recomputeBioScoreFromPreparedItems(
+                          recipe.bioScoreItems ?? []
+                        );
+                        const now = new Date().toISOString();
+                        const db = await ensureDatabaseAsync();
+                        await db.runAsync(
+                          'UPDATE recipes SET bio_score_color = ?, bio_score_updated_at = ?, bio_score_items_json = ?, updated_at = ? WHERE id = ?',
+                          [color, now, JSON.stringify(items), now, recipeId]
+                        );
                         setRecipeTick((t) => t + 1);
                       } catch (e) {
-                        Alert.alert('Terugzetten mislukt', e instanceof Error ? e.message : 'Onbekende fout.');
+                        Alert.alert(
+                          'Fout',
+                          e instanceof Error ? e.message : 'Ingredient uitsluiten mislukt.'
+                        );
                       }
                     })();
                   }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${it.n} uitsluiten van bio-score`}
                 >
-                  <Text style={[styles.historyRestoreText, { color: theme.accent }]}>Terugzetten</Text>
+                  <Text style={[styles.bioExcludeBtnText, { color: theme.accent }]}>
+                    Verwijder uit berekening
+                  </Text>
                 </Pressable>
               </View>
             ))}
           </ScrollView>
-          <Pressable
-            style={StyleSheet.flatten([styles.listsModalClose, { backgroundColor: theme.accent }])}
-            onPress={() => setHistoryOpen(false)}
-          >
-            <Text style={styles.listsModalCloseText}>Sluiten</Text>
-          </Pressable>
         </View>
-      </View>
-    </Modal>
-
-    <RecipeAdjustChat
-      recipe={recipe}
-      recipeId={recipeId}
-      visible={adjustOpen}
-      onClose={() => setAdjustOpen(false)}
-      onApplied={onAdjustApplied}
-    />
-  </>
+      </Modal>
+    </>
   );
 }
 
@@ -525,7 +764,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#e8e4dc',
     marginBottom: 16,
   },
-  title: { fontSize: 26, fontWeight: '700', color: '#1a1a1a', marginBottom: 8 },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },
+  titleLeafWrap: { paddingTop: 2 },
+  title: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    marginBottom: 8,
+  },
+  titleFavBtn: { paddingTop: 2 },
   metaRowOuter: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -549,18 +798,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   metaChipText: { fontSize: 13, fontWeight: '600', color: '#444' },
-  favToggle: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  favToggleOff: {
-    backgroundColor: '#fff',
-    borderColor: '#ccc',
-  },
-  favToggleTextOff: { fontSize: 13, fontWeight: '600', color: '#555' },
-  favToggleTextOn: { fontSize: 13, fontWeight: '700' },
   body: { fontSize: 16, lineHeight: 24, color: '#333', marginTop: 12 },
   notesBox: {
     marginTop: 16,
@@ -598,6 +835,70 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 8,
   },
+  bioDetailsBtn: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  bioDetailsBtnText: { fontSize: 14, fontWeight: '700' },
+  modalWrap: { flex: 1 },
+  modalHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: '#1a1a1a', flex: 1, minWidth: 0 },
+  modalClosePill: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  modalPillDisabled: { opacity: 0.6 },
+  modalClosePillText: { fontSize: 14, fontWeight: '700' },
+  modalContent: { padding: 16, paddingBottom: 40 },
+  modalHint: { fontSize: 13, color: '#666', marginBottom: 12 },
+  bioRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 14,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e2ddd5',
+  },
+  bioRowMain: { flex: 1, minWidth: 0 },
+  bioName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', marginBottom: 6 },
+  bioExcludeBtn: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    maxWidth: 118,
+  },
+  bioExcludeBtnText: { fontSize: 11, fontWeight: '700', lineHeight: 15, textAlign: 'center' },
+  bioBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  bioBadge: {
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+    backgroundColor: '#fff',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#444',
+  },
+  bioBadgeGreen: { borderColor: '#b8d7c6', backgroundColor: '#f0f4ef', color: '#2d4a2d' },
+  bioBadgeOrange: { borderColor: '#e2c5b5', backgroundColor: '#fdf0e9', color: '#7a3b20' },
+  bioBadgeRed: { borderColor: '#e6bcbc', backgroundColor: '#fff0f0', color: '#7a2020' },
   stepsScreenTitle: {
     fontSize: 17,
     fontWeight: '700',

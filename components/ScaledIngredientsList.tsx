@@ -19,7 +19,8 @@ export function ScaledIngredientsList({ recipe, targetServings }: Props) {
       <Text style={[styles.heading, { color: theme.accent }]}>Ingrediënten</Text>
       {targetServings !== base ? (
         <Text style={styles.hint}>
-          Geschaald voor {targetServings} persoon{targetServings === 1 ? '' : 'en'} (×{trimFactor(factor)})
+          Geschaald voor {targetServings} persoon{targetServings === 1 ? '' : 'en'} (×
+          {trimFactor(factor)})
         </Text>
       ) : null}
       {recipe.ingredientGroups.map((g) => (

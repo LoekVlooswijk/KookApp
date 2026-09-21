@@ -1,14 +1,7 @@
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useCallback } from 'react';
-import {
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -16,6 +9,10 @@ import { useAppTheme } from '../../components/ThemeContext';
 import { hydrateAiCookProfileFromDb } from '../../lib/aiCookProfile';
 import { hydrateAiPrefsFromDb } from '../../lib/aiPrefs';
 import { ensureDatabaseAsync } from '../../lib/db';
+import { hydrateBioScoreExcludePrefsFromDb } from '../../lib/bioScoreExcludePrefs';
+import { hydrateBioScoreOverridesPrefsFromDb } from '../../lib/bioScoreOverridesPrefs';
+import { hydrateBioScoreThresholdsFromDb } from '../../lib/bioScoreThresholdsPrefs';
+import { hydrateShoppingOrganicPrefsFromDb } from '../../lib/shoppingOrganicPrefs';
 import { hydrateShoppingStaplesPrefsFromDb } from '../../lib/shoppingStaplesPrefs';
 
 const version = Constants.expoConfig?.version ?? '0.0.0';
@@ -84,9 +81,16 @@ const SECTIONS: Section[] = [
       {
         key: 'shopping',
         title: 'Boodschappen',
-        subtitle: 'Wat staat al thuis (uitsluiten van lijstje).',
+        subtitle: 'Wat staat al thuis + wat altijd biologisch moet.',
         href: '/settings/shopping',
         icon: 'shopping-cart',
+      },
+      {
+        key: 'bio_score',
+        title: 'Bio-score',
+        subtitle: 'Drempels, uitsluitingen, vaste productscores en bulk berekenen.',
+        href: '/settings/bio-score',
+        icon: 'eco',
       },
       {
         key: 'beheren',
@@ -126,6 +130,10 @@ export default function SettingsScreen() {
       await hydrateAiPrefsFromDb();
       await hydrateAiCookProfileFromDb();
       await hydrateShoppingStaplesPrefsFromDb();
+      await hydrateShoppingOrganicPrefsFromDb();
+      await hydrateBioScoreThresholdsFromDb();
+      await hydrateBioScoreExcludePrefsFromDb();
+      await hydrateBioScoreOverridesPrefsFromDb();
     })();
   }, []);
 
@@ -144,16 +152,12 @@ export default function SettingsScreen() {
       {SECTIONS.map((section) => (
         <View key={section.id}>
           <Text
-            style={[
-              styles.sectionHeader,
-              (section.first ?? false) && styles.sectionHeaderFirst,
-            ]}
+            style={[styles.sectionHeader, (section.first ?? false) && styles.sectionHeaderFirst]}
           >
             {section.title}
           </Text>
           {section.rows.map((row) => {
-            const iconC =
-              row.iconColorKey === 'destructive' ? '#9a3d3d' : theme.accent;
+            const iconC = row.iconColorKey === 'destructive' ? '#9a3d3d' : theme.accent;
             return (
               <Pressable
                 key={row.key}
@@ -178,9 +182,7 @@ export default function SettingsScreen() {
           })}
         </View>
       ))}
-      <Text style={styles.versionFooter}>
-        {`Kookapp v${version}`}
-      </Text>
+      <Text style={styles.versionFooter}>{`Kookapp v${version}`}</Text>
     </ScrollView>
   );
 }

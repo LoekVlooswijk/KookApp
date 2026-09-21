@@ -128,7 +128,9 @@ function mergeShoppingLinesIntoMap(
 }
 
 /** Merge duplicate lines (same normalized name + unit); sums finite amounts. */
-export function mergeAggregatedShoppingItems(items: AggregatedShoppingItemInput[]): AggregatedShoppingItem[] {
+export function mergeAggregatedShoppingItems(
+  items: AggregatedShoppingItemInput[]
+): AggregatedShoppingItem[] {
   const out = new Map<string, { name: string; unit: string | null; amount: number | null }>();
   for (const it of items) {
     mergeShoppingLinesIntoMap(out, it.name, it.unit, it.amount);
@@ -138,7 +140,10 @@ export function mergeAggregatedShoppingItems(items: AggregatedShoppingItemInput[
 
   // Fallback: if we still have multiple lines for the same ingredient name (but different unit),
   // combine them into one line by name and show quantities joined with "+".
-  const linesByName = new Map<string, Array<{ displayName: string; amount: number | null; unit: string | null }>>();
+  const linesByName = new Map<
+    string,
+    Array<{ displayName: string; amount: number | null; unit: string | null }>
+  >();
   for (const it of byUnitMerged) {
     const { keyName, displayName } = canonicalMergeName(it.name);
     if (!keyName) continue;
@@ -166,7 +171,10 @@ export function mergeAggregatedShoppingItems(items: AggregatedShoppingItemInput[
     }
 
     // Prefer the shortest reasonable display name (after canonicalization).
-    const sortedNames = [...arr].map((x) => x.displayName.trim()).filter(Boolean).sort((a, b) => a.length - b.length);
+    const sortedNames = [...arr]
+      .map((x) => x.displayName.trim())
+      .filter(Boolean)
+      .sort((a, b) => a.length - b.length);
     const displayName = sortedNames[0] ?? keyName;
 
     const parts: string[] = [];
@@ -213,7 +221,10 @@ export async function aggregateShoppingFromWeekPlans(params: {
   const totalServingsByCookDate = new Map<string, number>();
   for (const p of params.plans) {
     const cookDate = (p.leftoverOfDate ?? p.date).trim();
-    totalServingsByCookDate.set(cookDate, (totalServingsByCookDate.get(cookDate) ?? 0) + p.servings);
+    totalServingsByCookDate.set(
+      cookDate,
+      (totalServingsByCookDate.get(cookDate) ?? 0) + p.servings
+    );
   }
 
   for (const p of params.plans) {
@@ -241,4 +252,3 @@ export async function aggregateShoppingFromWeekPlans(params: {
 
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, 'nl'));
 }
-

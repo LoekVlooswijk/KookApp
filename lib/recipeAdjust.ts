@@ -1,6 +1,13 @@
 import { callAiChat, callAiText, type AiChatTurn } from './aiClient';
+
+/** Max messages sent on “apply” to cap tokens (full recipe is still in system prompt). */
+const MAX_ADJUST_CHAT_MESSAGES = 14;
 import { formatAiCookProfileForPrompt } from './aiCookProfile';
-import { buildAiRepairUserPrompt, buildRecipeAdjustSystemPrompt, RECIPE_JSON_SCHEMA } from './aiPromptTemplates';
+import {
+  buildAiRepairUserPrompt,
+  buildRecipeAdjustSystemPrompt,
+  RECIPE_JSON_SCHEMA,
+} from './aiPromptTemplates';
 import { fullRecipeToExtractShape } from './recipeAdjustShape';
 import { formatStepTimerNl } from './timerFormat';
 import { parseExtractedRecipeJson } from './recipeExtract';
@@ -30,7 +37,9 @@ function recipeToReadableText(recipe: FullRecipe): string {
   for (const g of recipe.ingredientGroups) {
     if (g.title?.trim()) lines.push(`[${g.title.trim()}]`);
     for (const i of g.ingredients) {
-      const qty = [i.amount != null ? String(i.amount) : '', i.unit?.trim() ?? ''].filter(Boolean).join(' ');
+      const qty = [i.amount != null ? String(i.amount) : '', i.unit?.trim() ?? '']
+        .filter(Boolean)
+        .join(' ');
       lines.push(qty ? `- ${qty} ${i.name}` : `- ${i.name}`);
     }
   }
@@ -70,13 +79,19 @@ Richtlijnen:
 - Als de gebruiker akkoord gaat, bevestig dan welke aanpassingen je doorvoert.`;
 }
 
-/** Behoud bron-URL, favorieten, eigen notities en afbeelding; AI levert alleen receptvelden. */
-export function mergeAdjustedPayload(original: FullRecipe, parsed: RecipeSavePayload): RecipeSavePayload {
+/** Behoud bron-URL, favorieten, bio-score, eigen notities en afbeelding; AI levert alleen receptvelden. */
+export function mergeAdjustedPayload(
+  original: FullRecipe,
+  parsed: RecipeSavePayload
+): RecipeSavePayload {
   return {
     ...parsed,
     sourceUrl: (original.sourceUrl ?? '').trim() || parsed.sourceUrl,
     isFavorite: original.isFavorite,
     wantToTry: original.wantToTry,
+    bioScoreColor: original.bioScoreColor ?? null,
+    bioScoreUpdatedAt: original.bioScoreUpdatedAt ?? null,
+    bioScoreItems: original.bioScoreItems ?? null,
     notes: original.notes ?? '',
     imageUri: original.imageUri ?? '',
   };
@@ -102,6 +117,7 @@ export async function requestRecipeAdjustment(
     system: buildAdjustSystemPrompt(),
     user: userBlock,
     maxTokens: 8192,
+    task: 'adjust',
   });
 
   if (!res.ok) {
@@ -121,6 +137,7 @@ export async function requestRecipeAdjustment(
       system: buildAdjustSystemPrompt(),
       user: repairUser,
       maxTokens: 8192,
+      task: 'adjust',
     });
     if (!repaired.ok) {
       return { ok: false, message: parsed.reason, raw: res.text };
@@ -159,6 +176,11 @@ export async function applyAdjustmentFromChat(
     return { ok: false, message: 'Geen bespreking om toe te passen.' };
   }
 
+  const trimmedHistory =
+    chatHistory.length > MAX_ADJUST_CHAT_MESSAGES
+      ? chatHistory.slice(-MAX_ADJUST_CHAT_MESSAGES)
+      : chatHistory;
+
   const applyMessage: AiChatTurn = {
     role: 'user',
     text: `Top, voer de besproken aanpassingen nu door. Geef het VOLLEDIGE aangepaste recept terug als JSON (alleen JSON, geen markdown, geen uitleg). Gebruik dit schema:\n${RECIPE_JSON_SCHEMA}`,
@@ -166,21 +188,40 @@ export async function applyAdjustmentFromChat(
 
   const systemPrompt = buildApplyAdjustmentFromChatSystemPrompt(recipe);
 
-  const messages = [...chatHistory, applyMessage];
+  const messages = [...trimmedHistory, applyMessage];
 
   const res = await callAiChat({
     system: systemPrompt,
     messages,
     maxTokens: 8192,
+    task: 'adjust',
   });
 
   if (!res.ok) {
     return { ok: false, message: res.message };
   }
 
-  const parsed = parseExtractedRecipeJson(res.text, recipe.sourceUrl ?? '');
+  let parsed = parseExtractedRecipeJson(res.text, recipe.sourceUrl ?? '');
   if (!parsed.ok) {
-    return { ok: false, message: parsed.reason, raw: res.text };
+    const repairUser = buildAiRepairUserPrompt({
+      purpose: 'adjustRecipe',
+      outputSchema: RECIPE_JSON_SCHEMA,
+      previousOutput: res.text,
+      validationErrors: [parsed.reason],
+    });
+    const repaired = await callAiText({
+      system: buildAdjustSystemPrompt(),
+      user: repairUser,
+      maxTokens: 8192,
+      task: 'adjust',
+    });
+    if (!repaired.ok) {
+      return { ok: false, message: parsed.reason, raw: res.text };
+    }
+    parsed = parseExtractedRecipeJson(repaired.text, recipe.sourceUrl ?? '');
+    if (!parsed.ok) {
+      return { ok: false, message: parsed.reason, raw: repaired.text };
+    }
   }
 
   return { ok: true, payload: mergeAdjustedPayload(recipe, parsed.payload) };

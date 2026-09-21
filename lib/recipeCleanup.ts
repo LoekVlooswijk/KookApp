@@ -1,5 +1,9 @@
 import { ensureDatabaseAsync } from './db';
-import { canonicalStoredTagName, isTagHiddenFromBrowseFilters } from './recipeTagSanitize';
+import {
+  canonicalStoredTagName,
+  isTagHiddenFromBrowseFilters,
+  shouldDropTagAsIngredientDuplicate,
+} from './recipeTagSanitize';
 import { getCustomDiets } from './dietPrefs';
 import { DEFAULT_MANAGED_CATEGORIES, listManagedCategories } from './categoriesRepo';
 
@@ -30,29 +34,43 @@ function canonicalCategoryName(normalized: string): string {
  * - zet dieet-tags (vegetarisch/vegan/keto) om naar recipe.diet_* booleans en verwijder ze uit recipe_tags
  * - zet custom diets om naar `diet:<name>` tags (zodat ze niet bij gewone tags komen)
  * - verwijder ruis-tags ("wat eten we..." + maaltijdmomenten) uit recipe_tags
+ * - verwijder tags die overeenkomen met een ingrediëntnaam (zoals venkel)
  * - verplaats categorie↔tag op basis van beheerde categorieën (managed_categories + defaults)
  */
-export async function cleanupAllRecipeMetadata(): Promise<{ updatedRecipes: number; removedTagLinks: number }> {
+export async function cleanupAllRecipeMetadata(): Promise<{
+  updatedRecipes: number;
+  removedTagLinks: number;
+}> {
   const db = await ensureDatabaseAsync();
 
   const customDietNames = new Set((await getCustomDiets()).map((d) => d.name));
 
   const managed = await listManagedCategories();
   const managedCategorySet = new Set(
-    [...DEFAULT_MANAGED_CATEGORIES, ...managed].map((c) => canonicalCategoryName(normCategory(c))).filter(Boolean)
+    [...DEFAULT_MANAGED_CATEGORIES, ...managed]
+      .map((c) => canonicalCategoryName(normCategory(c)))
+      .filter(Boolean)
   );
 
   const tagRows = await db.getAllAsync<{ id: number; name: string }>('SELECT id, name FROM tags');
   const tagIdByName = new Map<string, number>();
   for (const t of tagRows) tagIdByName.set(normTag(t.name), t.id);
 
-  const recipes = await db.getAllAsync<{ id: number; category: string | null }>('SELECT id, category FROM recipes');
+  const recipes = await db.getAllAsync<{ id: number; category: string | null }>(
+    'SELECT id, category FROM recipes'
+  );
 
   let updatedRecipes = 0;
   let removedTagLinks = 0;
 
   await db.withTransactionAsync(async () => {
     for (const r of recipes) {
+      const ingRows = await db.getAllAsync<{ name: string }>(
+        'SELECT name FROM ingredients WHERE recipe_id = ?',
+        [r.id]
+      );
+      const ingredientNames = ingRows.map((x) => x.name);
+
       const links = await db.getAllAsync<{ tag_id: number; name: string }>(
         `SELECT t.id as tag_id, t.name as name
          FROM recipe_tags rt
@@ -62,9 +80,15 @@ export async function cleanupAllRecipeMetadata(): Promise<{ updatedRecipes: numb
       );
 
       const curCategoryNorm = canonicalCategoryName(normCategory(r.category ?? ''));
-      const curCategoryIsManaged = curCategoryNorm ? managedCategorySet.has(curCategoryNorm) : false;
+      const curCategoryIsManaged = curCategoryNorm
+        ? managedCategorySet.has(curCategoryNorm)
+        : false;
 
-      let nextCategory: string | null = curCategoryNorm ? (curCategoryIsManaged ? curCategoryNorm : null) : null;
+      let nextCategory: string | null = curCategoryNorm
+        ? curCategoryIsManaged
+          ? curCategoryNorm
+          : null
+        : null;
       let dietVegetarian = 0;
       let dietVegan = 0;
       let dietKeto = 0;
@@ -76,6 +100,12 @@ export async function cleanupAllRecipeMetadata(): Promise<{ updatedRecipes: numb
 
         // Hidden browse tags: remove them entirely from links
         if (isTagHiddenFromBrowseFilters(t)) {
+          removeTagIds.push(l.tag_id);
+          continue;
+        }
+
+        // Tag is eigenlijk een ingrediëntnaam (zoals venkel) — niet als zoeklabel.
+        if (!t.startsWith('diet:') && shouldDropTagAsIngredientDuplicate(t, ingredientNames)) {
           removeTagIds.push(l.tag_id);
           continue;
         }
@@ -118,19 +148,22 @@ export async function cleanupAllRecipeMetadata(): Promise<{ updatedRecipes: numb
           const token = dietTokenTag(custom);
           const tokenId = tagIdByName.get(token);
           if (tokenId) {
-            await db.runAsync('INSERT OR IGNORE INTO recipe_tags (recipe_id, tag_id) VALUES (?, ?)', [
-              r.id,
-              tokenId,
-            ]);
+            await db.runAsync(
+              'INSERT OR IGNORE INTO recipe_tags (recipe_id, tag_id) VALUES (?, ?)',
+              [r.id, tokenId]
+            );
           } else {
             await db.runAsync('INSERT OR IGNORE INTO tags (name) VALUES (?)', [token]);
-            const row = await db.getFirstAsync<{ id: number }>('SELECT id FROM tags WHERE name = ?', [token]);
+            const row = await db.getFirstAsync<{ id: number }>(
+              'SELECT id FROM tags WHERE name = ?',
+              [token]
+            );
             if (row) {
               tagIdByName.set(token, row.id);
-              await db.runAsync('INSERT OR IGNORE INTO recipe_tags (recipe_id, tag_id) VALUES (?, ?)', [
-                r.id,
-                row.id,
-              ]);
+              await db.runAsync(
+                'INSERT OR IGNORE INTO recipe_tags (recipe_id, tag_id) VALUES (?, ?)',
+                [r.id, row.id]
+              );
             }
           }
         }
@@ -142,19 +175,22 @@ export async function cleanupAllRecipeMetadata(): Promise<{ updatedRecipes: numb
         if (asTag) {
           const existingId = tagIdByName.get(asTag);
           if (existingId) {
-            await db.runAsync('INSERT OR IGNORE INTO recipe_tags (recipe_id, tag_id) VALUES (?, ?)', [
-              r.id,
-              existingId,
-            ]);
+            await db.runAsync(
+              'INSERT OR IGNORE INTO recipe_tags (recipe_id, tag_id) VALUES (?, ?)',
+              [r.id, existingId]
+            );
           } else {
             await db.runAsync('INSERT OR IGNORE INTO tags (name) VALUES (?)', [asTag]);
-            const row = await db.getFirstAsync<{ id: number }>('SELECT id FROM tags WHERE name = ?', [asTag]);
+            const row = await db.getFirstAsync<{ id: number }>(
+              'SELECT id FROM tags WHERE name = ?',
+              [asTag]
+            );
             if (row) {
               tagIdByName.set(asTag, row.id);
-              await db.runAsync('INSERT OR IGNORE INTO recipe_tags (recipe_id, tag_id) VALUES (?, ?)', [
-                r.id,
-                row.id,
-              ]);
+              await db.runAsync(
+                'INSERT OR IGNORE INTO recipe_tags (recipe_id, tag_id) VALUES (?, ?)',
+                [r.id, row.id]
+              );
             }
           }
         }
@@ -162,7 +198,10 @@ export async function cleanupAllRecipeMetadata(): Promise<{ updatedRecipes: numb
 
       if (removeTagIds.length > 0) {
         for (const tid of removeTagIds) {
-          const res = await db.runAsync('DELETE FROM recipe_tags WHERE recipe_id = ? AND tag_id = ?', [r.id, tid]);
+          const res = await db.runAsync(
+            'DELETE FROM recipe_tags WHERE recipe_id = ? AND tag_id = ?',
+            [r.id, tid]
+          );
           removedTagLinks += res.changes ?? 0;
         }
       }
@@ -194,4 +233,3 @@ export async function cleanupAllRecipeMetadata(): Promise<{ updatedRecipes: numb
 
   return { updatedRecipes, removedTagLinks };
 }
-

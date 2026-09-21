@@ -74,8 +74,7 @@ export async function stopTimerAlarmSoundIfPlaying(): Promise<void> {
  * Plays a looping alarm, shows the timer alert, and stops the alarm when the user dismisses it.
  */
 export function showTimerFinishedAlert(finishedCount: number): void {
-  const message =
-    finishedCount > 1 ? 'Meerdere timers zijn afgerond.' : 'Timer is afgerond.';
+  const message = finishedCount > 1 ? 'Meerdere timers zijn afgerond.' : 'Timer is afgerond.';
 
   void (async () => {
     try {

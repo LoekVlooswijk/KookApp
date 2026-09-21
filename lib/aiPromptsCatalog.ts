@@ -7,7 +7,10 @@ import {
   RECIPE_JSON_SCHEMA,
   WEEK_PLAN_OUTPUT_SCHEMA,
 } from './aiPromptTemplates';
-import { buildAdjustChatSystemPrompt, buildApplyAdjustmentFromChatSystemPrompt } from './recipeAdjust';
+import {
+  buildAdjustChatSystemPrompt,
+  buildApplyAdjustmentFromChatSystemPrompt,
+} from './recipeAdjust';
 import { buildCookingSystemPrompt } from './cookingAssistant';
 import {
   DISCOVER_SYSTEM,
@@ -47,6 +50,9 @@ export function demoRecipeForAiPromptPreview(): FullRecipe {
     dietKeto: false,
     isFavorite: false,
     wantToTry: false,
+    bioScoreColor: null,
+    bioScoreUpdatedAt: null,
+    bioScoreItems: null,
     notes: null,
     imageUri: null,
     createdAt: DEMO_NOW,
@@ -59,7 +65,15 @@ export function demoRecipeForAiPromptPreview(): FullRecipe {
         title: null,
         orderIndex: 0,
         ingredients: [
-          { id: 1, recipeId: 0, groupId: 1, name: 'rode linzen', amount: 200, unit: 'g', orderIndex: 0 },
+          {
+            id: 1,
+            recipeId: 0,
+            groupId: 1,
+            name: 'rode linzen',
+            amount: 200,
+            unit: 'g',
+            orderIndex: 0,
+          },
           { id: 2, recipeId: 0, groupId: 1, name: 'ui', amount: 1, unit: 'stuk', orderIndex: 1 },
         ],
       },
@@ -139,7 +153,8 @@ export function getAiPromptCatalog(): AiPromptCatalogEntry[] {
         'Zelfde recepttekst als bij kooktips, plus kookprofiel als “Recept aanpassen” aan staat (doel adjustRecipe).',
       ],
       systemPrompt: buildAdjustChatSystemPrompt(demo),
-      userRoleNl: 'Jouw berichten in de chat zijn de user-turns; het systeembericht blijft hetzelfde tijdens het gesprek.',
+      userRoleNl:
+        'Jouw berichten in de chat zijn de user-turns; het systeembericht blijft hetzelfde tijdens het gesprek.',
     },
     {
       id: 'adjust_apply_chat',
@@ -201,7 +216,8 @@ export function getAiPromptCatalog(): AiPromptCatalogEntry[] {
         'Zelfde geldt voor import en notitie-aanpassing: vergelijkbaar reparatie-user-bericht met schema + fouten + vorige output.',
       ],
       systemPrompt: buildWeekPlanSystemPrompt(),
-      userRoleNl: 'Tweede user-turn (reparatie): vraagt het model om geldige JSON op basis van validatiefouten.',
+      userRoleNl:
+        'Tweede user-turn (reparatie): vraagt het model om geldige JSON op basis van validatiefouten.',
       userExample: repairExample,
     },
     {
@@ -211,7 +227,8 @@ export function getAiPromptCatalog(): AiPromptCatalogEntry[] {
         'Vision-call op jouw screenshot: geen kookprofiel; alleen wat op de foto staat.',
       ],
       systemPrompt: DISCOVER_SYSTEM,
-      userRoleNl: 'User-inhoud is de afbeelding zelf (multimodal), geen tekst-user in de klassieke zin.',
+      userRoleNl:
+        'User-inhoud is de afbeelding zelf (multimodal), geen tekst-user in de klassieke zin.',
     },
     {
       id: 'photo_resolve',

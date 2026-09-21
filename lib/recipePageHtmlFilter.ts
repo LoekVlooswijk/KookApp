@@ -129,10 +129,7 @@ function stripAuxiliarySections(html: string): string {
 }
 
 function collapseWhitespace(html: string): string {
-  return html
-    .replace(/\s+/g, ' ')
-    .replace(/>\s+</g, '><')
-    .trim();
+  return html.replace(/\s+/g, ' ').replace(/>\s+</g, '><').trim();
 }
 
 /**

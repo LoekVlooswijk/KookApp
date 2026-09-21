@@ -56,4 +56,3 @@ export async function exportAllDataAsJsonFileAsync(): Promise<FsFile> {
   f.write(bytes);
   return f;
 }
-

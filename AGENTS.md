@@ -4,12 +4,12 @@ Personal Dutch cooking app: **Expo + SQLite + Claude**. Full product and technic
 
 ## Quick orientation
 
-| Topic | Where |
-|--------|--------|
-| Feature order, prompts, schema | `kookapp_plan_v2.html` |
-| Cursor always-on rules | `.cursor/rules/kookapp-product.mdc` |
-| DB / Claude details when editing `lib/` etc. | `.cursor/rules/kookapp-data-ai.mdc` |
-| Suggested app layout | Plan section “Projectstructuur” |
+| Topic                                          | Where                                                                          |
+| ---------------------------------------------- | ------------------------------------------------------------------------------ |
+| Feature order, prompts, schema                 | `kookapp_plan_v2.html`                                                         |
+| Cursor always-on rules                         | `.cursor/rules/kookapp-product.mdc`                                            |
+| DB / Claude details when editing `lib/` etc.   | `.cursor/rules/kookapp-data-ai.mdc`                                            |
+| Suggested app layout                           | Plan section “Projectstructuur”                                                |
 | Geplande follow-ups (o.a. versies terugzetten) | `kookapp_plan_v2.html` → «Functies — bouwvolgorde» → items met badge **later** |
 
 ## Commands
@@ -17,14 +17,19 @@ Personal Dutch cooking app: **Expo + SQLite + Claude**. Full product and technic
 From the project root:
 
 - Dev: `npm start` (or `npx expo start`)
+- Full gate before merge/release: `npm run verify` (typecheck, ESLint, Prettier check, tests)
 - Typecheck: `npm run typecheck`
+- Lint: `npm run lint` (use `npm run lint:fix` for auto-fixes)
+- Format: `npm run format:check` / `npm run format`
+- Tests: `npm test`
+- Release notes checklist: `RELEASE.md`
 
 ## How to run an agent task (good habits)
 
 1. **One milestone** — e.g. “Alleen feature 1 uit het plan: …” with 3–6 acceptance bullets copied from the plan.
 2. **Discovery first** — “Zoek wat er al bestaat; hergebruik; geen dubbele DB-laag.”
 3. **Attach context** — `@kookapp_plan_v2.html` and only the files you expect to touch.
-4. **Verify** — Ask for typecheck/lint and a short manual test list (device or emulator).
+4. **Verify** — Run `npm run verify` when possible, plus a short manual test list (device or emulator) for UX-heavy changes.
 
 ## Git
 
@@ -40,7 +45,7 @@ This app currently has a single user (you), so **breaking changes are allowed**.
 ### DB contract (SQLite)
 
 - Keep `DB_NAME` stable: `kook.db` (`lib/db.ts`).
-- Keep incremental migrations via `schema_version` in `app_meta` (`lib/db.ts`).
+- Keep incremental migrations via `schema_version` in `app_meta`; migration SQL and steps live in `lib/dbMigrations.ts` (opened from `lib/db.ts`).
 - Do **not** wipe user data silently. If a reset is required, ship an explicit “reset data” action + note it.
 - Avoid dropping/renaming columns without a migration/backfill path.
 

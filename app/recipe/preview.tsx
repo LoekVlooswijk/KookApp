@@ -1,6 +1,14 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { useAppTheme } from '../../components/ThemeContext';
 import { disposeImportSession, getImportSession } from '../../lib/importDraft';
@@ -9,7 +17,10 @@ import { createRecipe } from '../../lib/recipesRepo';
 export default function RecipeImportPreviewScreen() {
   const theme = useAppTheme();
   const router = useRouter();
-  const params = useLocalSearchParams<{ importSid?: string | string[]; mode?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    importSid?: string | string[];
+    mode?: string | string[];
+  }>();
   const rawSid = Array.isArray(params.importSid) ? params.importSid[0] : params.importSid;
   const sid = rawSid != null && rawSid !== '' ? rawSid : undefined;
   const rawMode = Array.isArray(params.mode) ? params.mode[0] : params.mode;
@@ -17,12 +28,15 @@ export default function RecipeImportPreviewScreen() {
   const allowSave = mode === 'single';
 
   const payload = useMemo(() => (sid ? getImportSession(sid) : null), [sid]);
+  const [saving, setSaving] = useState(false);
 
   if (!payload) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
         <Text style={styles.title}>Geen preview beschikbaar</Text>
-        <Text style={styles.muted}>Deze importsessie is verlopen. Ga terug en probeer opnieuw.</Text>
+        <Text style={styles.muted}>
+          Deze importsessie is verlopen. Ga terug en probeer opnieuw.
+        </Text>
         <Pressable
           style={[styles.btn, { backgroundColor: theme.accent }]}
           onPress={() => router.back()}
@@ -34,15 +48,22 @@ export default function RecipeImportPreviewScreen() {
   }
 
   return (
-    <ScrollView style={[styles.scroll, { backgroundColor: theme.background }]} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={[styles.scroll, { backgroundColor: theme.background }]}
+      contentContainerStyle={styles.content}
+    >
       <Text style={styles.previewTitle}>Controle</Text>
       <Text style={styles.head}>{payload.title}</Text>
 
       {payload.description ? <Text style={styles.desc}>{payload.description}</Text> : null}
 
       <View style={styles.metaRow}>
-        {payload.totalTimeMin != null ? <Text style={styles.meta}>Tijd: {payload.totalTimeMin} min</Text> : null}
-        {payload.baseServings != null ? <Text style={styles.meta}>Porties: {payload.baseServings}</Text> : null}
+        {payload.totalTimeMin != null ? (
+          <Text style={styles.meta}>Tijd: {payload.totalTimeMin} min</Text>
+        ) : null}
+        {payload.baseServings != null ? (
+          <Text style={styles.meta}>Porties: {payload.baseServings}</Text>
+        ) : null}
         {payload.category ? <Text style={styles.meta}>Categorie: {payload.category}</Text> : null}
       </View>
 
@@ -75,10 +96,11 @@ export default function RecipeImportPreviewScreen() {
       <View style={styles.row}>
         {allowSave ? (
           <Pressable
-            style={[styles.btn, { backgroundColor: theme.accent }]}
+            style={[styles.btn, { backgroundColor: theme.accent }, saving && styles.btnDisabled]}
             onPress={() => {
-              if (!payload) return;
+              if (!payload || saving) return;
               void (async () => {
+                setSaving(true);
                 try {
                   await createRecipe(payload);
                   if (sid) disposeImportSession(sid);
@@ -86,11 +108,18 @@ export default function RecipeImportPreviewScreen() {
                   router.replace({ pathname: '/recipe/import', params: { saved: '1' } });
                 } catch (e) {
                   Alert.alert('Fout', e instanceof Error ? e.message : 'Opslaan mislukt.');
+                } finally {
+                  setSaving(false);
                 }
               })();
             }}
+            disabled={saving}
           >
-            <Text style={styles.btnText}>Opslaan</Text>
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.btnText}>Opslaan</Text>
+            )}
           </Pressable>
         ) : null}
         <Pressable
@@ -111,7 +140,13 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { padding: 16, paddingBottom: 40 },
   center: { flex: 1, padding: 16, justifyContent: 'center' },
-  previewTitle: { fontSize: 12, fontWeight: '800', color: '#888', textTransform: 'uppercase', marginBottom: 8 },
+  previewTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#888',
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
   head: { fontSize: 22, fontWeight: '800', color: '#1a1a1a', marginBottom: 8 },
   title: { fontSize: 18, fontWeight: '800', color: '#1a1a1a', marginBottom: 8 },
   muted: { fontSize: 14, color: '#777', lineHeight: 20, marginBottom: 16 },
@@ -132,5 +167,5 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   btnText: { fontWeight: '800', fontSize: 15, color: '#fff' },
+  btnDisabled: { opacity: 0.65 },
 });
-

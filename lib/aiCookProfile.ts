@@ -78,8 +78,13 @@ function normalizeProfile(raw: unknown): AiCookProfile {
     adjustRecipe: r?.appliesTo?.adjustRecipe !== false,
     recipeSuggestions: r?.appliesTo?.recipeSuggestions !== false,
   };
-  const dsRaw = typeof r.defaultServings === 'number' ? r.defaultServings : Number.parseInt(String(r.defaultServings ?? ''), 10);
-  const defaultServings = Number.isFinite(dsRaw) ? Math.max(1, Math.min(99, Math.round(dsRaw))) : DEFAULT_PROFILE.defaultServings;
+  const dsRaw =
+    typeof r.defaultServings === 'number'
+      ? r.defaultServings
+      : Number.parseInt(String(r.defaultServings ?? ''), 10);
+  const defaultServings = Number.isFinite(dsRaw)
+    ? Math.max(1, Math.min(99, Math.round(dsRaw)))
+    : DEFAULT_PROFILE.defaultServings;
   return {
     mustNot: normalizeStringArray(r.mustNot),
     avoid: normalizeStringArray(r.avoid),
@@ -88,7 +93,8 @@ function normalizeProfile(raw: unknown): AiCookProfile {
     nearbyShops: normalizeStringArray(r.nearbyShops),
     shopOptions: normalizeStringArray(r.shopOptions),
     defaultServings,
-    weekPlanningTimeNotes: typeof r.weekPlanningTimeNotes === 'string' ? r.weekPlanningTimeNotes.trim() : '',
+    weekPlanningTimeNotes:
+      typeof r.weekPlanningTimeNotes === 'string' ? r.weekPlanningTimeNotes.trim() : '',
     appliesTo,
   };
 }
@@ -146,7 +152,13 @@ export function formatAiCookProfileForPrompt(purpose: AiCookProfilePurpose): str
   const timeNotes = p.weekPlanningTimeNotes.trim();
   const shops = p.nearbyShops;
   const includeTimeNotes = purpose === 'recipeSuggestions' && !!timeNotes;
-  const hasAny = must.length > 0 || avoid.length > 0 || prefer.length > 0 || shops.length > 0 || !!free || includeTimeNotes;
+  const hasAny =
+    must.length > 0 ||
+    avoid.length > 0 ||
+    prefer.length > 0 ||
+    shops.length > 0 ||
+    !!free ||
+    includeTimeNotes;
   if (!hasAny) return '';
 
   const lines: string[] = [];
@@ -154,7 +166,9 @@ export function formatAiCookProfileForPrompt(purpose: AiCookProfilePurpose): str
   lines.push('KOOKPROFIEL VAN DE GEBRUIKER (altijd respecteren)');
   lines.push('');
   lines.push('Regels:');
-  lines.push('- MUST NOT: dit zijn harde grenzen (allergie/verboden). Als een vraag hiermee botst: weiger kort en bied 2 alternatieven.');
+  lines.push(
+    '- MUST NOT: dit zijn harde grenzen (allergie/verboden). Als een vraag hiermee botst: weiger kort en bied 2 alternatieven.'
+  );
   lines.push('- AVOID: vermijd waar mogelijk; als je toch gebruikt, leg kort uit waarom.');
   lines.push('- PREFER: volg meestal; als je afwijkt, leg kort uit waarom.');
   lines.push('');
@@ -195,10 +209,13 @@ export function formatAiCookProfileForPrompt(purpose: AiCookProfilePurpose): str
 }
 
 export function aiCookProfileLinesToText(lines: string[]): string {
-  return (lines ?? []).map((x) => x.trim()).filter(Boolean).join('\n').trim();
+  return (lines ?? [])
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
 }
 
 export function aiCookProfileTextToLines(text: string): string[] {
   return normalizeLines(text);
 }
-

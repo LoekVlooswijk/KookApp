@@ -1,4 +1,4 @@
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -11,11 +11,19 @@ import {
   View,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useBottomTabBarHeight } from 'expo-router/react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
 import { ensureDatabaseAsync } from '../../lib/db';
+import { safeErrorMessage } from '../../lib/logSafe';
+import {
+  getShoppingOrganicAlwaysList,
+  hydrateShoppingOrganicPrefsFromDb,
+  isAlwaysOrganicItemName,
+} from '../../lib/shoppingOrganicPrefs';
 import { appendShoppingStapleExcludeLine } from '../../lib/shoppingStaplesPrefs';
 import {
   addManualShoppingItem,
@@ -27,11 +35,25 @@ import {
   type ShoppingItemRow,
 } from '../../lib/shoppingRepo';
 
-const UNIT_TOKENS = new Set(['g', 'gram', 'kg', 'ml', 'l', 'el', 'tl', 'tsp', 'tbsp', 'stuks', 'stuk']);
+const UNIT_TOKENS = new Set([
+  'g',
+  'gram',
+  'kg',
+  'ml',
+  'l',
+  'el',
+  'tl',
+  'tsp',
+  'tbsp',
+  'stuks',
+  'stuk',
+]);
 
-function parseManualShoppingInput(
-  text: string
-): { name: string; amount: number | null; unit: string | null } {
+function parseManualShoppingInput(text: string): {
+  name: string;
+  amount: number | null;
+  unit: string | null;
+} {
   const raw = text.trim();
   if (!raw) return { name: '', amount: null, unit: null };
   const sp = raw.indexOf(' ');
@@ -59,17 +81,20 @@ export default function ShoppingScreen() {
   const theme = useAppTheme();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const tabBarHeight = useBottomTabBarHeight();
+  const insets = useSafeAreaInsets();
 
   const [items, setItems] = useState<ShoppingItemRow[]>([]);
   const [newText, setNewText] = useState('');
   const [loading, setLoading] = useState(false);
-  const [addBarHeight, setAddBarHeight] = useState(0);
+  const [organicAlways, setOrganicAlways] = useState<string[]>([]);
 
   const reload = useCallback(() => {
     void (async () => {
       setLoading(true);
       try {
         await ensureDatabaseAsync();
+        await hydrateShoppingOrganicPrefsFromDb();
+        setOrganicAlways(getShoppingOrganicAlwaysList());
         setItems(await listShoppingItems());
       } finally {
         setLoading(false);
@@ -92,6 +117,8 @@ export default function ShoppingScreen() {
     ] as const;
   }, [items]);
 
+  const organicSet = useMemo(() => organicAlways, [organicAlways]);
+
   const onAdd = useCallback(() => {
     const t = newText.trim();
     if (!t) return;
@@ -111,9 +138,16 @@ export default function ShoppingScreen() {
 
   const onToggle = useCallback(
     (row: ShoppingItemRow) => {
+      setItems((prev) =>
+        prev.map((it) => (it.id === row.id ? { ...it, isChecked: !row.isChecked } : it))
+      );
       void (async () => {
-        await toggleShoppingItemChecked(row.id, !row.isChecked);
-        reload();
+        try {
+          await toggleShoppingItemChecked(row.id, !row.isChecked);
+        } catch (e) {
+          console.error(safeErrorMessage(e));
+          reload();
+        }
       })();
     },
     [reload]
@@ -121,9 +155,14 @@ export default function ShoppingScreen() {
 
   const onDelete = useCallback(
     (row: ShoppingItemRow) => {
+      setItems((prev) => prev.filter((it) => it.id !== row.id));
       void (async () => {
-        await deleteShoppingItem(row.id);
-        reload();
+        try {
+          await deleteShoppingItem(row.id);
+        } catch (e) {
+          console.error(safeErrorMessage(e));
+          reload();
+        }
       })();
     },
     [reload]
@@ -140,10 +179,15 @@ export default function ShoppingScreen() {
           cancelText: 'Annuleren',
         });
         if (!ok) return;
-        await ensureDatabaseAsync();
-        await appendShoppingStapleExcludeLine(row.name);
-        await deleteShoppingItem(row.id);
-        reload();
+        setItems((prev) => prev.filter((it) => it.id !== row.id));
+        try {
+          await ensureDatabaseAsync();
+          await appendShoppingStapleExcludeLine(row.name);
+          await deleteShoppingItem(row.id);
+        } catch (e) {
+          console.error(safeErrorMessage(e));
+          reload();
+        }
       })();
     },
     [confirm, reload]
@@ -176,19 +220,63 @@ export default function ShoppingScreen() {
         destructive: true,
       });
       if (!ok) return;
-      await ensureDatabaseAsync();
-      await clearWeekShoppingItems();
-      reload();
+      setItems((prev) => prev.filter((i) => i.category !== SHOPPING_INTERNAL_CATEGORY_WEEK));
+      try {
+        await ensureDatabaseAsync();
+        await clearWeekShoppingItems();
+      } catch (e) {
+        console.error(safeErrorMessage(e));
+        reload();
+      }
     })();
   }, [confirm, items, reload]);
 
+  const Root = Platform.OS === 'ios' ? KeyboardAvoidingView : View;
+  const rootProps =
+    Platform.OS === 'ios'
+      ? ({
+          behavior: 'padding',
+          keyboardVerticalOffset: tabBarHeight,
+        } as const)
+      : ({} as const);
+
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: theme.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={tabBarHeight}
-    >
+    <Root style={[styles.container, { backgroundColor: theme.background }]} {...rootProps}>
       <ConfirmDialog />
+      <View
+        style={[
+          styles.addBarTop,
+          {
+            paddingTop: insets.top,
+            backgroundColor: theme.background,
+            borderBottomColor: '#e2ddd5',
+          },
+        ]}
+      >
+        <View style={styles.addRow}>
+          <TextInput
+            style={styles.input}
+            placeholder="Voeg item toe…"
+            placeholderTextColor="#999"
+            value={newText}
+            onChangeText={setNewText}
+            onSubmitEditing={onAdd}
+            blurOnSubmit={false}
+            returnKeyType="done"
+          />
+          <Pressable
+            style={[
+              styles.addBtn,
+              { backgroundColor: theme.accent },
+              !newText.trim() && styles.btnOff,
+            ]}
+            onPress={onAdd}
+            disabled={!newText.trim()}
+          >
+            <Text style={styles.addBtnText}>Toevoegen</Text>
+          </Pressable>
+        </View>
+      </View>
       <SectionList
         sections={sections}
         keyExtractor={(it) => String(it.id)}
@@ -197,7 +285,8 @@ export default function ShoppingScreen() {
         style={styles.sectionList}
         contentContainerStyle={[
           styles.list,
-          { paddingBottom: 12 + Math.max(addBarHeight, 72) },
+          { paddingTop: 6 },
+          { paddingBottom: 12 + insets.bottom },
         ]}
         renderSectionHeader={({ section }) => {
           const isWeek = section.key === 'week';
@@ -215,7 +304,13 @@ export default function ShoppingScreen() {
                   accessibilityLabel="Van weekmenu wissen"
                   accessibilityState={{ disabled: weekEmpty }}
                 >
-                  <Text style={[styles.sectionClearBtnText, { color: theme.accent }, weekEmpty && styles.sectionClearBtnTextOff]}>
+                  <Text
+                    style={[
+                      styles.sectionClearBtnText,
+                      { color: theme.accent },
+                      weekEmpty && styles.sectionClearBtnTextOff,
+                    ]}
+                  >
                     Wissen
                   </Text>
                 </Pressable>
@@ -226,9 +321,7 @@ export default function ShoppingScreen() {
         ListEmptyComponent={
           <View style={styles.emptyBlock}>
             <Text style={styles.emptyHead}>Lekker leeg.</Text>
-            <Text style={styles.emptySub}>
-              Voeg iets toe of vul vanaf de weekplanner.
-            </Text>
+            <Text style={styles.emptySub}>Voeg iets toe of vul vanaf de weekplanner.</Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -236,8 +329,14 @@ export default function ShoppingScreen() {
             item.amount != null
               ? `${String(item.amount)}${item.unit?.trim() ? ` ${item.unit.trim()}` : ''}`
               : (item.unit ?? '').trim();
+          const showOrganic = isAlwaysOrganicItemName(item.name, organicSet);
           return (
-            <Swipeable renderRightActions={() => renderRightActions(item)} overshootRight={false}>
+            <Swipeable
+              renderRightActions={() => renderRightActions(item)}
+              overshootRight={false}
+              activeOffsetX={[-22, 22]}
+              failOffsetY={[-14, 14]}
+            >
               <View style={styles.row}>
                 <Pressable
                   style={styles.checkBox}
@@ -249,7 +348,10 @@ export default function ShoppingScreen() {
                   <View
                     style={[
                       styles.checkInner,
-                      item.isChecked && { backgroundColor: theme.accent, borderColor: theme.accent },
+                      item.isChecked && {
+                        backgroundColor: theme.accent,
+                        borderColor: theme.accent,
+                      },
                     ]}
                   />
                 </Pressable>
@@ -259,9 +361,22 @@ export default function ShoppingScreen() {
                   onLongPress={() => onMoveToStaples(item)}
                   delayLongPress={450}
                 >
-                  <Text style={[styles.name, item.isChecked && styles.nameChecked]} numberOfLines={2}>
-                    {item.name}
-                  </Text>
+                  <View style={styles.nameRow}>
+                    <Text
+                      style={[styles.name, item.isChecked && styles.nameChecked]}
+                      numberOfLines={2}
+                    >
+                      {item.name}
+                    </Text>
+                    {showOrganic ? (
+                      <Ionicons
+                        name="leaf"
+                        size={16}
+                        color="#2e7d32"
+                        accessibilityLabel="Altijd biologisch"
+                      />
+                    ) : null}
+                  </View>
                   {qty ? <Text style={styles.qty}>{qty}</Text> : null}
                 </Pressable>
               </View>
@@ -276,47 +391,20 @@ export default function ShoppingScreen() {
         stickySectionHeadersEnabled={false}
         keyboardShouldPersistTaps="handled"
       />
-      <View
-        onLayout={(e) => setAddBarHeight(e.nativeEvent.layout.height)}
-        style={[
-          styles.addBar,
-          { backgroundColor: theme.background, borderTopColor: '#e2ddd5' },
-        ]}
-      >
-        <View style={styles.addRow}>
-          <TextInput
-            style={styles.input}
-            placeholder="Voeg item toe…"
-            placeholderTextColor="#999"
-            value={newText}
-            onChangeText={setNewText}
-            onSubmitEditing={onAdd}
-            blurOnSubmit={false}
-            returnKeyType="done"
-          />
-          <Pressable
-            style={[styles.addBtn, { backgroundColor: theme.accent }, !newText.trim() && styles.btnOff]}
-            onPress={onAdd}
-            disabled={!newText.trim()}
-          >
-            <Text style={styles.addBtnText}>Toevoegen</Text>
-          </Pressable>
-        </View>
-      </View>
-    </KeyboardAvoidingView>
+    </Root>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   sectionList: { flex: 1 },
-  addBar: {
+  addBarTop: {
     paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 12,
-    borderTopWidth: 1,
+    paddingTop: 0,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
   },
-  list: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 12 },
+  list: { paddingHorizontal: 14, paddingBottom: 12 },
   addRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   input: {
     flex: 1,
@@ -347,7 +435,7 @@ const styles = StyleSheet.create({
   sectionClearBtnTextOff: { color: '#999' },
   row: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
     gap: 10,
     backgroundColor: '#fff',
     borderWidth: 1,
@@ -357,9 +445,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     marginBottom: 8,
   },
-  checkBox: { paddingTop: 2 },
-  checkInner: { width: 20, height: 20, borderRadius: 6, borderWidth: 2, borderColor: '#c9c2b8', backgroundColor: '#fff' },
+  checkBox: {
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 44,
+  },
+  checkInner: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#c9c2b8',
+    backgroundColor: '#fff',
+  },
   rowMain: { flex: 1, minWidth: 0 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingRight: 4 },
   name: { fontSize: 14, fontWeight: '800', color: '#1a1a1a', lineHeight: 18 },
   nameChecked: { textDecorationLine: 'line-through', color: '#888' },
   qty: { fontSize: 12, color: '#666', marginTop: 4 },

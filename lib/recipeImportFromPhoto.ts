@@ -7,7 +7,7 @@ import {
 import { getImportAhSiteSearchEnabled } from './aiAhSearchPrefs';
 import { getImportWebSearchEnabled } from './aiImportPrefs';
 import { fetchRecipePageHtml } from './fetchRecipePage';
-import { coerceAnthropicJsonText, extractRecipeFromPageHtml, stripCodeFence } from './recipeExtract';
+import { coerceModelJsonText, extractRecipeFromPageHtml, stripCodeFence } from './recipeExtract';
 import type { RecipeSavePayload } from './types';
 
 const AH_URL_RULES = `Albert Heijn / Allerhande (belangrijk):
@@ -90,7 +90,21 @@ function normalizeTitleTokens(s: string): string[] {
     .replace(/&amp;/g, ' en ')
     .replace(/[^a-z0-9\u00c0-\u024f]+/gi, ' ')
     .trim();
-  const stop = new Set(['de', 'het', 'een', 'met', 'en', 'van', 'voor', 'op', 'in', 'uit', 'aan', 'bij', 'naar']);
+  const stop = new Set([
+    'de',
+    'het',
+    'een',
+    'met',
+    'en',
+    'van',
+    'voor',
+    'op',
+    'in',
+    'uit',
+    'aan',
+    'bij',
+    'naar',
+  ]);
   return t
     .split(/\s+/g)
     .map((x) => x.trim())
@@ -117,13 +131,17 @@ function decodeHtmlEntities(s: string): string {
 }
 
 function stripTags(s: string): string {
-  return (s ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  return (s ?? '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function scrapeBestAhRecipeUrlFromSearchHtml(html: string, queryTitle: string): string | null {
   // Extract multiple result candidates and pick the best title match.
   // We look for <a ... href="/allerhande/recept/R-R..."> ...title... </a>
-  const re = /<a\b[^>]*href\s*=\s*"(?<href>\/allerhande\/recept\/R-R\d+\/[^"]+)"[^>]*>(?<inner>[\s\S]*?)<\/a>/gi;
+  const re =
+    /<a\b[^>]*href\s*=\s*"(?<href>\/allerhande\/recept\/R-R\d+\/[^"]+)"[^>]*>(?<inner>[\s\S]*?)<\/a>/gi;
   let bestUrl: string | null = null;
   let bestScore = 0;
   let m: RegExpExecArray | null;
@@ -200,7 +218,7 @@ function discoverRowTitel(row: Record<string, unknown>): string {
 export function parseDiscoverJson(raw: string): DiscoveredRecipeRef[] | null {
   let root: unknown;
   try {
-    root = JSON.parse(coerceAnthropicJsonText(raw));
+    root = JSON.parse(coerceModelJsonText(raw));
   } catch {
     return null;
   }
@@ -215,7 +233,8 @@ export function parseDiscoverJson(raw: string): DiscoveredRecipeRef[] | null {
     if (!isRecord(row)) continue;
     const titel = discoverRowTitel(row);
     if (!titel) continue;
-    const url = typeof row.url === 'string' && row.url.trim().startsWith('http') ? row.url.trim() : null;
+    const url =
+      typeof row.url === 'string' && row.url.trim().startsWith('http') ? row.url.trim() : null;
     const zoekhint =
       typeof row.zoekhint === 'string' && row.zoekhint.trim()
         ? row.zoekhint.trim()
@@ -341,7 +360,7 @@ function parseResolveJson(raw: string): Map<string, string | null> {
   const map = new Map<string, string | null>();
   let root: unknown;
   try {
-    root = JSON.parse(coerceAnthropicJsonText(raw));
+    root = JSON.parse(coerceModelJsonText(raw));
   } catch {
     return map;
   }
@@ -374,6 +393,7 @@ export async function discoverRecipesFromPhoto(
     imageBase64,
     imageMediaType,
     maxTokens: 4096,
+    task: 'import',
   });
   if (!res.ok) return { ok: false, message: res.message };
 
@@ -386,13 +406,17 @@ export async function discoverRecipesFromPhoto(
       imageBase64,
       imageMediaType,
       maxTokens: 4096,
+      task: 'import',
     });
     if (!res2.ok) return { ok: false, message: res2.message };
     recepten = parseDiscoverJson(res2.text);
   }
 
   if (!recepten) {
-    return { ok: false, message: 'Kon geen recepten uit de afbeelding halen. Probeer een scherpere foto.' };
+    return {
+      ok: false,
+      message: 'Kon geen recepten uit de afbeelding halen. Probeer een scherpere foto.',
+    };
   }
   return { ok: true, recepten: enrichDiscoveredForWebSearch(recepten) };
 }
@@ -428,7 +452,7 @@ export async function resolveMissingRecipeUrls(
 
   // Always do a cheap non-web pass first (often enough when the model already knows the URL pattern).
   {
-    const payload = need.filter((r) => !(resolved.get(r.titel)?.trim())).map(payloadFor);
+    const payload = need.filter((r) => !resolved.get(r.titel)?.trim()).map(payloadFor);
     if (payload.length === 0) {
       return items.map((i) => {
         const u = resolved.get(i.titel) ?? null;
@@ -440,6 +464,7 @@ export async function resolveMissingRecipeUrls(
       system: RESOLVE_URLS_SYSTEM,
       user: baseUser,
       maxTokens: 2048,
+      task: 'import',
     });
     if (res.ok) {
       const map = parseResolveJson(res.text);
@@ -449,7 +474,7 @@ export async function resolveMissingRecipeUrls(
   }
 
   if (useWeb) {
-    const remaining = need.filter((r) => !(resolved.get(r.titel)?.trim()));
+    const remaining = need.filter((r) => !resolved.get(r.titel)?.trim());
     for (let idx = 0; idx < remaining.length; idx++) {
       const row = remaining[idx];
       const baseUser = JSON.stringify({ recepten: [payloadFor(row)] }, null, 2);
@@ -457,6 +482,7 @@ export async function resolveMissingRecipeUrls(
         system: RESOLVE_URLS_SYSTEM_WEB,
         user: baseUser,
         maxTokens: 2048,
+        task: 'import',
       });
       if (!res.ok) {
         if (res.status === 429) break;
@@ -533,6 +559,9 @@ export function buildManualFallbackImportPayload(
     dietKeto: false,
     isFavorite: false,
     wantToTry: false,
+    bioScoreColor: null,
+    bioScoreUpdatedAt: null,
+    bioScoreItems: null,
     notes: hint ?? '',
     imageUri: '',
     tagNames: [],
@@ -553,7 +582,7 @@ export function buildManualFallbackImportPayload(
 }
 
 export type FetchAndExtractResult =
-  | { ok: true; payload: RecipeSavePayload }
+  | { ok: true; payload: RecipeSavePayload; sourceHtmlTruncated?: boolean }
   | { ok: false; message: string; rawModelText?: string; debugSnippet?: string };
 
 export async function fetchAndExtractOneRecipe(url: string): Promise<FetchAndExtractResult> {
@@ -569,7 +598,11 @@ export async function fetchAndExtractOneRecipe(url: string): Promise<FetchAndExt
       };
     }
     // Import without cover images: user adds their own photos later.
-    return { ok: true, payload: { ...extracted.payload, imageUri: '' } };
+    return {
+      ok: true,
+      payload: { ...extracted.payload, imageUri: '' },
+      sourceHtmlTruncated: extracted.sourceHtmlTruncated,
+    };
   } catch (e) {
     return {
       ok: false,

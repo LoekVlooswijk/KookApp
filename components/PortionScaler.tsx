@@ -53,10 +53,16 @@ export function PortionScaler({ baseServings, value, onChange, compact }: Props)
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>Porties</Text>
-      <Text style={styles.sub}>Recept is voor {base} persoon{base === 1 ? '' : 'en'}. Pas aan wat je nu kookt.</Text>
+      <Text style={styles.sub}>
+        Recept is voor {base} persoon{base === 1 ? '' : 'en'}. Pas aan wat je nu kookt.
+      </Text>
       <View style={styles.row}>
         <Pressable
-          style={[styles.btn, { backgroundColor: theme.accent }, value <= MIN_SERVINGS && styles.btnDisabled]}
+          style={[
+            styles.btn,
+            { backgroundColor: theme.accent },
+            value <= MIN_SERVINGS && styles.btnDisabled,
+          ]}
           disabled={value <= MIN_SERVINGS}
           onPress={() => onChange(Math.max(MIN_SERVINGS, value - 1))}
         >
@@ -64,7 +70,11 @@ export function PortionScaler({ baseServings, value, onChange, compact }: Props)
         </Pressable>
         <Text style={styles.value}>{value}</Text>
         <Pressable
-          style={[styles.btn, { backgroundColor: theme.accent }, value >= MAX_SERVINGS && styles.btnDisabled]}
+          style={[
+            styles.btn,
+            { backgroundColor: theme.accent },
+            value >= MAX_SERVINGS && styles.btnDisabled,
+          ]}
           disabled={value >= MAX_SERVINGS}
           onPress={() => onChange(Math.min(MAX_SERVINGS, value + 1))}
         >

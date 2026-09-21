@@ -38,6 +38,7 @@ import {
 } from '../../lib/listsRepo';
 import {
   countRecipes,
+  getLastOpenedRecipe,
   listDistinctRecipeCategories,
   listDistinctRecipeTags,
   listRecipes,
@@ -68,6 +69,7 @@ export default function RecipesScreen() {
   const { width: windowWidth } = useWindowDimensions();
   const listRef = useRef<FlatList<RecipeListItem>>(null);
   const [searchBlockY, setSearchBlockY] = useState(0);
+  const [lastOpenedRecipe, setLastOpenedRecipe] = useState<RecipeListItem | null>(null);
   const [lists, setLists] = useState<RecipeListSummary[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [recipeTags, setRecipeTags] = useState<string[]>([]);
@@ -345,6 +347,24 @@ export default function RecipesScreen() {
     };
   }, [browseFilters, dataTick]);
 
+  // Load last opened recipe
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const lastOpened = await getLastOpenedRecipe();
+        if (!cancelled) {
+          setLastOpenedRecipe(lastOpened);
+        }
+      } catch (e) {
+        console.error(safeErrorMessage(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dataTick]);
+
   const toggleFavoriteFromList = useCallback((recipeId: number) => {
     setItems((prev) => {
       const it = prev.find((x) => x.id === recipeId);
@@ -614,139 +634,201 @@ export default function RecipesScreen() {
     setFiltersModalOpen(false);
   }, [clearFilters]);
 
-  const listHeader = (
-    <View style={styles.headerBlock}>
-      {topBarRow()}
+  const listHeader = useMemo(
+    () => (
+      <View style={styles.headerBlock}>
+        {topBarRow()}
 
-      <View
-        style={styles.searchBlock}
-        onLayout={(e) => {
-          setSearchBlockY(e.nativeEvent.layout.y);
-        }}
-      >
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Zoek op titel, ingrediënt, stap, tag…"
-          placeholderTextColor="#999"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          onFocus={scrollSearchToTop}
-          autoCorrect={false}
-          autoCapitalize="none"
-          clearButtonMode="while-editing"
-        />
-      </View>
+        <View
+          style={styles.searchBlock}
+          onLayout={(e) => {
+            setSearchBlockY(e.nativeEvent.layout.y);
+          }}
+        >
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Zoek op titel, ingrediënt, stap, tag…"
+            placeholderTextColor="#999"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onFocus={scrollSearchToTop}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+          />
+        </View>
 
-      <View style={styles.chipRowMain}>
-        <View style={styles.chipRowLeft}>
+        <View style={styles.chipRowMain}>
+          <View style={styles.chipRowLeft}>
+            <Pressable
+              style={[styles.chip, favoritesOnly ? chipOnStyle : null]}
+              onPress={() => setFavoritesOnly((v) => !v)}
+            >
+              <Text style={[styles.chipText, favoritesOnly ? chipTextOnStyle : null]}>
+                Favorieten
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.chip, wantToTryOnly ? chipOnStyle : null]}
+              onPress={() => setWantToTryOnly((v) => !v)}
+            >
+              <Text style={[styles.chipText, wantToTryOnly ? chipTextOnStyle : null]}>
+                Wil proberen
+              </Text>
+            </Pressable>
+          </View>
           <Pressable
-            style={[styles.chip, favoritesOnly ? chipOnStyle : null]}
-            onPress={() => setFavoritesOnly((v) => !v)}
+            style={[
+              styles.chip,
+              styles.chipFilterBtn,
+              secondaryFilterCount > 0
+                ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
+                : null,
+            ]}
+            onPress={() => setFiltersModalOpen(true)}
           >
-            <Text style={[styles.chipText, favoritesOnly ? chipTextOnStyle : null]}>
-              Favorieten
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.chip, wantToTryOnly ? chipOnStyle : null]}
-            onPress={() => setWantToTryOnly((v) => !v)}
-          >
-            <Text style={[styles.chipText, wantToTryOnly ? chipTextOnStyle : null]}>
-              Wil proberen
+            <Text
+              style={[
+                styles.chipText,
+                secondaryFilterCount > 0 ? { color: theme.accentSoftText } : null,
+              ]}
+              numberOfLines={1}
+            >
+              {secondaryFilterCount > 0 ? `Filters · ${secondaryFilterCount}` : 'Filters'}
             </Text>
           </Pressable>
         </View>
-        <Pressable
-          style={[
-            styles.chip,
-            styles.chipFilterBtn,
-            secondaryFilterCount > 0
-              ? { backgroundColor: theme.accentSoft, borderColor: theme.accent }
-              : null,
-          ]}
-          onPress={() => setFiltersModalOpen(true)}
-        >
-          <Text
-            style={[
-              styles.chipText,
-              secondaryFilterCount > 0 ? { color: theme.accentSoftText } : null,
-            ]}
-            numberOfLines={1}
+
+        {hasActiveFilterStrip ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.filterStripScroll}
           >
-            {secondaryFilterCount > 0 ? `Filters · ${secondaryFilterCount}` : 'Filters'}
-          </Text>
+            <View style={styles.chipRow}>
+              {maxTotalTimeMin != null ? (
+                <Pressable
+                  style={[styles.chip, styles.activeFilterChip]}
+                  onPress={() => setMaxTotalTimeMin(null)}
+                >
+                  <Text style={styles.chipText} numberOfLines={1}>
+                    Max. {maxTotalTimeMin} min
+                  </Text>
+                  <Text style={styles.activeFilterClose}>✕</Text>
+                </Pressable>
+              ) : null}
+              {dietKeys.map((k) => (
+                <Pressable
+                  key={`strip-diet-${k}`}
+                  style={[styles.chip, styles.activeFilterChip]}
+                  onPress={() => toggleDiet(k)}
+                >
+                  <Text style={styles.chipText} numberOfLines={1}>
+                    {dietLabel(k)}
+                  </Text>
+                  <Text style={styles.activeFilterClose}>✕</Text>
+                </Pressable>
+              ))}
+              {customDietKeys.map((name) => (
+                <Pressable
+                  key={`strip-cdiet-${name}`}
+                  style={[styles.chip, styles.activeFilterChip]}
+                  onPress={() => toggleCustomDiet(name)}
+                >
+                  <Text style={styles.chipText} numberOfLines={1}>
+                    {name}
+                  </Text>
+                  <Text style={styles.activeFilterClose}>✕</Text>
+                </Pressable>
+              ))}
+              {categoryKey != null ? (
+                <Pressable
+                  style={[styles.chip, styles.activeFilterChip]}
+                  onPress={() => setCategoryKey(null)}
+                >
+                  <Text style={styles.chipText} numberOfLines={1}>
+                    {categoryKey}
+                  </Text>
+                  <Text style={styles.activeFilterClose}>✕</Text>
+                </Pressable>
+              ) : null}
+              {tagKeys.map((t) => (
+                <Pressable
+                  key={`strip-tag-${t}`}
+                  style={[styles.chip, styles.activeFilterChip]}
+                  onPress={() => toggleTag(t)}
+                >
+                  <Text style={styles.chipText} numberOfLines={1}>
+                    {t}
+                  </Text>
+                  <Text style={styles.activeFilterClose}>✕</Text>
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+        ) : null}
+      </View>
+    ),
+    [
+      topBarRow,
+      hasActiveFilterStrip,
+      searchQuery,
+      favoritesOnly,
+      wantToTryOnly,
+      theme,
+      secondaryFilterCount,
+      dietLabel,
+      clearFilters,
+      maxTotalTimeMin,
+      dietKeys,
+      customDietKeys,
+      categoryKey,
+      tagKeys,
+      toggleDiet,
+      toggleCustomDiet,
+      setCategoryKey,
+      toggleTag,
+    ]
+  );
+
+  /** Check if any filters are active (search, category, tags, diets, etc.) */
+  const hasAnyActiveFilters = useMemo(() => {
+    return hasActiveFilterStrip || searchQuery.trim() !== '' || favoritesOnly || wantToTryOnly;
+  }, [hasActiveFilterStrip, searchQuery, favoritesOnly, wantToTryOnly]);
+
+  /** Render the recent opened recipe tile */
+  const recentOpenedTile = useMemo(() => {
+    if (!lastOpenedRecipe || hasAnyActiveFilters) return null;
+    return (
+      <View style={[styles.recentOpenedCard, { backgroundColor: theme.background }]}>
+        <Text style={styles.recentOpenedLabel}>Recent geopend</Text>
+        <Pressable
+          style={styles.recentOpenedPress}
+          onPress={() => router.push(`/recipe/${lastOpenedRecipe.id}`)}
+        >
+          <RecipeListThumb uri={lastOpenedRecipe.imageUri} size={64} />
+          <View style={styles.recentOpenedTextCol}>
+            <Text style={styles.recentOpenedTitle} numberOfLines={1}>
+              {lastOpenedRecipe.title}
+            </Text>
+            {lastOpenedRecipe.category ? (
+              <Text style={styles.recentOpenedCategory}>{lastOpenedRecipe.category}</Text>
+            ) : null}
+          </View>
         </Pressable>
       </View>
+    );
+  }, [lastOpenedRecipe, hasAnyActiveFilters, theme.background, router]);
 
-      {hasActiveFilterStrip ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterStripScroll}
-        >
-          <View style={styles.chipRow}>
-            {maxTotalTimeMin != null ? (
-              <Pressable
-                style={[styles.chip, styles.activeFilterChip]}
-                onPress={() => setMaxTotalTimeMin(null)}
-              >
-                <Text style={styles.chipText} numberOfLines={1}>
-                  Max. {maxTotalTimeMin} min
-                </Text>
-                <Text style={styles.activeFilterClose}>✕</Text>
-              </Pressable>
-            ) : null}
-            {dietKeys.map((k) => (
-              <Pressable
-                key={`strip-diet-${k}`}
-                style={[styles.chip, styles.activeFilterChip]}
-                onPress={() => toggleDiet(k)}
-              >
-                <Text style={styles.chipText} numberOfLines={1}>
-                  {dietLabel(k)}
-                </Text>
-                <Text style={styles.activeFilterClose}>✕</Text>
-              </Pressable>
-            ))}
-            {customDietKeys.map((name) => (
-              <Pressable
-                key={`strip-cdiet-${name}`}
-                style={[styles.chip, styles.activeFilterChip]}
-                onPress={() => toggleCustomDiet(name)}
-              >
-                <Text style={styles.chipText} numberOfLines={1}>
-                  {name}
-                </Text>
-                <Text style={styles.activeFilterClose}>✕</Text>
-              </Pressable>
-            ))}
-            {categoryKey != null ? (
-              <Pressable
-                style={[styles.chip, styles.activeFilterChip]}
-                onPress={() => setCategoryKey(null)}
-              >
-                <Text style={styles.chipText} numberOfLines={1}>
-                  {categoryKey}
-                </Text>
-                <Text style={styles.activeFilterClose}>✕</Text>
-              </Pressable>
-            ) : null}
-            {tagKeys.map((t) => (
-              <Pressable
-                key={`strip-tag-${t}`}
-                style={[styles.chip, styles.activeFilterChip]}
-                onPress={() => toggleTag(t)}
-              >
-                <Text style={styles.chipText} numberOfLines={1}>
-                  {t}
-                </Text>
-                <Text style={styles.activeFilterClose}>✕</Text>
-              </Pressable>
-            ))}
-          </View>
-        </ScrollView>
-      ) : null}
-    </View>
+  /** Combined header with recent opened tile at the top */
+  const combinedListHeader = useMemo(
+    () => (
+      <>
+        {recentOpenedTile}
+        {listHeader}
+      </>
+    ),
+    [recentOpenedTile, listHeader]
   );
 
   return (
@@ -792,7 +874,7 @@ export default function RecipesScreen() {
               data={items}
               keyExtractor={(it) => String(it.id)}
               keyboardShouldPersistTaps="handled"
-              ListHeaderComponent={listHeader}
+              ListHeaderComponent={combinedListHeader}
               contentContainerStyle={styles.listContent}
               ListEmptyComponent={
                 <View style={styles.emptyWrap}>
@@ -1753,4 +1835,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   filterDoneBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  // Recent opened recipe tile styles
+  recentOpenedCard: {
+    paddingHorizontal: SCREEN_EDGE,
+    paddingTop: 12,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2ddd5',
+  },
+  recentOpenedLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    color: '#666',
+  },
+  recentOpenedPress: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+  },
+  recentOpenedTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  recentOpenedTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1a1a1a',
+  },
+  recentOpenedCategory: {
+    fontSize: 13,
+    marginTop: 2,
+    color: '#666',
+  },
 });

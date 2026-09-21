@@ -1126,3 +1126,50 @@ export async function clearCookProgress(recipeId: number): Promise<void> {
   const db = await ensureDatabaseAsync();
   await db.runAsync('DELETE FROM cook_progress WHERE recipe_id = ?', [recipeId]);
 }
+
+/** Gets the most recently opened recipe (by last_opened_at), or null if none. */
+export async function getLastOpenedRecipe(): Promise<RecipeListItem | null> {
+  const db = await ensureDatabaseAsync();
+  const row = await db.getFirstAsync<{
+    id: number;
+    title: string;
+    category: string | null;
+    updated_at: string;
+    is_favorite: number;
+    want_to_try: number;
+    bio_score_color: string | null;
+    image_uri: string | null;
+    last_opened_at: string | null;
+  }>(`
+    SELECT 
+      id, title, category, updated_at, 
+      is_favorite, want_to_try, bio_score_color, image_uri, last_opened_at
+    FROM recipes 
+    WHERE last_opened_at IS NOT NULL 
+    ORDER BY last_opened_at DESC 
+    LIMIT 1
+  `);
+
+  if (!row) return null;
+
+  const c = (row.bio_score_color ?? '').trim().toLowerCase();
+  const bioScoreColor: RecipeListItem['bioScoreColor'] =
+    c === 'red' || c === 'orange' || c === 'green' ? c : null;
+
+  return {
+    id: row.id,
+    title: row.title,
+    category: row.category,
+    updatedAt: row.updated_at,
+    isFavorite: row.is_favorite === 1,
+    wantToTry: row.want_to_try === 1,
+    bioScoreColor,
+    imageUri: row.image_uri,
+  };
+}
+
+/** Updates the last_opened_at timestamp for a recipe to the current time. */
+export async function updateRecipeLastOpened(recipeId: number): Promise<void> {
+  const db = await ensureDatabaseAsync();
+  await db.runAsync('UPDATE recipes SET last_opened_at = datetime("now") WHERE id = ?', [recipeId]);
+}

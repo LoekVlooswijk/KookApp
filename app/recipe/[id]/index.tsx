@@ -36,8 +36,17 @@ import {
   listRecipeVersions,
   restoreRecipeFromVersion,
   setRecipeFavoriteFlag,
+  updateRecipeLastOpened,
 } from '../../../lib/recipesRepo';
 import { formatStepTimerNl } from '../../../lib/timerFormat';
+import { getShoppingStaplesExcludeList } from '../../../lib/shoppingStaplesPrefs';
+import {
+  isStaple,
+  mergeAggregatedShoppingItems,
+  type AggregatedShoppingItemInput,
+} from '../../../lib/shopping';
+import { insertWeekShoppingItems } from '../../../lib/shoppingRepo';
+import { servingFactor } from '../../../lib/scaling';
 import type { FullRecipe } from '../../../lib/types';
 
 export default function RecipeDetailScreen() {
@@ -75,6 +84,14 @@ export default function RecipeDetailScreen() {
       setRecipe(r);
       if (r) setServings(effectiveBaseServings(r.baseServings));
       setDetailLoading(false);
+      // Update last_opened_at timestamp whenever a recipe is viewed
+      if (r) {
+        try {
+          await updateRecipeLastOpened(recipeId);
+        } catch (e) {
+          console.error('Failed to update last_opened_at:', e);
+        }
+      }
     })();
     return () => {
       cancelled = true;
@@ -184,6 +201,50 @@ export default function RecipeDetailScreen() {
       router.replace('/(tabs)/recipes');
     })();
   }, [confirm, recipeId, router]);
+
+  const addRecipeToShopping = useCallback(async () => {
+    if (!recipe) return;
+
+    const staplesExclude = getShoppingStaplesExcludeList();
+
+    const allIngredients: AggregatedShoppingItemInput[] = [];
+    for (const group of recipe.ingredientGroups) {
+      for (const ing of group.ingredients) {
+        const name = ing.name.trim();
+        if (!name) continue;
+        if (isStaple(name, staplesExclude)) continue;
+
+        allIngredients.push({
+          name,
+          amount: ing.amount,
+          unit: ing.unit ?? null,
+        });
+      }
+    }
+
+    if (allIngredients.length === 0) {
+      Alert.alert(
+        'Geen ingrediënten',
+        'Dit recept heeft geen niet-staple ingrediënten om toe te voegen.'
+      );
+      return;
+    }
+
+    const factor = servingFactor(servings, recipe.baseServings);
+    const scaledIngredients = allIngredients.map((ing) => ({
+      name: ing.name,
+      amount: ing.amount !== null ? ing.amount * factor : null,
+      unit: ing.unit,
+    }));
+
+    const merged = mergeAggregatedShoppingItems(scaledIngredients);
+    await insertWeekShoppingItems(merged);
+
+    Alert.alert(
+      'Toegevoegd',
+      `${merged.length} ingrediënt(en) toegevoegd aan je boodschappenlijst.`
+    );
+  }, [recipe, servings]);
 
   const openHistory = useCallback(() => {
     if (!Number.isFinite(recipeId)) return;
@@ -408,7 +469,21 @@ export default function RecipeDetailScreen() {
           </Pressable>
         ) : null}
 
-        <ScaledIngredientsList recipe={recipe} targetServings={servings} />
+        <ScaledIngredientsList
+          recipe={recipe}
+          targetServings={servings}
+          headerRight={
+            <Pressable
+              style={[styles.addToShoppingBtn, { borderColor: theme.accent }]}
+              onPress={addRecipeToShopping}
+              accessibilityRole="button"
+              accessibilityLabel="Alle ingrediënten toevoegen aan boodschappenlijst"
+              hitSlop={10}
+            >
+              <Ionicons name="cart-outline" size={22} color={theme.accent} />
+            </Pressable>
+          }
+        />
 
         {recipe.notes ? (
           <View style={styles.notesBox}>
@@ -983,6 +1058,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   shareOutlineBtnText: { fontWeight: '800', fontSize: 14, textAlign: 'center' },
+  addToShoppingBtn: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 8,
+  },
 
   historyRoot: { flex: 1, justifyContent: 'center', padding: 24 },
   historyBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },

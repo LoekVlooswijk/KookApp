@@ -54,6 +54,7 @@ async function columnExistsAsync(db: MigrationDb, table: string, column: string)
  */
 async function inferSchemaVersionFloorAsync(db: MigrationDb): Promise<number> {
   if (!(await tableExistsAsync(db, 'recipes'))) return 0;
+  if (await columnExistsAsync(db, 'recipes', 'last_opened_at')) return 11;
   if (await columnExistsAsync(db, 'knowledge_tags', 'is_wide')) return 8;
   if (await tableExistsAsync(db, 'knowledge_entries')) return 7;
   if (await columnExistsAsync(db, 'week_plans', 'leftover_of_date')) return 6;
@@ -418,6 +419,18 @@ async function migration10(db: MigrationDb) {
   }
 }
 
+/** Track last opened timestamp for recipes to show on homescreen. */
+async function migration11(db: MigrationDb) {
+  if (!(await columnExistsAsync(db, 'recipes', 'last_opened_at'))) {
+    await db.execAsync(`
+      ALTER TABLE recipes ADD COLUMN last_opened_at TEXT;
+    `);
+  }
+  await db.execAsync(`
+    CREATE INDEX IF NOT EXISTS idx_recipes_last_opened ON recipes(last_opened_at);
+  `);
+}
+
 const MIGRATIONS: Record<number, (db: MigrationDb) => Promise<void>> = {
   1: migration1,
   2: migration2,
@@ -429,6 +442,7 @@ const MIGRATIONS: Record<number, (db: MigrationDb) => Promise<void>> = {
   8: migration8,
   9: migration9,
   10: migration10,
+  11: migration11,
 };
 
 export const MAX_MIGRATION_VERSION = Math.max(

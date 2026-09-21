@@ -12,12 +12,7 @@ function truncateForAiRepairPreviousOutput(text: string): string {
 }
 
 export type AiPurpose =
-  | 'recipeExtract'
-  | 'adjustRecipe'
-  | 'tipsChat'
-  | 'recipeSuggestions'
-  | 'weekPlan'
-  | 'bioScore';
+  'recipeExtract' | 'adjustRecipe' | 'tipsChat' | 'recipeSuggestions' | 'weekPlan' | 'bioScore';
 
 export const BIO_SCORE_OUTPUT_SCHEMA = `{
   "v": 1,
@@ -179,9 +174,34 @@ Regels:
 - Schat prep_time_min, cook_time_min, total_time_min als ze niet expliciet staan.
 - timer_seconds: altijd een geheel aantal seconden (bijv. 30, 90; geen breuken in minuten zoals 0,5).
 - Alle teksten in het Nederlands als de bron Nederlands is.
-- Tags ("tags"): maximaal 6–8 nuttige steekwoorden (keuken, dieet, techniek, hoofdingrediënt, seizoen). Geen winkel- of merknamen, geen woorden als "recept", "snel" of "makkelijk" tenzij ze echt onderscheidend zijn.
-- Gebruik liever vaste filterlabels: voor een avondmaaltijd-hoofdgang tag "hoofdgerecht", niet "diner" of "avondeten". Zet "vegetarisch" als het om vlees/vis-vrij gaat; "vegan" alleen bij echt plantaardig zonder dierlijke producten.
-- Geen dubbele betekenis tussen maaltijdmoment en gang: geen combinatie van lunch, ontbijt, brunch, borrel of middageten samen met hoofdgerecht, voorgerecht, nagerecht, bijgerecht of tussengerecht.`,
+- Tags ("tags"): maximaal 6–8 nuttige steekwoorden die het recept karakteriseren.
+    Gebruik UITSLUITEND tags die daadwerkelijk helpen bij categoriseren en zoeken.
+
+    **Toegestaan (en standaardiseer altijd naar Nederlands):**
+    - Keuken: italiaans, frans, aziatisch, nederlands, mediterraan, mexicaans, thais, indisch
+    - Dieet: vegetarisch, vegan, glutenvrij, lactosevrij, keto, suikervrij
+    - Techniek: oven, gebakken, gefrituurd, gegrild, gestomd, gebraden, geroerbakt, rauwe, koud
+    - Seizoen: zomer, lente, herfst, winter
+    - Gang: hoofdgerecht, voorgerecht, nagerecht, bijgerecht, tussengerecht
+    - Hoofdingrediënt: kip, rund, varkensvlees, vis, zeevruchten, groente, pasta, rijst, aardappel
+      (alleen als het de belangrijkste component is, niet voor elke ingrediënt)
+
+    **Absoluut NIET genereren (deze informatie staat al in aparte velden):**
+    - Numerieke portie-aantallen: "4 porties", "2 personen", "6 stuks", "1-2 porties", "4-6 personen"
+    - Bereidingstijden: "30 minuten", "1 uur", "2 uren", "45 min", "15 minuten"
+
+    **Absoluut NIET genereren (geen zoekwaarde of redundant):**
+    - Generieke complimenten: lekker, heerlijk, delicious, tasty, yummy, smakelijk
+    - Moeilijkheidsgraad: makkelijk, simpel, eenvoudig, snel, moeilijk, ingewikkeld, gemiddeld
+    - Winkel/merk namen: ah, albert heijn, jumbo, lidl, plus, coop, dirk, ekoplaza
+    - Algemene recept woorden: recept, recepten, receptje, kookrecept
+    - Algemene kooktermen: koken, kook, bereiden, maken
+
+    **Standaardisatie regels:**
+    - Gebruik ALTIJD Nederlandse termen: "zomer" niet "summer", "italiaans" niet "italian", "gegrild" niet "grilled"
+    - Voor avondmaaltijd: gebruik "hoofdgerecht" niet "diner", "avondeten" of "avondmaaltijd"
+    - Vegetarisch vs vegan: "vegetarisch" voor vlees/vis-vrij, "vegan" ALLEEN voor 100% plantaardig (geen dierlijke producten)
+    - Geen combinatie van maaltijdmoment (lunch, ontbijt, brunch, borrel, middageten) met gang (hoofdgerecht, voorgerecht, nagerecht, bijgerecht, tussengerecht)`,
   });
 }
 
@@ -228,9 +248,34 @@ Regels:
 - Schat prep_time_min, cook_time_min, total_time_min als ze niet expliciet staan.
 - timer_seconds: altijd een geheel aantal seconden (bijv. 30, 90; geen breuken in minuten zoals 0,5).
 - Alle teksten in het Nederlands.
-- Tags ("tags"): maximaal 6–8 nuttige steekwoorden (keuken, dieet, techniek, hoofdingrediënt, seizoen). Geen winkel- of merknamen, geen woorden als "recept", "snel" of "makkelijk" tenzij ze echt onderscheidend zijn.
-- Gebruik liever vaste filterlabels: voor een avondmaaltijd-hoofdgang tag "hoofdgerecht", niet "diner" of "avondeten". Zet "vegetarisch" als het om vlees/vis-vrij gaat; "vegan" alleen bij echt plantaardig zonder dierlijke producten.
-- Geen dubbele betekenis tussen maaltijdmoment en gang: geen combinatie van lunch, ontbijt, brunch, borrel of middageten samen met hoofdgerecht, voorgerecht, nagerecht, bijgerecht of tussengerecht.`,
+- Tags ("tags"): maximaal 6–8 nuttige steekwoorden die het recept karakteriseren.
+    Gebruik UITSLUITEND tags die daadwerkelijk helpen bij categoriseren en zoeken.
+
+    **Toegestaan (en standaardiseer altijd naar Nederlands):**
+    - Keuken: italiaans, frans, aziatisch, nederlands, mediterraan, mexicaans, thais, indisch
+    - Dieet: vegetarisch, vegan, glutenvrij, lactosevrij, keto, suikervrij
+    - Techniek: oven, gebakken, gefrituurd, gegrild, gestomd, gebraden, geroerbakt, rauwe, koud
+    - Seizoen: zomer, lente, herfst, winter
+    - Gang: hoofdgerecht, voorgerecht, nagerecht, bijgerecht, tussengerecht
+    - Hoofdingrediënt: kip, rund, varkensvlees, vis, zeevruchten, groente, pasta, rijst, aardappel
+      (alleen als het de belangrijkste component is, niet voor elke ingrediënt)
+
+    **Absoluut NIET genereren (deze informatie staat al in aparte velden):**
+    - Numerieke portie-aantallen: "4 porties", "2 personen", "6 stuks", "1-2 porties", "4-6 personen"
+    - Bereidingstijden: "30 minuten", "1 uur", "2 uren", "45 min", "15 minuten"
+
+    **Absoluut NIET genereren (geen zoekwaarde of redundant):**
+    - Generieke complimenten: lekker, heerlijk, delicious, tasty, yummy, smakelijk
+    - Moeilijkheidsgraad: makkelijk, simpel, eenvoudig, snel, moeilijk, ingewikkeld, gemiddeld
+    - Winkel/merk namen: ah, albert heijn, jumbo, lidl, plus, coop, dirk, ekoplaza
+    - Algemene recept woorden: recept, recepten, receptje, kookrecept
+    - Algemene kooktermen: koken, kook, bereiden, maken
+
+    **Standaardisatie regels:**
+    - Gebruik ALTIJD Nederlandse termen: "zomer" niet "summer", "italiaans" niet "italian", "gegrild" niet "grilled"
+    - Voor avondmaaltijd: gebruik "hoofdgerecht" niet "diner", "avondeten" of "avondmaaltijd"
+    - Vegetarisch vs vegan: "vegetarisch" voor vlees/vis-vrij, "vegan" ALLEEN voor 100% plantaardig (geen dierlijke producten)
+    - Geen combinatie van maaltijdmoment (lunch, ontbijt, brunch, borrel, middageten) met gang (hoofdgerecht, voorgerecht, nagerecht, bijgerecht, tussengerecht)`,
   });
 }
 

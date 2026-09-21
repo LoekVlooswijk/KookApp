@@ -3,6 +3,7 @@ import Slider from '@react-native-community/slider';
 import { Link, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   FlatList,
@@ -49,6 +50,7 @@ import {
 } from '../../lib/recipesRepo';
 import { duplicateRecipe } from '../../lib/recipesRepo';
 import type { RecipeListItem } from '../../lib/types';
+import { discoverRecipes } from '../../lib/recipeDiscovery';
 import {
   addDays,
   listWeekPlansBetween,
@@ -87,6 +89,8 @@ export default function RecipesScreen() {
   const [view, setView] = useState<'recepten' | 'lijsten'>('recepten');
   const [listsQuery, setListsQuery] = useState('');
   const [filtersModalOpen, setFiltersModalOpen] = useState(false);
+  const [discoveredIds, setDiscoveredIds] = useState<number[] | null>(null);
+  const [discoverLoading, setDiscoverLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [tagsPickerOpen, setTagsPickerOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -208,7 +212,42 @@ export default function RecipesScreen() {
     [quickPlanDefaultServings, quickPlanFor]
   );
 
+  const handleDiscover = useCallback(async () => {
+    if (searchQuery.length < 5) return;
+
+    // If already showing discovered results, clear the filter
+    if (discoveredIds) {
+      setDiscoveredIds(null);
+      return;
+    }
+
+    setDiscoverLoading(true);
+
+    try {
+      const results = await discoverRecipes(searchQuery);
+      if (results.length === 0) {
+        Alert.alert(
+          'Geen recepten gevonden',
+          'Er zijn geen recepten die passen bij je zoekopdracht.'
+        );
+      } else {
+        setDiscoveredIds(results.map((r) => r.id));
+      }
+    } catch (e) {
+      Alert.alert('Fout', 'Kon recepten niet ophalen. Probeer het opnieuw.');
+    } finally {
+      setDiscoverLoading(false);
+    }
+  }, [searchQuery, discoveredIds]);
+
   const canSwipe = !filtersModalOpen && !modalOpen && !tagsPickerOpen;
+
+  // Clear discoveredIds when search query is empty
+  useEffect(() => {
+    if (searchQuery.length === 0) {
+      setDiscoveredIds(null);
+    }
+  }, [searchQuery]);
 
   useEffect(() => {
     Animated.spring(segmentThumbT, {
@@ -326,6 +365,15 @@ export default function RecipesScreen() {
     ]
   );
 
+  // When showing discovered results, don't apply the search query filter
+  // (the discoveredIds filter will be applied separately)
+  const effectiveBrowseFilters = useMemo(() => {
+    if (discoveredIds) {
+      return { ...browseFilters, query: '' };
+    }
+    return browseFilters;
+  }, [browseFilters, discoveredIds]);
+
   const [items, setItems] = useState<RecipeListItem[]>(emptyRecipeList);
   const [totalRecipeCount, setTotalRecipeCount] = useState(0);
 
@@ -333,9 +381,16 @@ export default function RecipesScreen() {
     let cancelled = false;
     void (async () => {
       try {
-        const [rows, total] = await Promise.all([searchRecipes(browseFilters), countRecipes()]);
+        const [rows, total] = await Promise.all([
+          searchRecipes(effectiveBrowseFilters),
+          countRecipes(),
+        ]);
         if (!cancelled) {
-          setItems(rows);
+          // Filter by discoveredIds if active
+          const filteredRows = discoveredIds
+            ? rows.filter((r) => discoveredIds.includes(r.id))
+            : rows;
+          setItems(filteredRows);
           setTotalRecipeCount(total);
         }
       } catch (e) {
@@ -345,7 +400,7 @@ export default function RecipesScreen() {
     return () => {
       cancelled = true;
     };
-  }, [browseFilters, dataTick]);
+  }, [effectiveBrowseFilters, dataTick, discoveredIds]);
 
   // Load last opened recipe
   useEffect(() => {
@@ -645,17 +700,30 @@ export default function RecipesScreen() {
             setSearchBlockY(e.nativeEvent.layout.y);
           }}
         >
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Zoek op titel, ingrediënt, stap, tag…"
-            placeholderTextColor="#999"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onFocus={scrollSearchToTop}
-            autoCorrect={false}
-            autoCapitalize="none"
-            clearButtonMode="while-editing"
-          />
+          <View style={styles.searchInputWrap}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Zoek op titel, ingrediënt, stap, tag…"
+              placeholderTextColor="#999"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onFocus={scrollSearchToTop}
+              autoCorrect={false}
+              autoCapitalize="none"
+              clearButtonMode="while-editing"
+            />
+            {searchQuery.length > 0 ? (
+              <Pressable
+                style={styles.searchClearBtn}
+                onPress={() => setSearchQuery('')}
+                accessibilityRole="button"
+                accessibilityLabel="Zoekopdracht wissen"
+                hitSlop={10}
+              >
+                <Ionicons name="close-circle" size={20} color="#999" />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
 
         <View style={styles.chipRowMain}>
@@ -675,6 +743,19 @@ export default function RecipesScreen() {
               <Text style={[styles.chipText, wantToTryOnly ? chipTextOnStyle : null]}>
                 Wil proberen
               </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.chip, discoveredIds ? chipOnStyle : null]}
+              onPress={handleDiscover}
+              disabled={searchQuery.length < 5 || searchQuery.length === 0 || discoverLoading}
+            >
+              {discoverLoading ? (
+                <ActivityIndicator size="small" color={theme.accentSoftText} />
+              ) : (
+                <Text style={[styles.chipText, discoveredIds ? chipTextOnStyle : null]}>
+                  Ontdek
+                </Text>
+              )}
             </Pressable>
           </View>
           <Pressable
@@ -1584,6 +1665,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#fff',
     color: '#1a1a1a',
+    flex: 1,
+  },
+  searchInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  searchClearBtn: {
+    paddingHorizontal: 8,
   },
   chipScroll: { marginBottom: 6 },
   chipRow: {
@@ -1874,5 +1963,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 2,
     color: '#666',
+  },
+  chipDisabled: {
+    opacity: 0.5,
   },
 });

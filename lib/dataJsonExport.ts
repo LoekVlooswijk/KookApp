@@ -1,5 +1,5 @@
 import { File as FsFile, Paths } from 'expo-file-system';
-import type * as SQLite from 'expo-sqlite';
+import * as SQLite from 'expo-sqlite';
 
 import { ensureDatabaseAsync } from './db';
 
@@ -35,7 +35,6 @@ export async function exportAllDataAsJsonFileAsync(): Promise<FsFile> {
   const tables: Record<string, unknown[]> = {};
   for (const rawName of tableNames) {
     const name = assertSafeIdentifier(rawName);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const rows = await db.getAllAsync<unknown>(`SELECT * FROM "${name}"`);
     tables[name] = Array.isArray(rows) ? rows : [];
   }
@@ -50,9 +49,9 @@ export async function exportAllDataAsJsonFileAsync(): Promise<FsFile> {
 
   const f = new FsFile(Paths.document, `kook-export-${isoStampForFilename()}.json`);
   if (f.exists) {
-    f.delete();
+    await f.delete();
   }
-  f.create();
-  f.write(bytes);
+  await f.create();
+  await f.write(bytes);
   return f;
 }

@@ -1,7 +1,4 @@
 import { callAiChat, callAiText, type AiChatTurn } from './aiClient';
-
-/** Max messages sent on “apply” to cap tokens (full recipe is still in system prompt). */
-const MAX_ADJUST_CHAT_MESSAGES = 14;
 import { formatAiCookProfileForPrompt } from './aiCookProfile';
 import {
   buildAiRepairUserPrompt,
@@ -12,6 +9,9 @@ import { fullRecipeToExtractShape } from './recipeAdjustShape';
 import { formatStepTimerNl } from './timerFormat';
 import { parseExtractedRecipeJson } from './recipeExtract';
 import type { FullRecipe, RecipeSavePayload } from './types';
+
+/** Max messages sent on “apply” to cap tokens (full recipe is still in system prompt). */
+const MAX_ADJUST_CHAT_MESSAGES = 14;
 
 function buildAdjustSystemPrompt(): string {
   // The prompt builder already includes cook profile + priority rules.

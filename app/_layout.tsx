@@ -6,14 +6,6 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ThemeProvider, useAppTheme } from '../components/ThemeContext';
-
-function darkenColor(hex: string, factor: number): string {
-  const num = parseInt(hex.replace('#', ''), 16);
-  const r = Math.floor(((num >> 16) & 0xff) * factor);
-  const g = Math.floor(((num >> 8) & 0xff) * factor);
-  const b = Math.floor((num & 0xff) * factor);
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-}
 import { hydrateAiCookProfileFromDb } from '../lib/aiCookProfile';
 import { hydrateAiPrefsFromDb } from '../lib/aiPrefs';
 import { hydrateAiRequestLogPrefsFromDb } from '../lib/aiRequestLogPrefs';
@@ -23,6 +15,14 @@ import { hydrateBioScoreExcludePrefsFromDb } from '../lib/bioScoreExcludePrefs';
 import { hydrateBioScoreOverridesPrefsFromDb } from '../lib/bioScoreOverridesPrefs';
 import { hydrateBioScoreThresholdsFromDb } from '../lib/bioScoreThresholdsPrefs';
 import { hydrateShoppingStaplesPrefsFromDb } from '../lib/shoppingStaplesPrefs';
+
+function darkenColor(hex: string, factor: number): string {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = Math.floor(((num >> 16) & 0xff) * factor);
+  const g = Math.floor(((num >> 8) & 0xff) * factor);
+  const b = Math.floor((num & 0xff) * factor);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+}
 
 function ThemedStack() {
   const theme = useAppTheme();

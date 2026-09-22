@@ -51,10 +51,14 @@ export default function DataSettingsScreen() {
       setDataBusy(true);
       try {
         const f = await exportSerializedBackupFileAsync();
-        await shareLocalFileAsync(f.uri);
+        await shareLocalFileAsync(f.uri, {
+          mimeType: 'application/x-sqlite3',
+          dialogTitle: 'Kookapp Database Backup',
+        });
         Alert.alert(
-          'Backup',
-          'Je kunt het bestand nu opslaan (bijv. in Bestanden) of delen. Backups hebben de vorm kook-backup-….db.'
+          'Backup klaar',
+          `Database opgeslagen in je Files-app als kook-backup-…\n\n` +
+            `Je kunt het bestand delen of verplaatsen naar Nextcloud.`
         );
       } catch (e) {
         Alert.alert('Fout', e instanceof Error ? e.message : 'Exporteren mislukt.');
@@ -70,10 +74,14 @@ export default function DataSettingsScreen() {
       setDataBusy(true);
       try {
         const f = await exportAllDataAsJsonFileAsync();
-        await shareLocalFileAsync(f.uri);
+        await shareLocalFileAsync(f.uri, {
+          mimeType: 'application/json',
+          dialogTitle: 'Kookapp JSON Export',
+        });
         Alert.alert(
-          'JSON-export',
-          'Je kunt het JSON-bestand nu opslaan of delen. Let op: AI-sleutels staan in beveiligde opslag en zitten niet in deze export.'
+          'JSON-export klaar',
+          `Alle gegevens opgeslagen in je Files-app als kook-export-…\n\n` +
+            `Let op: AI-sleutels staan in beveiligde opslag en zitten niet in deze export.`
         );
       } catch (e) {
         Alert.alert('Fout', e instanceof Error ? e.message : 'Exporteren mislukt.');
@@ -89,6 +97,8 @@ export default function DataSettingsScreen() {
       try {
         await pickAndRestoreDatabaseBackupAsync();
         reloadAfterImportOrWipe();
+        // Give a moment for the database to be ready
+        await new Promise(resolve => setTimeout(resolve, 200));
         Alert.alert(
           'Klaar',
           'De backup is ingelezen. Als ergens nog oude gegevens staan, sluit die schermen of herstart de app.'

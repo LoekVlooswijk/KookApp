@@ -1,5 +1,4 @@
-import { useFocusEffect } from 'expo-router';
-import { useRouter } from 'expo-router';
+import { useFocusEffect , useRouter } from 'expo-router';
 import { useCallback } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
@@ -21,7 +20,7 @@ type Section = {
   id: string;
   title: string;
   first?: boolean;
-  rows: Array<{
+  rows: {
     key: string;
     title: string;
     subtitle: string;
@@ -29,7 +28,7 @@ type Section = {
     icon: keyof typeof MaterialIcons.glyphMap;
     titleColor?: string;
     iconColorKey?: 'accent' | 'destructive';
-  }>;
+  }[];
 };
 
 const SECTIONS: Section[] = [

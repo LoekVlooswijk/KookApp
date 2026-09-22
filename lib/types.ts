@@ -60,7 +60,7 @@ export type FullRecipe = {
    * Compact breakdown of assessed produce-only ingredients (nullable).
    * Stored as a JSON string in SQLite; parsed into an array here.
    */
-  bioScoreItems: Array<{ n: string; l: 'G' | 'O' | 'R'; p: 'L' | 'M' | 'H' }> | null;
+  bioScoreItems: { n: string; l: 'G' | 'O' | 'R'; p: 'L' | 'M' | 'H' }[] | null;
   notes: string | null;
   imageUri: string | null;
   createdAt: string;
@@ -120,7 +120,7 @@ export type RecipeSavePayload = {
   wantToTry: boolean;
   bioScoreColor: 'red' | 'orange' | 'green' | null;
   bioScoreUpdatedAt: string | null;
-  bioScoreItems: Array<{ n: string; l: 'G' | 'O' | 'R'; p: 'L' | 'M' | 'H' }> | null;
+  bioScoreItems: { n: string; l: 'G' | 'O' | 'R'; p: 'L' | 'M' | 'H' }[] | null;
   notes: string;
   imageUri: string;
   tagNames: string[];

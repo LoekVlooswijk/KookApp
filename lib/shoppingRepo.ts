@@ -78,7 +78,7 @@ export async function clearWeekShoppingItems(): Promise<void> {
 }
 
 export async function insertWeekShoppingItems(
-  items: Array<{ name: string; amount: number | null; unit: string | null }>
+  items: { name: string; amount: number | null; unit: string | null }[]
 ): Promise<void> {
   const merged = mergeAggregatedShoppingItems(items);
   const db = await ensureDatabaseAsync();

@@ -1,6 +1,5 @@
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect , useLocalSearchParams, useRouter } from 'expo-router';
 import Slider from '@react-native-community/slider';
-import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -658,8 +657,8 @@ export default function PlannerScreen() {
   const leftoversForDate = useCallback(
     (
       date: string
-    ): Array<{ sourceDate: string; recipeId: number; title: string; servings: number }> => {
-      const out: Array<{ sourceDate: string; recipeId: number; title: string; servings: number }> =
+    ): { sourceDate: string; recipeId: number; title: string; servings: number }[] => {
+      const out: { sourceDate: string; recipeId: number; title: string; servings: number }[] =
         [];
       for (const [sourceDate, plan] of Object.entries(plansByDate)) {
         if (!plan) continue;
@@ -845,14 +844,14 @@ export default function PlannerScreen() {
         ):
           | {
               ok: true;
-              plan: Array<{
+              plan: {
                 date: string;
                 recipeId: number | string;
                 servings: number;
                 cooksForDays: number;
                 leftoverOfDate: string | null;
-              }>;
-              newRecipes: Array<{ tempId: string; recipeJsonText: string }>;
+              }[];
+              newRecipes: { tempId: string; recipeJsonText: string }[];
             }
           | { ok: false; errors: string[] } => {
           let j: unknown;
@@ -863,7 +862,7 @@ export default function PlannerScreen() {
           }
           if (!isRecord(j)) return { ok: false, errors: ['JSON-root is geen object.'] };
           const newRecipesIn = Array.isArray(j.new_recipes) ? j.new_recipes : [];
-          const newRecipes: Array<{ tempId: string; recipeJsonText: string }> = [];
+          const newRecipes: { tempId: string; recipeJsonText: string }[] = [];
           const seenTemp = new Set<string>();
           const newRecipeErrs: string[] = [];
           for (const row of newRecipesIn) {
@@ -893,13 +892,13 @@ export default function PlannerScreen() {
 
           const expected = new Set(selectedDays);
           const seen = new Set<string>();
-          const out: Array<{
+          const out: {
             date: string;
             recipeId: number | string;
             servings: number;
             cooksForDays: number;
             leftoverOfDate: string | null;
-          }> = [];
+          }[] = [];
           const errs: string[] = [];
 
           for (const row of plan) {
@@ -1325,14 +1324,14 @@ export default function PlannerScreen() {
         ):
           | {
               ok: true;
-              plan: Array<{
+              plan: {
                 date: string;
                 recipeId: number | string;
                 servings: number;
                 cooksForDays: number;
                 leftoverOfDate: string | null;
-              }>;
-              newRecipes: Array<{ tempId: string; recipeJsonText: string }>;
+              }[];
+              newRecipes: { tempId: string; recipeJsonText: string }[];
             }
           | { ok: false; errors: string[] } => {
           let j: unknown;
@@ -1343,7 +1342,7 @@ export default function PlannerScreen() {
           }
           if (!isRecord(j)) return { ok: false, errors: ['JSON-root is geen object.'] };
           const newRecipesIn = Array.isArray(j.new_recipes) ? j.new_recipes : [];
-          const newRecipes: Array<{ tempId: string; recipeJsonText: string }> = [];
+          const newRecipes: { tempId: string; recipeJsonText: string }[] = [];
           const seenTemp = new Set<string>();
           for (const row of newRecipesIn) {
             if (!isRecord(row)) continue;
@@ -1355,13 +1354,13 @@ export default function PlannerScreen() {
           }
           const planIn = Array.isArray(j.plan) ? j.plan : null;
           if (!planIn) return { ok: false, errors: ['Veld "plan" ontbreekt of is geen array.'] };
-          const out: Array<{
+          const out: {
             date: string;
             recipeId: number | string;
             servings: number;
             cooksForDays: number;
             leftoverOfDate: string | null;
-          }> = [];
+          }[] = [];
           for (const row of planIn) {
             if (!isRecord(row)) continue;
             const d = typeof row.date === 'string' ? row.date.trim() : '';

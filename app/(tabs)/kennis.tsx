@@ -1,5 +1,4 @@
-import { useFocusEffect } from 'expo-router';
-import { useRouter } from 'expo-router';
+import { useFocusEffect , useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,7 +40,7 @@ function excerpt(s: string, max = 160): string {
   return `${t.slice(0, max)}…`;
 }
 
-function findMatchRanges(text: string, q: string): Array<{ start: number; end: number }> {
+function findMatchRanges(text: string, q: string): { start: number; end: number }[] {
   const needle = q.trim().toLowerCase();
   if (!needle) return [];
   const hay = text.toLowerCase();

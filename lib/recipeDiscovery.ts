@@ -10,7 +10,7 @@ export type DiscoveredRecipe = {
 
 /** Format recipes for AI consumption - only include id, title, tags, and category (no description) */
 function formatRecipesForAi(
-  recipes: Array<{ id: number; title: string; tags?: string[]; category?: string | null }>
+  recipes: { id: number; title: string; tags?: string[]; category?: string | null }[]
 ): string {
   return JSON.stringify({
     recipes: recipes.map((r) => ({

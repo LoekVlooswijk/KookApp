@@ -378,7 +378,7 @@ ${JSON.stringify(list)}`;
 export function buildWeekPlanUserPrompt(params: {
   currentDate?: string;
   days: string[];
-  recipes: Array<{
+  recipes: {
     id: number;
     title: string;
     total_time_min?: number | null;
@@ -386,7 +386,7 @@ export function buildWeekPlanUserPrompt(params: {
     tags?: string[];
     key_ingredients?: string[];
     want_to_try?: boolean;
-  }>;
+  }[];
   wishesText?: string;
   defaultServings?: number;
   recentlyUsedRecipeIds?: number[];
@@ -394,7 +394,7 @@ export function buildWeekPlanUserPrompt(params: {
   selectionMeta?: { totalInLibrary: number; includedInPrompt: number };
 }): string {
   const days = Array.isArray(params.days) ? params.days : [];
-  const pairBlocks: Array<{ cook_day: string; leftover_day: string }> = [];
+  const pairBlocks: { cook_day: string; leftover_day: string }[] = [];
   const soloDays: string[] = [];
   const isIsoDate = (s: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(s);
   const daysNorm = days

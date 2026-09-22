@@ -22,13 +22,13 @@ import {
 } from '../../lib/bioScoreOverridesPrefs';
 import { ensureDatabaseAsync } from '../../lib/db';
 
-const LOCALITY_OPTIONS: Array<{ id: BioScoreOverride['l']; label: string }> = [
+const LOCALITY_OPTIONS: { id: BioScoreOverride['l']; label: string }[] = [
   { id: 'G', label: 'NL/BE/DE' },
   { id: 'O', label: 'Europa' },
   { id: 'R', label: 'Wereld' },
 ];
 
-const PESTICIDE_OPTIONS: Array<{ id: BioScoreOverride['p']; label: string }> = [
+const PESTICIDE_OPTIONS: { id: BioScoreOverride['p']; label: string }[] = [
   { id: 'L', label: 'Laag' },
   { id: 'M', label: 'Middel' },
   { id: 'H', label: 'Hoog' },

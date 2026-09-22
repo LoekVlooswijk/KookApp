@@ -142,7 +142,7 @@ export function mergeAggregatedShoppingItems(
   // combine them into one line by name and show quantities joined with "+".
   const linesByName = new Map<
     string,
-    Array<{ displayName: string; amount: number | null; unit: string | null }>
+    { displayName: string; amount: number | null; unit: string | null }[]
   >();
   for (const it of byUnitMerged) {
     const { keyName, displayName } = canonicalMergeName(it.name);

@@ -1,5 +1,4 @@
-import { useFocusEffect } from 'expo-router';
-import { Link, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect , Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -29,7 +28,7 @@ import { addToBioScoreExcludeList } from '../../../lib/bioScoreExcludePrefs';
 import { ensureDatabaseAsync } from '../../../lib/db';
 import { checkHasInternet } from '../../../lib/internetCheck';
 import { getRecipeListMembership, setRecipeInList } from '../../../lib/listsRepo';
-import { effectiveBaseServings } from '../../../lib/scaling';
+import { effectiveBaseServings , servingFactor } from '../../../lib/scaling';
 import {
   deleteRecipe,
   getFullRecipe,
@@ -46,7 +45,6 @@ import {
   type AggregatedShoppingItemInput,
 } from '../../../lib/shopping';
 import { insertWeekShoppingItems } from '../../../lib/shoppingRepo';
-import { servingFactor } from '../../../lib/scaling';
 import type { FullRecipe } from '../../../lib/types';
 
 export default function RecipeDetailScreen() {
@@ -66,7 +64,7 @@ export default function RecipeDetailScreen() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyRows, setHistoryRows] = useState<
-    Array<{ id: number; versionNumber: number; note: string | null; createdAt: string }>
+    { id: number; versionNumber: number; note: string | null; createdAt: string }[]
   >([]);
   const [bioDetailsOpen, setBioDetailsOpen] = useState(false);
   const [bioRecomputeBusy, setBioRecomputeBusy] = useState(false);

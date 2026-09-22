@@ -42,14 +42,6 @@ import {
   listAiProviders,
   type AiProviderId,
 } from '../../lib/aiProviders';
-
-/** Volgorde voor “nieuwe sleutel”: één rij, Mistral tweede, OpenAI laatste. */
-const NEW_API_KEY_PROVIDER_ORDER: readonly AiProviderId[] = [
-  'anthropic',
-  'mistral',
-  'gemini',
-  'openai',
-];
 import {
   getImportAhSiteSearchEnabled,
   setImportAhSiteSearchEnabled,
@@ -60,6 +52,14 @@ import {
 } from '../../lib/aiImportConcurrencyPrefs';
 import { getImportWebSearchEnabled, setImportWebSearchEnabled } from '../../lib/aiImportPrefs';
 import { ensureDatabaseAsync } from '../../lib/db';
+
+/** Volgorde voor “nieuwe sleutel”: één rij, Mistral tweede, OpenAI laatste. */
+const NEW_API_KEY_PROVIDER_ORDER: readonly AiProviderId[] = [
+  'anthropic',
+  'mistral',
+  'gemini',
+  'openai',
+];
 
 const AI_TASK_UI: Record<AiModelTask, { title: string; hint: string }> = {
   import: {

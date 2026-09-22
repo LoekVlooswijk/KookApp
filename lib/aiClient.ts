@@ -378,7 +378,7 @@ async function callAnthropicTextWithWebSearch(params: {
   user: string;
   maxTokens?: number;
 }): Promise<AiOk | AiErr> {
-  const toolVariants: Array<Record<string, unknown>[]> = [
+  const toolVariants: Record<string, unknown>[][] = [
     [
       {
         type: 'web_search_20260209',
@@ -394,7 +394,7 @@ async function callAnthropicTextWithWebSearch(params: {
 
   toolLoop: for (let ti = 0; ti < toolVariants.length; ti++) {
     const tools = toolVariants[ti];
-    const messages: Array<{ role: 'user' | 'assistant'; content: string | unknown[] }> = [
+    const messages: { role: 'user' | 'assistant'; content: string | unknown[] }[] = [
       { role: 'user', content: params.user },
     ];
 

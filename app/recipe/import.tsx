@@ -638,7 +638,7 @@ export default function ImportRecipeScreen() {
             void (async () => {
               try {
                 for (const id of ids) {
-                  // eslint-disable-next-line no-await-in-loop
+                   
                   await saveRecipeJob(id);
                 }
               } catch (e) {

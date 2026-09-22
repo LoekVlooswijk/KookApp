@@ -29,7 +29,7 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderInfo> = {
   gemini: {
     id: 'gemini',
     label: 'Google Gemini',
-    enabled: false,
+    enabled: true,
     supportsWebSearch: false,
     supportsVision: true,
   },

@@ -122,7 +122,7 @@ export function AiPromptsCatalogModal({ visible, onClose }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, justifyContent: 'center', padding: 16 },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.45)' },
   card: {
     borderRadius: 14,
     padding: 16,

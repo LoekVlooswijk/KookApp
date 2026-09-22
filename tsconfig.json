@@ -6,7 +6,8 @@
     "paths": {
       "expo-router/react-navigation/*": ["node_modules/expo-router/build/react-navigation/*"]
     },
-    "ignoreDeprecations": "6.0"
+    "ignoreDeprecations": "6.0",
+    "types": ["jest", "node"]
   },
   "include": ["**/*.ts", "**/*.tsx"]
 }

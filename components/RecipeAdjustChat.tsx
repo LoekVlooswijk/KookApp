@@ -16,6 +16,13 @@ import {
 import { callAiChat, hasActiveAiKey, type AiChatTurn } from '../lib/aiClient';
 import { buildAdjustChatSystemPrompt, applyAdjustmentFromChat } from '../lib/recipeAdjust';
 import { applyAiAdjustedRecipe } from '../lib/recipesRepo';
+import { 
+  loadChatHistory, 
+  saveChatMessage, 
+  getOrCreateChatSession,
+  chatMessageToAiTurn,
+  type ChatSession 
+} from '../lib/chatSessionRepo';
 import type { FullRecipe } from '../lib/types';
 import { ChatSheetKeyboardWrap } from './ChatSheetKeyboardWrap';
 import { FormattedText } from './FormattedText';
@@ -29,9 +36,11 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   onApplied: () => void;
+  /** Servings for this chat context, defaults to baseServings */
+  servings?: number;
 };
 
-export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied }: Props) {
+export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied, servings = recipe.baseServings ?? 1 }: Props) {
   const theme = useAppTheme();
   const [turns, setTurns] = useState<AiChatTurn[]>([]);
   const [input, setInput] = useState('');
@@ -39,6 +48,7 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasKey, setHasKey] = useState(false);
+  const [chatSession, setChatSession] = useState<ChatSession | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const sendInFlightRef = useRef(false);
 
@@ -51,10 +61,31 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
       .catch(() => setHasKey(false));
   }, [visible]);
 
+  /** Load chat history when panel becomes visible */
+  useEffect(() => {
+    if (!visible || recipeId == null) return;
+    
+    void (async () => {
+      try {
+        const history = await loadChatHistory(recipeId, servings);
+        if (history) {
+          setChatSession(history.session);
+          setTurns(history.messages.map(chatMessageToAiTurn));
+        } else {
+          const session = await getOrCreateChatSession(recipeId, servings);
+          setChatSession(session);
+        }
+      } catch (e) {
+        console.error('Failed to load adjust chat history:', e);
+      }
+    })();
+  }, [visible, recipeId, servings]);
+
   useEffect(() => {
     setTurns([]);
     setError(null);
     setInput('');
+    setChatSession(null);
   }, [recipe.id]);
 
   const hasAssistantReply = turns.some((t) => t.role === 'assistant');
@@ -76,6 +107,15 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
       setError(null);
       setLoading(true);
 
+      // Save user message to DB if we have a session
+      if (chatSession) {
+        try {
+          await saveChatMessage(chatSession.id, 'user', trimmed);
+        } catch (e) {
+          console.error('Failed to save user message:', e);
+        }
+      }
+
       try {
         const res = await callAiChat({
           system: systemPrompt,
@@ -88,13 +128,23 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
           setError(res.message);
           return;
         }
-        setTurns([...nextHistory, { role: 'assistant', text: res.text.trim() }]);
+        const assistantTurn: AiChatTurn = { role: 'assistant', text: res.text.trim() };
+        setTurns([...nextHistory, assistantTurn]);
+        
+        // Save assistant message to DB if we have a session
+        if (chatSession) {
+          try {
+            await saveChatMessage(chatSession.id, 'assistant', res.text.trim());
+          } catch (e) {
+            console.error('Failed to save assistant message:', e);
+          }
+        }
       } finally {
         setLoading(false);
         sendInFlightRef.current = false;
       }
     },
-    [busy, systemPrompt, turns]
+    [busy, systemPrompt, turns, chatSession]
   );
 
   const onSend = useCallback(() => {
@@ -273,7 +323,7 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
 const styles = StyleSheet.create({
   modalRoot: { flex: 1, justifyContent: 'center' },
   modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
   },

@@ -431,6 +431,34 @@ async function migration11(db: MigrationDb) {
   `);
 }
 
+/** Chat history for AI conversations */
+async function migration12(db: MigrationDb) {
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recipe_id INTEGER NOT NULL,
+      servings INTEGER NOT NULL,
+      session_key TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_sessions_recipe ON chat_sessions(recipe_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_sessions_key ON chat_sessions(session_key);
+  `);
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
+  `);
+}
+
 const MIGRATIONS: Record<number, (db: MigrationDb) => Promise<void>> = {
   1: migration1,
   2: migration2,
@@ -443,6 +471,7 @@ const MIGRATIONS: Record<number, (db: MigrationDb) => Promise<void>> = {
   9: migration9,
   10: migration10,
   11: migration11,
+  12: migration12,
 };
 
 export const MAX_MIGRATION_VERSION = Math.max(

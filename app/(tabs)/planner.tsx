@@ -2643,7 +2643,7 @@ export default function PlannerScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 14 },
   quickBackdrop: { flex: 1, justifyContent: 'center', padding: 16 },
-  quickBackdropPress: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  quickBackdropPress: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.45)' },
   quickCard: {
     borderRadius: 14,
     padding: 14,
@@ -2745,7 +2745,7 @@ const styles = StyleSheet.create({
   topSecondaryBtnText: { fontWeight: '800', fontSize: 13, textAlign: 'center', flexShrink: 1 },
   overflowMenuBtn: { padding: 4, minWidth: 40, alignItems: 'center', justifyContent: 'center' },
   overflowRoot: { flex: 1 },
-  overflowDim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.2)' },
+  overflowDim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.2)' },
   overflowCard: {
     position: 'absolute',
     zIndex: 2,
@@ -2762,7 +2762,7 @@ const styles = StyleSheet.create({
   overflowDestructive: { color: '#b00020', fontWeight: '800', fontSize: 15 },
   sheetRoot: { flex: 1, justifyContent: 'flex-end' },
   sheetDim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
   generateSheet: {
@@ -3173,7 +3173,7 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
-  replaceBackdropPress: { ...StyleSheet.absoluteFillObject },
+  replaceBackdropPress: { ...StyleSheet.absoluteFill },
   replaceCard: {
     backgroundColor: '#fff',
     borderRadius: 12,

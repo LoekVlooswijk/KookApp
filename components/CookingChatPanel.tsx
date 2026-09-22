@@ -18,6 +18,13 @@ import { callAiChat, hasActiveAiKey, type AiChatTurn } from '../lib/aiClient';
 import { buildCookingSystemPrompt } from '../lib/cookingAssistant';
 import { applyAdjustmentFromChat } from '../lib/recipeAdjust';
 import { applyAiAdjustedRecipe } from '../lib/recipesRepo';
+import { 
+  loadChatHistory, 
+  saveChatMessage, 
+  getOrCreateChatSession,
+  chatMessageToAiTurn,
+  type ChatSession 
+} from '../lib/chatSessionRepo';
 import type { FullRecipe } from '../lib/types';
 import { ChatSheetKeyboardWrap } from './ChatSheetKeyboardWrap';
 import { FormattedText } from './FormattedText';
@@ -54,6 +61,7 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
   const [hasKey, setHasKey] = useState(false);
   const [adjustSuggested, setAdjustSuggested] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [chatSession, setChatSession] = useState<ChatSession | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const sendInFlightRef = useRef(false);
 
@@ -74,11 +82,51 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
       .catch(() => setHasKey(false));
   }, [open]);
 
+  /** Load chat history when panel opens */
+  useEffect(() => {
+    if (!open || recipeId == null) return;
+    
+    void (async () => {
+      try {
+        const history = await loadChatHistory(recipeId, servings);
+        if (history) {
+          setChatSession(history.session);
+          setTurns(history.messages.map(chatMessageToAiTurn));
+        } else {
+          // Create a new session but don't populate turns yet
+          const session = await getOrCreateChatSession(recipeId, servings);
+          setChatSession(session);
+        }
+      } catch (e) {
+        console.error('Failed to load chat history:', e);
+        // Continue without history
+      }
+    })();
+  }, [open, recipeId, servings]);
+
   /** Bij ander recept of andere porties: chat leegmaken (andere context). */
   useEffect(() => {
-    setTurns([]);
-    setError(null);
-    setInput('');
+    if (!open) return;
+    
+    void (async () => {
+      try {
+        // Load history for new recipe/servings
+        const history = await loadChatHistory(recipeId, servings);
+        if (history) {
+          setChatSession(history.session);
+          setTurns(history.messages.map(chatMessageToAiTurn));
+        } else {
+          const session = await getOrCreateChatSession(recipeId, servings);
+          setChatSession(session);
+          setTurns([]);
+        }
+      } catch (e) {
+        console.error('Failed to load chat history:', e);
+        setTurns([]);
+      }
+      setError(null);
+      setInput('');
+    })();
   }, [recipe.id, servings]);
 
   const busy = loading || applying;
@@ -100,6 +148,15 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
       setAdjustSuggested(false);
       setLoading(true);
 
+      // Save user message to DB if we have a session
+      if (chatSession) {
+        try {
+          await saveChatMessage(chatSession.id, 'user', trimmed);
+        } catch (e) {
+          console.error('Failed to save user message:', e);
+        }
+      }
+
       try {
         const res = await callAiChat({
           system: systemPrompt,
@@ -114,14 +171,24 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
         }
 
         const { clean, isAdjustment } = stripAdjustTag(res.text.trim());
-        setTurns([...nextHistory, { role: 'assistant', text: clean }]);
+        const assistantTurn: AiChatTurn = { role: 'assistant', text: clean };
+        setTurns([...nextHistory, assistantTurn]);
         setAdjustSuggested(isAdjustment);
+        
+        // Save assistant message to DB if we have a session
+        if (chatSession) {
+          try {
+            await saveChatMessage(chatSession.id, 'assistant', clean);
+          } catch (e) {
+            console.error('Failed to save assistant message:', e);
+          }
+        }
       } finally {
         setLoading(false);
         sendInFlightRef.current = false;
       }
     },
-    [busy, systemPrompt, turns]
+    [busy, systemPrompt, turns, chatSession]
   );
 
   const onApplyAdjustment = useCallback(async () => {
@@ -333,7 +400,7 @@ const styles = StyleSheet.create({
   fabText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
   },

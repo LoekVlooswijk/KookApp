@@ -428,8 +428,7 @@ export default function AiSettingsScreen() {
             {!providerInfo?.enabled ? (
               <View style={styles.notice}>
                 <Text style={styles.noticeText}>
-                  Deze provider staat als optie klaar, maar is nog niet geïmplementeerd voor
-                  API-aanroepen in de app.
+                  Deze provider is momenteel uitgeschakeld in de app.
                 </Text>
               </View>
             ) : null}

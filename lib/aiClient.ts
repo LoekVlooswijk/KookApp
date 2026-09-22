@@ -462,6 +462,274 @@ const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 
 const MISTRAL_CHAT_URL = 'https://api.mistral.ai/v1/chat/completions';
 
+// ---------------- Gemini ----------------
+
+const GEMINI_CHAT_NON_STREAM_URL = 'https://generativelanguage.googleapis.com/v1beta/models/chat:generateMessage';
+
+function approxGeminiTextChars(body: Record<string, unknown>): number {
+  let n = 0;
+  const addStr = (s: unknown) => {
+    if (typeof s === 'string') n += s.length;
+  };
+
+  const content = body.contents as unknown;
+  if (Array.isArray(content)) {
+    for (const c of content) {
+      if (isRecord(c) && isRecord(c.parts)) {
+        const parts = c.parts;
+        if (Array.isArray(parts)) {
+          for (const part of parts) {
+            if (isRecord(part) && typeof part.text === 'string') {
+              n += part.text.length;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const system = body.system_instruction;
+  if (typeof system === 'string') n += system.length;
+
+  return n;
+}
+
+async function fetchGemini(
+  apiKey: string,
+  body: Record<string, unknown>,
+  debug?: { tag?: string }
+): Promise<{ ok: true; raw: string } | AiErr> {
+  const wireJson = JSON.stringify(body);
+  const model = typeof body.model === 'string' ? body.model : undefined;
+  const systemChars = typeof body.system_instruction === 'string' ? body.system_instruction.length : 0;
+  const userTextCharsApprox = approxGeminiTextChars(body);
+
+  const t0 = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(GEMINI_CHAT_NON_STREAM_URL + '?key=' + apiKey, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: wireJson,
+    });
+  } catch {
+    if (isAiRequestLogEnabledSync()) {
+      recordAiRequestLog({
+        provider: 'gemini',
+        tag: debug?.tag,
+        url: GEMINI_CHAT_NON_STREAM_URL,
+        model,
+        okHttp: false,
+        requestJsonChars: wireJson.length,
+        requestJsonCharsRedacted: wireJson.length,
+        imageBlocks: 0,
+        imageDataChars: 0,
+        systemChars,
+        userTextCharsApprox,
+        responseChars: 0,
+        errorMessage: 'fetch failed (network)',
+      });
+    }
+    return {
+      ok: false,
+      message: 'Geen verbinding met AI — controleer internet en probeer opnieuw.',
+    };
+  }
+
+  const raw = await res.text();
+  const elapsed = Date.now() - t0;
+
+  let usage: { input_tokens?: number; output_tokens?: number } | null = null;
+  if (res.ok) {
+    try {
+      const j = JSON.parse(raw) as {
+        usageMetadata?: { inputTokens?: number; outputTokens?: number };
+      };
+      usage = j.usageMetadata
+        ? { input_tokens: j.usageMetadata.inputTokens, output_tokens: j.usageMetadata.outputTokens }
+        : null;
+    } catch {
+      /* */
+    }
+  }
+
+  if (isAiRequestLogEnabledSync()) {
+    recordAiRequestLog({
+      provider: 'gemini',
+      tag: debug?.tag,
+      url: GEMINI_CHAT_NON_STREAM_URL,
+      model,
+      httpStatus: res.status,
+      okHttp: res.ok,
+      usage,
+      requestJsonChars: wireJson.length,
+      requestJsonCharsRedacted: wireJson.length,
+      imageBlocks: 0,
+      imageDataChars: 0,
+      systemChars,
+      userTextCharsApprox,
+      responseChars: raw.length,
+      errorMessage: res.ok ? undefined : `HTTP ${res.status} (${elapsed}ms)`,
+    });
+  }
+
+  if (!res.ok) {
+    let message = `AI gaf foutcode ${res.status}.`;
+    try {
+      const j = JSON.parse(raw) as { error?: { message?: string } };
+      if (j.error?.message) message = j.error.message;
+    } catch {
+      /* */
+    }
+    return {
+      ok: false,
+      message,
+      status: res.status,
+      debugSnippet: raw.length > 2500 ? `${raw.slice(0, 2500)}…` : raw,
+    };
+  }
+  return { ok: true, raw };
+}
+
+function parseGeminiText(raw: string): AiOk | AiErr {
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return {
+      ok: false,
+      message: 'Ongeldig JSON-antwoord van AI.',
+      debugSnippet: raw.slice(0, 2500),
+    };
+  }
+  if (!isRecord(json)) {
+    return { ok: false, message: 'Ongeldig antwoord van AI.', debugSnippet: raw.slice(0, 2500) };
+  }
+  
+  const candidates = Array.isArray(json.candidates) ? json.candidates : [];
+  const first = candidates[0];
+  if (!isRecord(first)) {
+    return { ok: false, message: 'Leeg antwoord van AI.', debugSnippet: raw.slice(0, 2500) };
+  }
+  const content = isRecord(first.content) ? first.content : null;
+  if (!content) {
+    return { ok: false, message: 'Leeg antwoord van AI.', debugSnippet: raw.slice(0, 2500) };
+  }
+  const parts = Array.isArray(content.parts) ? content.parts : [];
+  const textParts = parts.filter((p): p is { text: string } => isRecord(p) && typeof p.text === 'string');
+  const text = textParts.map((p) => p.text).join('').trim();
+  
+  if (!text) {
+    return { ok: false, message: 'Leeg tekstantwoord van AI.', debugSnippet: raw.slice(0, 2500) };
+  }
+  return { ok: true, text };
+}
+
+async function callGeminiText(params: {
+  apiKey: string;
+  model: string;
+  system: string;
+  user: string;
+  maxTokens?: number;
+}): Promise<AiOk | AiErr> {
+  const fr = await fetchGemini(
+    params.apiKey,
+    {
+      model: `models/${params.model}`,
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: params.user }],
+        },
+      ],
+      system_instruction: params.system,
+      generationConfig: {
+        maxOutputTokens: params.maxTokens ?? 8192,
+      },
+    },
+    { tag: 'gemini:text' }
+  );
+  if (!fr.ok) return fr;
+  return parseGeminiText(fr.raw);
+}
+
+async function callGeminiChat(params: {
+  apiKey: string;
+  model: string;
+  system: string;
+  messages: AiChatTurn[];
+  maxTokens?: number;
+}): Promise<AiOk | AiErr> {
+  if (params.messages.length === 0) {
+    return { ok: false, message: 'Geen berichten om te versturen.' };
+  }
+  if (params.messages[0].role !== 'user') {
+    return { ok: false, message: 'Ongeldige chat: begin met een gebruikersbericht.' };
+  }
+  
+  const contents = params.messages.map((m) => ({
+    role: m.role,
+    parts: [{ text: m.text }],
+  }));
+  
+  const fr = await fetchGemini(
+    params.apiKey,
+    {
+      model: `models/${params.model}`,
+      contents,
+      system_instruction: params.system,
+      generationConfig: {
+        maxOutputTokens: params.maxTokens ?? 1536,
+      },
+    },
+    { tag: 'gemini:chat' }
+  );
+  if (!fr.ok) return fr;
+  return parseGeminiText(fr.raw);
+}
+
+async function callGeminiWithImageText(params: {
+  apiKey: string;
+  model: string;
+  system: string;
+  userText: string;
+  imageBase64: string;
+  imageMediaType: AiImageMediaType;
+  maxTokens?: number;
+}): Promise<AiOk | AiErr> {
+  const fr = await fetchGemini(
+    params.apiKey,
+    {
+      model: `models/${params.model}`,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: params.userText },
+            { 
+              inlineData: {
+                mimeType: params.imageMediaType,
+                data: params.imageBase64,
+              },
+            },
+          ],
+        },
+      ],
+      system_instruction: params.system,
+      generationConfig: {
+        maxOutputTokens: params.maxTokens ?? 4096,
+      },
+    },
+    { tag: 'gemini:vision' }
+  );
+  if (!fr.ok) return fr;
+  return parseGeminiText(fr.raw);
+}
+
+//
+
 function approxMistralTextChars(body: Record<string, unknown>): number {
   let n = 0;
   const addStr = (s: unknown) => {
@@ -830,6 +1098,9 @@ export async function callAiText(params: {
   if (cfg.provider === 'mistral') {
     return callMistralText({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
   }
+  if (cfg.provider === 'gemini') {
+    return callGeminiText({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
+  }
   return { ok: false, message: 'Onbekende AI-provider.' };
 }
 
@@ -849,6 +1120,9 @@ export async function callAiChat(params: {
   }
   if (cfg.provider === 'mistral') {
     return callMistralChat({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
+  }
+  if (cfg.provider === 'gemini') {
+    return callGeminiChat({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
   }
   return { ok: false, message: 'Onbekende AI-provider.' };
 }
@@ -875,6 +1149,9 @@ export async function callAiWithImageText(params: {
   }
   if (cfg.provider === 'mistral') {
     return callMistralWithImageText({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
+  }
+  if (cfg.provider === 'gemini') {
+    return callGeminiWithImageText({ apiKey: cfg.apiKey, model: cfg.modelId, ...params });
   }
   return { ok: false, message: 'Onbekende AI-provider.' };
 }

@@ -988,7 +988,7 @@ const styles = StyleSheet.create({
   stepTimer: { fontSize: 13, color: '#666', marginTop: 4 },
   listsModalRoot: { flex: 1, justifyContent: 'center', padding: 24 },
   listsModalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
   listsModalCard: {
@@ -1065,7 +1065,7 @@ const styles = StyleSheet.create({
   },
 
   historyRoot: { flex: 1, justifyContent: 'center', padding: 24 },
-  historyBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  historyBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.4)' },
   historyCard: {
     borderRadius: 12,
     padding: 20,

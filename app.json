@@ -7,11 +7,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#faf9f7"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.loekvlooswijk.kookapp",
@@ -66,7 +61,8 @@
       ],
       "expo-file-system",
       "expo-audio",
-      "expo-asset"
+      "expo-asset",
+      "expo-font"
     ],
     "extra": {
       "router": {

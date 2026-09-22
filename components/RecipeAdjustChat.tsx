@@ -5,7 +5,6 @@ import {
   Alert,
   Keyboard,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -173,30 +172,6 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
               </View>
             ) : null}
 
-            <View style={styles.inputRowTop}>
-              <TextInput
-                style={styles.input}
-                placeholder="Bijv. meer knoflook, kortere bereidingstijd…"
-                placeholderTextColor="#999"
-                value={input}
-                onChangeText={setInput}
-                multiline
-                maxLength={800}
-                editable={hasKey && !busy}
-              />
-              <Pressable
-                style={[
-                  styles.sendBtn,
-                  { backgroundColor: theme.accent },
-                  (!input.trim() || busy || !hasKey) && styles.sendBtnOff,
-                ]}
-                onPress={onSend}
-                disabled={!input.trim() || busy || !hasKey}
-              >
-                <Text style={styles.sendBtnText}>Verstuur</Text>
-              </Pressable>
-            </View>
-
             <ScrollView
               ref={scrollRef}
               style={styles.chatScroll}
@@ -207,6 +182,28 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
                 Beschrijf wat je wilt veranderen aan «{recipe.title}». De assistent bespreekt de
                 aanpassingen met je — daarna kun je ze toepassen.
               </Text>
+
+              <View style={styles.quickRow}>
+                {QUICK_SUGGESTIONS.map((q) => (
+                  <Pressable
+                    key={q}
+                    style={[
+                      styles.quickChip,
+                      { backgroundColor: theme.accentSoft, borderColor: theme.accentBorderMuted },
+                    ]}
+                    onPress={() => void sendWithText(q)}
+                    disabled={busy || !hasKey}
+                  >
+                    <Text
+                      style={[styles.quickChipText, { color: theme.accentSoftText }]}
+                      numberOfLines={2}
+                    >
+                      {q}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
               {turns.map((m, i) => (
                 <View
                   key={`${i}-${m.role}`}
@@ -235,6 +232,30 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
               ) : null}
             </ScrollView>
 
+            <View style={styles.inputRowTop}>
+              <TextInput
+                style={styles.input}
+                placeholder="Bijv. meer knoflook, kortere bereidingstijd…"
+                placeholderTextColor="#999"
+                value={input}
+                onChangeText={setInput}
+                multiline
+                maxLength={800}
+                editable={hasKey && !busy}
+              />
+              <Pressable
+                style={[
+                  styles.sendBtn,
+                  { backgroundColor: theme.accent },
+                  (!input.trim() || busy || !hasKey) && styles.sendBtnOff,
+                ]}
+                onPress={onSend}
+                disabled={!input.trim() || busy || !hasKey}
+              >
+                <Text style={styles.sendBtnText}>Verstuur</Text>
+              </Pressable>
+            </View>
+
             {hasAssistantReply && !busy ? (
               <View style={styles.applyRow}>
                 <Pressable style={styles.applyBtn} onPress={() => void onApply()}>
@@ -242,27 +263,6 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
                 </Pressable>
               </View>
             ) : null}
-
-            <View style={styles.quickRow}>
-              {QUICK_SUGGESTIONS.map((q) => (
-                <Pressable
-                  key={q}
-                  style={[
-                    styles.quickChip,
-                    { backgroundColor: theme.accentSoft, borderColor: theme.accentBorderMuted },
-                  ]}
-                  onPress={() => void sendWithText(q)}
-                  disabled={busy || !hasKey}
-                >
-                  <Text
-                    style={[styles.quickChipText, { color: theme.accentSoftText }]}
-                    numberOfLines={2}
-                  >
-                    {q}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
           </View>
         </ChatSheetKeyboardWrap>
       </View>
@@ -271,7 +271,7 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
 }
 
 const styles = StyleSheet.create({
-  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  modalRoot: { flex: 1, justifyContent: 'center' },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 1,
@@ -279,14 +279,10 @@ const styles = StyleSheet.create({
   },
   sheet: {
     zIndex: 2,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: '85%',
-    borderTopWidth: 1,
-    borderColor: '#e2ddd5',
+    flex: 1,
   },
   sheetInner: {
-    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
+    flex: 1,
   },
   sheetHeader: {
     flexDirection: 'row',
@@ -310,9 +306,9 @@ const styles = StyleSheet.create({
   warnText: { fontSize: 14, color: '#5c4a1a', marginBottom: 10 },
   linkBtn: { alignSelf: 'flex-start' },
   linkBtnText: { color: '#2a6cb6', fontWeight: '700', fontSize: 15 },
-  chatScroll: { maxHeight: 340, minHeight: 160 },
-  chatContent: { paddingHorizontal: 16, paddingBottom: 12 },
-  intro: { fontSize: 13, color: '#666', marginBottom: 12, lineHeight: 19 },
+  chatScroll: { flex: 1 },
+  chatContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
+  intro: { fontSize: 13, color: '#666', marginBottom: 16, lineHeight: 19 },
   bubble: {
     marginBottom: 10,
     padding: 10,
@@ -357,7 +353,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     paddingHorizontal: 16,
-    marginBottom: 10,
+    marginBottom: 16,
   },
   quickChip: {
     borderWidth: 1,

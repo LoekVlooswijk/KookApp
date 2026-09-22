@@ -18,16 +18,48 @@ function parseInlineMarkdown(source: string): Segment[] {
   return segments;
 }
 
-export function FormattedText({ text, style }: { text: string; style: object }) {
+function processLine(line: string): { content: string; isDivider?: boolean; headerLevel?: number } {
+  const trimmed = line.trim();
+  
+  if (trimmed === '---' || trimmed === '___') {
+    return { content: '', isDivider: true };
+  }
+  
+  const headerMatch = trimmed.match(/^(#{1,6})\s+(.*)/);
+  if (headerMatch) {
+    const level = headerMatch[1].length;
+    const headerText = headerMatch[2];
+    return { content: headerText, headerLevel: level, isDivider: false };
+  }
+  
+  return { content: line, isDivider: false };
+}
+
+export function FormattedText({ text, style }: { text: string; style?: object }) {
   const lines = text.split('\n');
 
   return (
     <Text style={style}>
       {lines.map((line, li) => {
-        const bulletMatch = line.match(/^(\s*)[-•]\s+/);
+        const processed = processLine(line);
+        
+        if (processed.isDivider) {
+          return (
+            <Text key={li}>
+              {'\n'}
+              {'─'.repeat(20)}
+              {'\n'}
+            </Text>
+          );
+        }
+        
+        const bulletMatch = processed.content.match(/^(\s*)[-•]\s+/);
         const prefix = bulletMatch ? '  •  ' : '';
-        const content = bulletMatch ? line.slice(bulletMatch[0].length) : line;
+        const content = bulletMatch ? processed.content.slice(bulletMatch[0].length) : processed.content;
         const segments = parseInlineMarkdown(content);
+        
+        const headerLevel = processed.headerLevel;
+        const isHeader = headerLevel !== undefined;
 
         return (
           <Text key={li}>
@@ -37,6 +69,7 @@ export function FormattedText({ text, style }: { text: string; style: object }) 
               <Text
                 key={si}
                 style={[
+                  isHeader && { fontWeight: '700' as const, fontSize: (20 - headerLevel * 2) as number },
                   seg.bold && { fontWeight: '700' as const },
                   seg.italic && { fontStyle: 'italic' as const },
                 ]}

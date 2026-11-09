@@ -98,7 +98,7 @@ export default function DataSettingsScreen() {
         await pickAndRestoreDatabaseBackupAsync();
         reloadAfterImportOrWipe();
         // Give a moment for the database to be ready
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise((resolve) => setTimeout(resolve, 200));
         Alert.alert(
           'Klaar',
           'De backup is ingelezen. Als ergens nog oude gegevens staan, sluit die schermen of herstart de app.'

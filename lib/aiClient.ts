@@ -464,13 +464,11 @@ const MISTRAL_CHAT_URL = 'https://api.mistral.ai/v1/chat/completions';
 
 // ---------------- Gemini ----------------
 
-const GEMINI_CHAT_NON_STREAM_URL = 'https://generativelanguage.googleapis.com/v1beta/models/chat:generateMessage';
+const GEMINI_CHAT_NON_STREAM_URL =
+  'https://generativelanguage.googleapis.com/v1beta/models/chat:generateMessage';
 
 function approxGeminiTextChars(body: Record<string, unknown>): number {
   let n = 0;
-  const addStr = (s: unknown) => {
-    if (typeof s === 'string') n += s.length;
-  };
 
   const content = body.contents as unknown;
   if (Array.isArray(content)) {
@@ -501,7 +499,8 @@ async function fetchGemini(
 ): Promise<{ ok: true; raw: string } | AiErr> {
   const wireJson = JSON.stringify(body);
   const model = typeof body.model === 'string' ? body.model : undefined;
-  const systemChars = typeof body.system_instruction === 'string' ? body.system_instruction.length : 0;
+  const systemChars =
+    typeof body.system_instruction === 'string' ? body.system_instruction.length : 0;
   const userTextCharsApprox = approxGeminiTextChars(body);
 
   const t0 = Date.now();
@@ -607,7 +606,7 @@ function parseGeminiText(raw: string): AiOk | AiErr {
   if (!isRecord(json)) {
     return { ok: false, message: 'Ongeldig antwoord van AI.', debugSnippet: raw.slice(0, 2500) };
   }
-  
+
   const candidates = Array.isArray(json.candidates) ? json.candidates : [];
   const first = candidates[0];
   if (!isRecord(first)) {
@@ -618,9 +617,14 @@ function parseGeminiText(raw: string): AiOk | AiErr {
     return { ok: false, message: 'Leeg antwoord van AI.', debugSnippet: raw.slice(0, 2500) };
   }
   const parts = Array.isArray(content.parts) ? content.parts : [];
-  const textParts = parts.filter((p): p is { text: string } => isRecord(p) && typeof p.text === 'string');
-  const text = textParts.map((p) => p.text).join('').trim();
-  
+  const textParts = parts.filter(
+    (p): p is { text: string } => isRecord(p) && typeof p.text === 'string'
+  );
+  const text = textParts
+    .map((p) => p.text)
+    .join('')
+    .trim();
+
   if (!text) {
     return { ok: false, message: 'Leeg tekstantwoord van AI.', debugSnippet: raw.slice(0, 2500) };
   }
@@ -668,12 +672,12 @@ async function callGeminiChat(params: {
   if (params.messages[0].role !== 'user') {
     return { ok: false, message: 'Ongeldige chat: begin met een gebruikersbericht.' };
   }
-  
+
   const contents = params.messages.map((m) => ({
     role: m.role,
     parts: [{ text: m.text }],
   }));
-  
+
   const fr = await fetchGemini(
     params.apiKey,
     {
@@ -708,7 +712,7 @@ async function callGeminiWithImageText(params: {
           role: 'user',
           parts: [
             { text: params.userText },
-            { 
+            {
               inlineData: {
                 mimeType: params.imageMediaType,
                 data: params.imageBase64,

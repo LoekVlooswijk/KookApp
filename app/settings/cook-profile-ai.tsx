@@ -108,7 +108,9 @@ export default function AiCookProfileSettingsScreen() {
     ]
   );
 
-  nextProfileRef.current = nextProfile;
+  useEffect(() => {
+    nextProfileRef.current = nextProfile;
+  }, [nextProfile]);
 
   useEffect(() => {
     loadedRef.current = loaded;

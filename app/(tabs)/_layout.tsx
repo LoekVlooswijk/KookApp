@@ -1,7 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Image } from 'react-native';
 import type { ImageSourcePropType } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '../../components/ThemeContext';
 import { IconBrain } from '../../components/knowledge/icons';
@@ -34,7 +33,6 @@ function tabBarIconNode(render: (focused: boolean) => React.ReactNode) {
 
 export default function TabsLayout() {
   const theme = useAppTheme();
-  const insets = useSafeAreaInsets();
   return (
     <Tabs
       screenOptions={{

@@ -32,7 +32,7 @@ export async function exportSerializedBackupFileAsync(): Promise<FsFile> {
   const db = await ensureDatabaseAsync();
   const raw = await db.serializeAsync();
   const stamp = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
-  
+
   // Use Paths.document which is a Directory instance
   const f = new FsFile(Paths.document, `kook-backup-${stamp}.db`);
   if (f.exists) {
@@ -76,36 +76,38 @@ async function restoreFreshDatabaseFromBytes(bytes: Uint8Array): Promise<void> {
     if (!isLikelySqliteDatabase(bytes)) {
       throw new Error('Geen geldig SQLite-databasebestand.');
     }
-    
+
     // Get the path where SQLite stores the database by opening it temporarily
     const tempDb = await SQLite.openDatabaseAsync(DB_NAME);
     const dbPath = tempDb.databasePath;
     await tempDb.closeAsync();
-    
+
     // Delete existing database file
     try {
       await SQLite.deleteDatabaseAsync(DB_NAME);
     } catch {
       /* bestond mogelijk niet */
     }
-    
+
     // Create the target file using the actual database path
     // We need to create a File object from the path
     const dbFile = new FsFile(dbPath);
     await dbFile.write(bytes);
-    
+
     // Verify the file was written
     if (!dbFile.exists || dbFile.size !== bytes.length) {
-      throw new Error(`Database file write failed: expected ${bytes.length} bytes, got ${dbFile.size ?? 0}`);
+      throw new Error(
+        `Database file write failed: expected ${bytes.length} bytes, got ${dbFile.size ?? 0}`
+      );
     }
-    
+
     // Now open the database and run migrations
     const db = await SQLite.openDatabaseAsync(DB_NAME);
     await prepareDatabaseSchemaAsync(db);
-    
+
     // Close it
     await db.closeAsync();
-    
+
     // Reset the connection cache
     await closeAndResetDatabaseConnectionAsync();
   } catch (e) {
@@ -117,12 +119,12 @@ async function restoreFreshDatabaseFromBytes(bytes: Uint8Array): Promise<void> {
     await ensureDatabaseAsync();
     throw e instanceof Error ? e : new Error('Importeren mislukt.');
   }
-  
+
   // Verify the database
   const db = await ensureDatabaseAsync();
   try {
     await assertKookSchemaPresent(db);
-    
+
     // Check for data
     const recipeCount = await db.getFirstAsync<{ count: number }>(
       'SELECT COUNT(*) as count FROM recipes'
@@ -135,7 +137,9 @@ async function restoreFreshDatabaseFromBytes(bytes: Uint8Array): Promise<void> {
         'SELECT COUNT(*) as count FROM week_plans'
       );
       if ((listCount?.count ?? 0) === 0 && (planCount?.count ?? 0) === 0) {
-        throw new Error(`Geïmporteerde database is leeg. Aantal: recipes=${recipeCount.count ?? 0}, shopping_items=${listCount?.count ?? 0}, week_plans=${planCount?.count ?? 0}. Controleer of het backup-bestand geldige data bevat.`);
+        throw new Error(
+          `Geïmporteerde database is leeg. Aantal: recipes=${recipeCount.count ?? 0}, shopping_items=${listCount?.count ?? 0}, week_plans=${planCount?.count ?? 0}. Controleer of het backup-bestand geldige data bevat.`
+        );
       }
     }
   } catch (e) {
@@ -158,20 +162,20 @@ export async function pickAndRestoreDatabaseBackupAsync(): Promise<void> {
     throw new Error('Geen bestand gekozen.');
   }
   const file = result.result;
-  
+
   // Use the new File API properties directly
   if (!file.exists) {
     throw new Error('Het geselecteerde bestand bestaat niet meer.');
   }
-  
+
   // Use bytes() method to read the file content
   const fileBytes = await file.bytes();
-  
+
   // Verify we read the file
   if (file.size && fileBytes.length !== file.size) {
     throw new Error(`File size mismatch: expected ${file.size}, got ${fileBytes.length}`);
   }
-  
+
   if (!isLikelySqliteDatabase(fileBytes)) {
     throw new Error('Geen geldig SQLite-databasebestand.');
   }

@@ -58,8 +58,10 @@ export default function ShoppingSettingsScreen() {
     loadedRef.current = loaded;
   }, [loaded]);
 
-  nextTextRef.current = text;
-  nextOrganicTextRef.current = organicText;
+  useEffect(() => {
+    nextTextRef.current = text;
+    nextOrganicTextRef.current = organicText;
+  }, [text, organicText]);
 
   useFocusEffect(
     useCallback(() => {

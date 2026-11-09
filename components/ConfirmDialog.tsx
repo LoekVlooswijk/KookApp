@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAppTheme } from './ThemeContext';
+import { useAnimatedValue } from './useAnimatedValue';
 
 export type ConfirmDialogOptions = {
   title: string;
@@ -29,7 +30,7 @@ export function useConfirmDialog(): {
   const [state, setState] = useState<InternalState | null>(null);
   const [closing, setClosing] = useState(false);
 
-  const anim = useRef(new Animated.Value(0)).current;
+  const anim = useAnimatedValue(0);
 
   useEffect(() => {
     if (!state) return;

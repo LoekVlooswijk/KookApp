@@ -25,6 +25,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { RecipeListThumb } from '../../components/RecipeListThumb';
 import { useAppTheme } from '../../components/ThemeContext';
+import { useAnimatedValue } from '../../components/useAnimatedValue';
 import { getAiCookProfile, hydrateAiCookProfileFromDb } from '../../lib/aiCookProfile';
 import { ensureDatabaseAsync } from '../../lib/db';
 import { isBioScoreEnabled } from '../../lib/bioScoreEnabledPrefs';
@@ -106,8 +107,8 @@ export default function RecipesScreen() {
   const [quickPlanPlannedTitleByDate, setQuickPlanPlannedTitleByDate] = useState<
     Record<string, string>
   >({});
-  const swipeX = useRef(new Animated.Value(0)).current;
-  const segmentThumbT = useRef(new Animated.Value(0)).current;
+  const swipeX = useAnimatedValue(0);
+  const segmentThumbT = useAnimatedValue(0);
   const [segmentWidth, setSegmentWidth] = useState(0);
 
   const quickToday = useMemo(() => toIsoDateOnly(new Date()), []);
@@ -156,11 +157,14 @@ export default function RecipesScreen() {
           const titleById = new Map<number, string>();
           for (const r of allRecipes) titleById.set(r.id, r.title);
 
-          const plansByDate: Record<string, { recipeId: number; leftoverOfDate: string | null }> =
-            {};
+          const plansByDate: Record<
+            string,
+            { recipeId: number | null; labelText: string | null; leftoverOfDate: string | null }
+          > = {};
           for (const p of plans) {
             plansByDate[p.date] = {
               recipeId: p.recipeId,
+              labelText: p.labelText,
               leftoverOfDate: p.leftoverOfDate ?? null,
             };
           }
@@ -172,12 +176,17 @@ export default function RecipesScreen() {
               out[d] = '— leeg —';
               continue;
             }
+            if (p.labelText) {
+              out[d] = p.labelText;
+              continue;
+            }
             if (p.leftoverOfDate) {
               const src = plansByDate[p.leftoverOfDate] ?? null;
               const srcRid = src?.recipeId ?? p.recipeId;
-              out[d] = `Restjes: ${titleById.get(srcRid) ?? 'Onbekend recept'}`;
+              out[d] = `Restjes: ${srcRid != null ? (titleById.get(srcRid) ?? 'Onbekend recept') : 'Onbekend recept'}`;
             } else {
-              out[d] = titleById.get(p.recipeId) ?? 'Onbekend recept';
+              out[d] =
+                p.recipeId != null ? (titleById.get(p.recipeId) ?? 'Onbekend recept') : 'Onbekend recept';
             }
           }
           setQuickPlanPlannedTitleByDate(out);
@@ -233,7 +242,7 @@ export default function RecipesScreen() {
       } else {
         setDiscoveredIds(results.map((r) => r.id));
       }
-    } catch (e) {
+    } catch {
       Alert.alert('Fout', 'Kon recepten niet ophalen. Probeer het opnieuw.');
     } finally {
       setDiscoverLoading(false);
@@ -1126,7 +1135,9 @@ export default function RecipesScreen() {
         visible={quickPlanFor != null}
         animationType="fade"
         transparent
-        onRequestClose={() => (quickPlanBusy ? null : setQuickPlanFor(null))}
+        onRequestClose={() => {
+          if (!quickPlanBusy) setQuickPlanFor(null);
+        }}
       >
         <View style={styles.sheetBackdrop}>
           <Pressable

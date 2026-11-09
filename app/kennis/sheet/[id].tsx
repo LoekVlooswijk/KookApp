@@ -1,4 +1,4 @@
-import { useFocusEffect , useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,6 +24,26 @@ import {
 
 function plural(n: number, one: string, many: string) {
   return n === 1 ? one : many;
+}
+
+function SheetBadgeIcon({
+  icon,
+  size = 28,
+  stroke = 1.7,
+}: {
+  icon?: string | null;
+  size?: number;
+  stroke?: number;
+}) {
+  const k = (icon ?? '').toLowerCase();
+  const props = { size, stroke, color: KennisColors.ink };
+  if (k === 'herb') return <IconHerb {...props} />;
+  if (k === 'scale') return <IconScale {...props} />;
+  if (k === 'thermometer') return <IconThermometer {...props} />;
+  if (k === 'swap') return <IconSwap {...props} />;
+  if (k === 'flame') return <IconFlame {...props} />;
+  if (k === 'clock') return <IconClock {...props} />;
+  return null;
 }
 
 export default function SheetDetailScreen() {
@@ -65,17 +85,6 @@ export default function SheetDetailScreen() {
     return KennisColors.greenSoft;
   }, [sheet?.accent]);
 
-  const BadgeIcon = useMemo(() => {
-    const k = (sheet?.icon ?? '').toLowerCase();
-    if (k === 'herb') return IconHerb;
-    if (k === 'scale') return IconScale;
-    if (k === 'thermometer') return IconThermometer;
-    if (k === 'swap') return IconSwap;
-    if (k === 'flame') return IconFlame;
-    if (k === 'clock') return IconClock;
-    return null;
-  }, [sheet?.icon]);
-
   return (
     <View style={[styles.screen, { backgroundColor: theme.background }]}>
       <View
@@ -103,7 +112,7 @@ export default function SheetDetailScreen() {
 
         <View style={styles.identityRow}>
           <View style={[styles.identityIcon, { backgroundColor: accent }]}>
-            {BadgeIcon ? <BadgeIcon size={28} stroke={1.7} color={KennisColors.ink} /> : null}
+            <SheetBadgeIcon icon={sheet?.icon} />
           </View>
           <View style={styles.identityTextCol}>
             <Text style={styles.identityEyebrow}>SHEET</Text>

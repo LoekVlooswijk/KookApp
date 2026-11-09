@@ -75,7 +75,9 @@ export default function BioScoreSettingsScreen() {
     loadedRef.current = loaded;
   }, [loaded]);
 
-  nextExcludeTextRef.current = excludeText;
+  useEffect(() => {
+    nextExcludeTextRef.current = excludeText;
+  }, [excludeText]);
 
   useFocusEffect(
     useCallback(() => {

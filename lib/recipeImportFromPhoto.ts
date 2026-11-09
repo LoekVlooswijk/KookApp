@@ -7,7 +7,7 @@ import {
 import { getImportAhSiteSearchEnabled } from './aiAhSearchPrefs';
 import { getImportWebSearchEnabled } from './aiImportPrefs';
 import { fetchRecipePageHtml } from './fetchRecipePage';
-import { coerceModelJsonText, extractRecipeFromPageHtml, stripCodeFence } from './recipeExtract';
+import { coerceModelJsonText, extractRecipeFromPageHtml } from './recipeExtract';
 import type { RecipeSavePayload } from './types';
 
 const AH_URL_RULES = `Albert Heijn / Allerhande (belangrijk):

@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -210,11 +210,11 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
   const [bioScoreItems, setBioScoreItems] = useState<RecipeSavePayload['bioScoreItems']>(null);
   const [bioScoreUpdatedAt, setBioScoreUpdatedAt] = useState<string | null>(null);
   const [bioBusy, setBioBusy] = useState(false);
-  const [bioEnabled, setBioEnabled] = useState(isBioScoreEnabled());
+  const [bioEnabled] = useState(isBioScoreEnabled());
   const [notes, setNotes] = useState('');
   const [imageUri, setImageUri] = useState('');
   const [pickingCover, setPickingCover] = useState(false);
-  const [tagsStr, setTagsStr] = useState('');
+  const [, setTagsStr] = useState('');
   const [customDiets, setCustomDiets] = useState<string[]>([]);
   const [customDietKeys, setCustomDietKeys] = useState<string[]>([]);
   const [tagsPickerOpen, setTagsPickerOpen] = useState(false);

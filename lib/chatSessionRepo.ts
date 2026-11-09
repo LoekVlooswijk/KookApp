@@ -40,40 +40,41 @@ export async function getOrCreateChatSession(
   servings: number
 ): Promise<ChatSession> {
   const db = await ensureDatabaseAsync();
-  
+
   // Generate a session key
   const sessionKey = generateSessionKey(recipeId, servings);
-  
+
   // Check if session exists
   const existing = await db.getFirstAsync<ChatSession>(
     'SELECT * FROM chat_sessions WHERE recipe_id = ? AND servings = ? ORDER BY updated_at DESC LIMIT 1',
     [recipeId, servings]
   );
-  
+
   if (existing) {
     // Update the session's updated_at
-    await db.runAsync(
-      'UPDATE chat_sessions SET updated_at = ?, session_key = ? WHERE id = ?',
-      [isoNow(), sessionKey, existing.id]
-    );
+    await db.runAsync('UPDATE chat_sessions SET updated_at = ?, session_key = ? WHERE id = ?', [
+      isoNow(),
+      sessionKey,
+      existing.id,
+    ]);
     return { ...existing, session_key: sessionKey, updated_at: isoNow() };
   }
-  
+
   // Create new session
   const result = await db.runAsync(
     'INSERT INTO chat_sessions (recipe_id, servings, session_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
     [recipeId, servings, sessionKey, isoNow(), isoNow()]
   );
-  
+
   const newSession = await db.getFirstAsync<ChatSession>(
     'SELECT * FROM chat_sessions WHERE id = ?',
     [Number(result.lastInsertRowId)]
   );
-  
+
   if (!newSession) {
     throw new Error('Failed to create chat session');
   }
-  
+
   return newSession;
 }
 
@@ -84,34 +85,30 @@ export async function saveChatMessage(
   text: string
 ): Promise<ChatMessage> {
   const db = await ensureDatabaseAsync();
-  
+
   const result = await db.runAsync(
     'INSERT INTO chat_messages (session_id, role, text, created_at) VALUES (?, ?, ?, ?)',
     [sessionId, role, text, isoNow()]
   );
-  
-  const message = await db.getFirstAsync<ChatMessage>(
-    'SELECT * FROM chat_messages WHERE id = ?',
-    [Number(result.lastInsertRowId)]
-  );
-  
+
+  const message = await db.getFirstAsync<ChatMessage>('SELECT * FROM chat_messages WHERE id = ?', [
+    Number(result.lastInsertRowId),
+  ]);
+
   if (!message) {
     throw new Error('Failed to save chat message');
   }
-  
+
   // Update session updated_at
-  await db.runAsync(
-    'UPDATE chat_sessions SET updated_at = ? WHERE id = ?',
-    [isoNow(), sessionId]
-  );
-  
+  await db.runAsync('UPDATE chat_sessions SET updated_at = ? WHERE id = ?', [isoNow(), sessionId]);
+
   return message;
 }
 
 /** Load all messages for a session */
 export async function loadChatMessages(sessionId: number): Promise<ChatMessage[]> {
   const db = await ensureDatabaseAsync();
-  
+
   return db.getAllAsync<ChatMessage>(
     'SELECT * FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC',
     [sessionId]
@@ -124,19 +121,19 @@ export async function loadChatHistory(
   servings: number
 ): Promise<ChatHistory | null> {
   const db = await ensureDatabaseAsync();
-  
+
   // Get the most recent session for this recipe and servings
   const session = await db.getFirstAsync<ChatSession>(
     'SELECT * FROM chat_sessions WHERE recipe_id = ? AND servings = ? ORDER BY updated_at DESC LIMIT 1',
     [recipeId, servings]
   );
-  
+
   if (!session) {
     return null;
   }
-  
+
   const messages = await loadChatMessages(session.id);
-  
+
   return {
     session,
     messages,
@@ -146,7 +143,7 @@ export async function loadChatHistory(
 /** Delete a chat session and all its messages */
 export async function deleteChatSession(sessionId: number): Promise<void> {
   const db = await ensureDatabaseAsync();
-  
+
   await db.runAsync('DELETE FROM chat_messages WHERE session_id = ?', [sessionId]);
   await db.runAsync('DELETE FROM chat_sessions WHERE id = ?', [sessionId]);
 }
@@ -154,25 +151,22 @@ export async function deleteChatSession(sessionId: number): Promise<void> {
 /** Delete all chat sessions for a recipe */
 export async function deleteChatSessionsForRecipe(recipeId: number): Promise<void> {
   const db = await ensureDatabaseAsync();
-  
+
   // Get all session IDs for this recipe
   const sessions = await db.getAllAsync<{ id: number }>(
     'SELECT id FROM chat_sessions WHERE recipe_id = ?',
     [recipeId]
   );
-  
+
   // Delete all messages for these sessions
-  const sessionIds = sessions.map(s => s.id);
+  const sessionIds = sessions.map((s) => s.id);
   if (sessionIds.length > 0) {
     const placeholders = sessionIds.map(() => '?').join(',');
     await db.runAsync(
       `DELETE FROM chat_messages WHERE session_id IN (${placeholders})`,
       sessionIds
     );
-    await db.runAsync(
-      `DELETE FROM chat_sessions WHERE id IN (${placeholders})`,
-      sessionIds
-    );
+    await db.runAsync(`DELETE FROM chat_sessions WHERE id IN (${placeholders})`, sessionIds);
   }
 }
 

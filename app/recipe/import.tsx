@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 
 import { useAppTheme } from '../../components/ThemeContext';
+import { useAnimatedValue } from '../../components/useAnimatedValue';
 import RecipeWebViewLoader from '../../components/RecipeWebViewLoader';
 import type { AiImageMediaType } from '../../lib/aiClient';
 import { hasActiveAiKey } from '../../lib/aiClient';
@@ -311,7 +312,7 @@ export default function ImportRecipeScreen() {
   const [pickDialogOpen, setPickDialogOpen] = useState(false);
   const [pickDialogTitle, setPickDialogTitle] = useState('');
   const pickDialogOnPickRef = useRef<((source: 'camera' | 'library') => void) | null>(null);
-  const pickDialogAnim = useRef(new Animated.Value(0)).current;
+  const pickDialogAnim = useAnimatedValue(0);
 
   const closePickDialog = useCallback(() => {
     setPickDialogOpen(false);
@@ -630,7 +631,6 @@ export default function ImportRecipeScreen() {
             void (async () => {
               try {
                 for (const id of ids) {
-                   
                   await saveRecipeJob(id);
                 }
               } catch (e) {

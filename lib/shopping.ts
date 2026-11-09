@@ -230,6 +230,8 @@ export async function aggregateShoppingFromWeekPlans(params: {
   for (const p of params.plans) {
     // Restjesdagen zijn al "betaald" door de eerdere kookdag: niet dubbel tellen.
     if (p.leftoverOfDate != null) continue;
+    // Tekstlabel-dagen (bijv. "Uit eten") hebben geen ingrediënten.
+    if (p.recipeId == null) continue;
     const recipe = await getFullRecipe(p.recipeId);
     if (!recipe) continue;
     const base = recipe.baseServings ?? 4;

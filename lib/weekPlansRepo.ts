@@ -3,13 +3,19 @@ import { ensureDatabaseAsync } from './db';
 export type WeekPlanRow = {
   id: number;
   date: string; // YYYY-MM-DD
-  recipeId: number;
+  /** `null` wanneer de dag een vrije tekst heeft (bijv. "Uit eten"). */
+  recipeId: number | null;
+  /** Vrij tekstlabel voor deze dag; `null` bij een recept-dag. */
+  labelText: string | null;
   servings: number;
   cooksForDays: number;
   /** Als gezet: deze dag is een restjes-dag van de opgegeven kookdag (YYYY-MM-DD). */
   leftoverOfDate: string | null;
   sortOrder: number | null;
 };
+
+/** Maximaal aantal tekens voor een tekstlabel-dag. */
+const MAX_LABEL_LENGTH = 60;
 
 function clampInt(n: number, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
@@ -39,6 +45,10 @@ export function addDays(dateOnly: string, days: number): string {
   return toIsoDateOnly(base);
 }
 
+/**
+ * Dagen tussen twee data: recept-dagen uit `week_plans` plus tekstlabel-dagen
+ * uit `week_plan_labels`, samengevoegd op datum (één diner per dag).
+ */
 export async function listWeekPlansBetween(
   startDate: string,
   endDate: string
@@ -59,32 +69,80 @@ export async function listWeekPlansBetween(
      ORDER BY date ASC, COALESCE(sort_order, 0) ASC, id ASC`,
     [startDate, endDate]
   );
-  return rows.map((r) => ({
+  const planRows: WeekPlanRow[] = rows.map((r) => ({
     id: r.id,
     date: r.date,
     recipeId: r.recipe_id,
+    labelText: null,
     servings: r.servings,
     cooksForDays: r.cooks_for_days,
     leftoverOfDate: r.leftover_of_date,
     sortOrder: r.sort_order,
   }));
+
+  const labelRowsRaw = await db.getAllAsync<{ id: number; date: string; label: string }>(
+    `SELECT id, date, label FROM week_plan_labels WHERE date >= ? AND date <= ? ORDER BY date ASC`,
+    [startDate, endDate]
+  );
+  const labelRows: WeekPlanRow[] = labelRowsRaw.map((r) => ({
+    id: r.id,
+    date: r.date,
+    recipeId: null,
+    labelText: r.label,
+    servings: 1,
+    cooksForDays: 1,
+    leftoverOfDate: null,
+    sortOrder: null,
+  }));
+
+  return [...planRows, ...labelRows].sort((a, b) => a.date.localeCompare(b.date, 'nl'));
 }
 
+/**
+ * "Upsert" by date: for now one dinner per day (simple and predictable).
+ * Met `labelText` wordt de dag een tekstlabel-dag (zonder recept); een eventuele
+ * recept-planning voor dezelfde datum wordt vervangen, en vice versa.
+ */
 export async function upsertWeekPlan(params: {
   date: string;
-  recipeId: number;
+  recipeId?: number | null;
+  labelText?: string | null;
   servings: number;
   cooksForDays: number;
   leftoverOfDate?: string | null;
 }): Promise<number> {
   const db = await ensureDatabaseAsync();
   const date = params.date.trim();
+  const labelText = (params.labelText ?? '').trim();
+
+  if (labelText) {
+    // Tekstlabel-dag: een eventueel bestaand recept voor deze dag vervalt.
+    await db.runAsync('DELETE FROM week_plans WHERE date = ?', [date]);
+    const label = labelText.slice(0, MAX_LABEL_LENGTH);
+    const existing = await db.getFirstAsync<{ id: number }>(
+      'SELECT id FROM week_plan_labels WHERE date = ? LIMIT 1',
+      [date]
+    );
+    if (existing?.id) {
+      await db.runAsync('UPDATE week_plan_labels SET label = ? WHERE id = ?', [label, existing.id]);
+      return existing.id;
+    }
+    const r = await db.runAsync('INSERT INTO week_plan_labels (date, label) VALUES (?, ?)', [
+      date,
+      label,
+    ]);
+    return Number(r.lastInsertRowId);
+  }
+
+  // Recept-dag: een eventueel tekstlabel voor deze dag vervalt.
+  await db.runAsync('DELETE FROM week_plan_labels WHERE date = ?', [date]);
+
+  if (params.recipeId == null) throw new Error('upsertWeekPlan: recipeId of labelText is vereist.');
   const recipeId = clampInt(params.recipeId, 1, 1_000_000_000);
   const servings = clampInt(params.servings, 1, 99);
   const cooksForDays = clampInt(params.cooksForDays, 1, 7);
   const leftoverOfDate = (params.leftoverOfDate ?? null)?.trim() || null;
 
-  // "Upsert" by date: for now one dinner per day (simple and predictable).
   const existing = await db.getFirstAsync<{ id: number }>(
     'SELECT id FROM week_plans WHERE date = ? LIMIT 1',
     [date]
@@ -107,11 +165,16 @@ export async function upsertWeekPlan(params: {
 export async function deleteWeekPlanByDate(date: string): Promise<void> {
   const db = await ensureDatabaseAsync();
   await db.runAsync('DELETE FROM week_plans WHERE date = ?', [date.trim()]);
+  await db.runAsync('DELETE FROM week_plan_labels WHERE date = ?', [date.trim()]);
 }
 
 export async function deleteWeekPlansBetween(startDate: string, endDate: string): Promise<void> {
   const db = await ensureDatabaseAsync();
   await db.runAsync('DELETE FROM week_plans WHERE date >= ? AND date <= ?', [
+    startDate.trim(),
+    endDate.trim(),
+  ]);
+  await db.runAsync('DELETE FROM week_plan_labels WHERE date >= ? AND date <= ?', [
     startDate.trim(),
     endDate.trim(),
   ]);

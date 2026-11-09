@@ -54,6 +54,7 @@ async function columnExistsAsync(db: MigrationDb, table: string, column: string)
  */
 async function inferSchemaVersionFloorAsync(db: MigrationDb): Promise<number> {
   if (!(await tableExistsAsync(db, 'recipes'))) return 0;
+  if (await tableExistsAsync(db, 'week_plan_labels')) return 14;
   if (await columnExistsAsync(db, 'recipes', 'last_opened_at')) return 11;
   if (await columnExistsAsync(db, 'knowledge_tags', 'is_wide')) return 8;
   if (await tableExistsAsync(db, 'knowledge_entries')) return 7;
@@ -480,6 +481,20 @@ async function migration13(db: MigrationDb) {
   );
 }
 
+/**
+ * Weekplanner: dagen met een vrij tekstlabel (bijv. "Uit eten") naast recepten.
+ * Aparte tabel met één label per datum; `week_plans` blijft ongewijzigd.
+ */
+async function migration14(db: MigrationDb) {
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS week_plan_labels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL
+    );
+  `);
+}
+
 const MIGRATIONS: Record<number, (db: MigrationDb) => Promise<void>> = {
   1: migration1,
   2: migration2,
@@ -494,6 +509,7 @@ const MIGRATIONS: Record<number, (db: MigrationDb) => Promise<void>> = {
   11: migration11,
   12: migration12,
   13: migration13,
+  14: migration14,
 };
 
 export const MAX_MIGRATION_VERSION = Math.max(

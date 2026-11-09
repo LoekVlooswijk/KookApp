@@ -183,10 +183,13 @@ export default function RecipesScreen() {
             if (p.leftoverOfDate) {
               const src = plansByDate[p.leftoverOfDate] ?? null;
               const srcRid = src?.recipeId ?? p.recipeId;
-              out[d] = `Restjes: ${srcRid != null ? (titleById.get(srcRid) ?? 'Onbekend recept') : 'Onbekend recept'}`;
+              out[d] =
+                `Restjes: ${srcRid != null ? (titleById.get(srcRid) ?? 'Onbekend recept') : 'Onbekend recept'}`;
             } else {
               out[d] =
-                p.recipeId != null ? (titleById.get(p.recipeId) ?? 'Onbekend recept') : 'Onbekend recept';
+                p.recipeId != null
+                  ? (titleById.get(p.recipeId) ?? 'Onbekend recept')
+                  : 'Onbekend recept';
             }
           }
           setQuickPlanPlannedTitleByDate(out);

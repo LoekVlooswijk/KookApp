@@ -1,4 +1,4 @@
-import { useFocusEffect , useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import Slider from '@react-native-community/slider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -34,6 +34,7 @@ import { ensureDatabaseAsync } from '../../lib/db';
 import { safeErrorMessage } from '../../lib/logSafe';
 import { getCustomDiets } from '../../lib/dietPrefs';
 import { parseExtractedRecipeJson } from '../../lib/recipeExtract';
+import { discoverRecipes } from '../../lib/recipeDiscovery';
 import { aggregateShoppingFromWeekPlans } from '../../lib/shopping';
 import { clearWeekShoppingItems, insertWeekShoppingItems } from '../../lib/shoppingRepo';
 import {
@@ -104,7 +105,8 @@ export default function PlannerScreen() {
     Record<
       string,
       {
-        recipeId: number;
+        recipeId: number | null;
+        labelText: string | null;
         servings: number;
         cooksForDays: number;
         leftoverOfDate?: string | null;
@@ -128,6 +130,8 @@ export default function PlannerScreen() {
   const [pickerFiltersModalOpen, setPickerFiltersModalOpen] = useState(false);
   const [pickerTagsPickerOpen, setPickerTagsPickerOpen] = useState(false);
   const [pickerItems, setPickerItems] = useState<RecipeListItem[]>([]);
+  const [pickerAiIds, setPickerAiIds] = useState<number[] | null>(null);
+  const [pickerAiLoading, setPickerAiLoading] = useState(false);
   const [pickerBusy, setPickerBusy] = useState(false);
   const [busyExport, setBusyExport] = useState(false);
   const [busyGenerate, setBusyGenerate] = useState(false);
@@ -213,7 +217,8 @@ export default function PlannerScreen() {
         const next: Record<
           string,
           {
-            recipeId: number;
+            recipeId: number | null;
+            labelText: string | null;
             servings: number;
             cooksForDays: number;
             leftoverOfDate?: string | null;
@@ -222,6 +227,7 @@ export default function PlannerScreen() {
         for (const r of rows) {
           next[r.date] = {
             recipeId: r.recipeId,
+            labelText: r.labelText,
             servings: r.servings,
             cooksForDays: r.cooksForDays,
             leftoverOfDate: r.leftoverOfDate,
@@ -266,12 +272,19 @@ export default function PlannerScreen() {
         const src = p.leftoverOfDate ?? '';
         const srcPlan = plansByDate[src] ?? null;
         const srcRecipeId = srcPlan?.recipeId ?? p.recipeId;
-        const t = recipeById.get(srcRecipeId)?.title ?? 'Onbekend recept';
+        const t =
+          srcPlan?.labelText ??
+          (srcRecipeId != null ? recipeById.get(srcRecipeId)?.title : undefined) ??
+          'Onbekend recept';
         out[d] = `Restjes: ${t}`;
         continue;
       }
-      const t = recipeById.get(p.recipeId)?.title ?? 'Onbekend recept';
-      out[d] = t;
+      if (p.labelText) {
+        out[d] = p.labelText;
+        continue;
+      }
+      const t = p.recipeId != null ? (recipeById.get(p.recipeId)?.title ?? 'Onbekend recept') : '';
+      out[d] = t || 'Onbekend recept';
     }
     return out;
   }, [dates, plansByDate, recipeById]);
@@ -298,6 +311,7 @@ export default function PlannerScreen() {
           ...prev,
           [date]: {
             recipeId: quickRecipeId,
+            labelText: null,
             servings: prev[date]?.servings ?? defaultServings,
             cooksForDays: prev[date]?.cooksForDays ?? 1,
             leftoverOfDate: null,
@@ -466,6 +480,12 @@ export default function PlannerScreen() {
     };
   }, [pickerOpen]);
 
+  // Bij AI-zoekresultaten geldt de zoekterm niet meer als tekst-filter
+  // (net als bij "Ontdek" op de recepten-tab): alleen matches worden getoond.
+  useEffect(() => {
+    if (pickerQuery.length === 0) setPickerAiIds(null);
+  }, [pickerQuery]);
+
   // Search recipes for the picker whenever the picker is open and filters change.
   useEffect(() => {
     if (!pickerOpen) return;
@@ -474,8 +494,11 @@ export default function PlannerScreen() {
     void (async () => {
       try {
         await ensureDatabaseAsync();
-        const rows = await searchRecipes(pickerBrowseFilters);
-        if (!cancelled) setPickerItems(rows);
+        const filters = pickerAiIds ? { ...pickerBrowseFilters, query: '' } : pickerBrowseFilters;
+        const rows = await searchRecipes(filters);
+        if (!cancelled) {
+          setPickerItems(pickerAiIds ? rows.filter((r) => pickerAiIds.includes(r.id)) : rows);
+        }
       } catch (e) {
         console.error(safeErrorMessage(e));
       } finally {
@@ -485,7 +508,7 @@ export default function PlannerScreen() {
     return () => {
       cancelled = true;
     };
-  }, [pickerBrowseFilters, pickerOpen]);
+  }, [pickerBrowseFilters, pickerOpen, pickerAiIds]);
 
   const syncLeftoversForCookDate = useCallback(
     async (cookDate: string, recipeId: number, servings: number) => {
@@ -588,6 +611,7 @@ export default function PlannerScreen() {
               }
 
               if (!plan) throw new Error('Kon preview niet opbouwen.');
+              if (plan.recipeId == null) throw new Error('Deze dag heeft geen recept.');
               const full: FullRecipe | null = await getFullRecipe(plan.recipeId);
               if (!full) throw new Error('Recept niet gevonden.');
               applyIfCurrent(() => {
@@ -654,17 +678,117 @@ export default function PlannerScreen() {
     []
   );
 
+  /** Porties van een recept-dag aanpassen (stap −/+ op de dagkaart). */
+  const adjustPlanServings = useCallback(
+    (date: string, delta: number) => {
+      const plan = plansByDate[date] ?? null;
+      if (!plan || plan.recipeId == null) return;
+      const next = Math.max(1, Math.min(99, plan.servings + delta));
+      setPlansByDate((prev) => ({
+        ...prev,
+        [date]: { ...(prev[date] ?? plan), servings: next },
+      }));
+      persistPlan({
+        date,
+        recipeId: plan.recipeId,
+        servings: next,
+        cooksForDays: plan.cooksForDays,
+        leftoverOfDate: plan.leftoverOfDate ?? null,
+      });
+    },
+    [persistPlan, plansByDate]
+  );
+
+  /** "Meerdere dagen"-vinkje omzetten voor een recept-dag. */
+  const togglePlanMultiDay = useCallback(
+    (date: string) => {
+      const plan = plansByDate[date] ?? null;
+      if (!plan || plan.recipeId == null) return;
+      const next = plan.cooksForDays <= 1 ? 7 : 1;
+      setPlansByDate((prev) => ({
+        ...prev,
+        [date]: { ...(prev[date] ?? plan), cooksForDays: next },
+      }));
+      persistPlan({
+        date,
+        recipeId: plan.recipeId,
+        servings: plan.servings,
+        cooksForDays: next,
+        leftoverOfDate: null,
+      });
+    },
+    [persistPlan, plansByDate]
+  );
+
+  /** Zet de huidige zoektekst als vrij tekstlabel op de actieve dag. */
+  const commitPickerLabel = useCallback(() => {
+    const date = activeDate;
+    const label = pickerQuery.trim();
+    if (!date || !label) return;
+    setPickerOpen(false);
+    setPickerQuery('');
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setPlansByDate((prev) => ({
+      ...prev,
+      [date]: {
+        recipeId: null,
+        labelText: label,
+        servings: 1,
+        cooksForDays: 1,
+        leftoverOfDate: null,
+      },
+    }));
+    void (async () => {
+      await upsertWeekPlan({
+        date,
+        recipeId: null,
+        labelText: label,
+        servings: 1,
+        cooksForDays: 1,
+        leftoverOfDate: null,
+      });
+      reload();
+    })();
+  }, [activeDate, pickerQuery, reload]);
+
+  /** "AI zoeken"-chip in de picker: hergebruikt Ontdek (recepten-tab). */
+  const handlePickerDiscover = useCallback(async () => {
+    const q = pickerQuery.trim();
+    // Nogmaals tikken = AI-filter weer uit.
+    if (pickerAiIds) {
+      setPickerAiIds(null);
+      return;
+    }
+    if (q.length < 5) return;
+
+    setPickerAiLoading(true);
+    try {
+      const results = await discoverRecipes(q);
+      if (results.length === 0) {
+        Alert.alert(
+          'Geen recepten gevonden',
+          'Er zijn geen recepten die passen bij je zoekopdracht.'
+        );
+      } else {
+        setPickerAiIds(results.map((r) => r.id));
+      }
+    } catch {
+      Alert.alert('Fout', 'Kon recepten niet ophalen. Probeer het opnieuw.');
+    } finally {
+      setPickerAiLoading(false);
+    }
+  }, [pickerAiIds, pickerQuery]);
+
   const leftoversForDate = useCallback(
-    (
-      date: string
-    ): { sourceDate: string; recipeId: number; title: string; servings: number }[] => {
-      const out: { sourceDate: string; recipeId: number; title: string; servings: number }[] =
-        [];
+    (date: string): { sourceDate: string; recipeId: number; title: string; servings: number }[] => {
+      const out: { sourceDate: string; recipeId: number; title: string; servings: number }[] = [];
       for (const [sourceDate, plan] of Object.entries(plansByDate)) {
         if (!plan) continue;
         if ((plan.leftoverOfDate ?? null) != null) continue; // restjes-dagen genereren zelf geen restjes
         if (plan.cooksForDays <= 1) continue;
         if (sourceDate >= date) continue;
+        // Tekstlabel-dagen (bijv. "Uit eten") genereren geen restjes.
+        if (plan.recipeId == null) continue;
 
         const recipe = recipeById.get(plan.recipeId);
         const title = recipe?.title?.trim() || '';
@@ -807,7 +931,7 @@ export default function PlannerScreen() {
             recentRows
               .filter((r) => (r.leftoverOfDate ?? null) == null)
               .map((r) => r.recipeId)
-              .filter((id) => Number.isFinite(id) && id > 0)
+              .filter((id): id is number => id != null && Number.isFinite(id) && id > 0)
           )
         );
         const sessionIds = Array.from(sessionSuggestedCookingRecipeIdsRef.current.values());
@@ -1269,7 +1393,16 @@ export default function PlannerScreen() {
           .map((d) => {
             const p = plansByDate[d] ?? null;
             if (!p) return null;
-            const title = recipeById.get(p.recipeId)?.title ?? '';
+            // Tekstlabel-dagen zijn vaste dagen zonder recept-ID.
+            if (p.labelText) {
+              return {
+                date: d,
+                recipe_id: null,
+                title: p.labelText,
+                leftover_of_date: null,
+              };
+            }
+            const title = p.recipeId != null ? (recipeById.get(p.recipeId)?.title ?? '') : '';
             return {
               date: d,
               recipe_id: p.recipeId,
@@ -1597,7 +1730,9 @@ export default function PlannerScreen() {
       <ScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
         {dates.map((date, i) => {
           const plan = plansByDate[date] ?? null;
-          const recipe = plan ? (recipeById.get(plan.recipeId) ?? null) : null;
+          const isLabelDay = (plan?.labelText ?? null) != null;
+          const recipe =
+            plan && plan.recipeId != null ? (recipeById.get(plan.recipeId) ?? null) : null;
           const expanded = !!expandedByDate[date];
           const pendingNew = pendingNewByDate[date] ?? null;
           const pendingLeftoverSrc = pendingLeftoverOfDateByDate[date] ?? null;
@@ -1612,14 +1747,16 @@ export default function PlannerScreen() {
               ? `Restje: ${pendingCook.title}`
               : plan && (plan.leftoverOfDate ?? null) != null
                 ? `Restje: ${recipe?.title ?? 'Kies een recept…'}`
-                : (recipe?.title ?? 'Kies een recept…');
+                : isLabelDay
+                  ? (plan?.labelText ?? '')
+                  : (recipe?.title ?? 'Kies een recept…');
           return (
             <View
               key={date}
               style={[styles.dayCard, plan && expanded ? styles.dayCardExpanded : null]}
             >
               <View style={styles.dayTopRow}>
-                {plan ? (
+                {plan && !isLabelDay ? (
                   <Pressable
                     style={{ flex: 1, minWidth: 0 }}
                     onPress={() => toggleExpandedForDate(date)}
@@ -1646,18 +1783,20 @@ export default function PlannerScreen() {
                     >
                       <MaterialIcons name="delete" size={20} color="#b00020" />
                     </Pressable>
-                    <Pressable
-                      style={styles.dayIconBtn}
-                      onPress={() => toggleExpandedForDate(date)}
-                      hitSlop={10}
-                      accessibilityLabel="Porties en meerdere dagen"
-                    >
-                      <MaterialIcons
-                        name={expanded ? 'expand-less' : 'expand-more'}
-                        size={24}
-                        color="#666"
-                      />
-                    </Pressable>
+                    {isLabelDay ? null : (
+                      <Pressable
+                        style={styles.dayIconBtn}
+                        onPress={() => toggleExpandedForDate(date)}
+                        hitSlop={10}
+                        accessibilityLabel="Porties en meerdere dagen"
+                      >
+                        <MaterialIcons
+                          name={expanded ? 'expand-less' : 'expand-more'}
+                          size={24}
+                          color="#666"
+                        />
+                      </Pressable>
+                    )}
                   </View>
                 ) : null}
               </View>
@@ -1665,7 +1804,8 @@ export default function PlannerScreen() {
                 <Pressable
                   style={styles.dayPickMain}
                   onPress={() => {
-                    if (plan || pendingNew || pendingCook) openRecipePreview(date);
+                    if (isLabelDay) openPickerForDate(date);
+                    else if (plan || pendingNew || pendingCook) openRecipePreview(date);
                     else openPickerForDate(date);
                   }}
                   disabled={busyGenerate}
@@ -1714,7 +1854,7 @@ export default function PlannerScreen() {
                   </Pressable>
                 </View>
               ) : null}
-              {plan ? (
+              {plan && !isLabelDay ? (
                 <Pressable
                   onPress={() => toggleExpandedForDate(date)}
                   hitSlop={10}
@@ -1729,26 +1869,13 @@ export default function PlannerScreen() {
                   </Text>
                 </Pressable>
               ) : null}
-              {plan && expanded ? (
+              {plan && expanded && !isLabelDay ? (
                 <View style={styles.expandedBlock}>
                   <View style={styles.field}>
                     <View style={styles.stepper}>
                       <Pressable
                         style={styles.stepBtn}
-                        onPress={() => {
-                          const next = Math.max(1, plan.servings - 1);
-                          setPlansByDate((prev) => ({
-                            ...prev,
-                            [date]: { ...plan, servings: next },
-                          }));
-                          persistPlan({
-                            date,
-                            recipeId: plan.recipeId,
-                            servings: next,
-                            cooksForDays: plan.cooksForDays,
-                            leftoverOfDate: plan.leftoverOfDate ?? null,
-                          });
-                        }}
+                        onPress={() => adjustPlanServings(date, -1)}
                         hitSlop={10}
                       >
                         <Text style={styles.stepBtnText}>−</Text>
@@ -1756,20 +1883,7 @@ export default function PlannerScreen() {
                       <Text style={styles.stepValue}>{plan.servings} p.</Text>
                       <Pressable
                         style={styles.stepBtn}
-                        onPress={() => {
-                          const next = Math.min(99, plan.servings + 1);
-                          setPlansByDate((prev) => ({
-                            ...prev,
-                            [date]: { ...plan, servings: next },
-                          }));
-                          persistPlan({
-                            date,
-                            recipeId: plan.recipeId,
-                            servings: next,
-                            cooksForDays: plan.cooksForDays,
-                            leftoverOfDate: plan.leftoverOfDate ?? null,
-                          });
-                        }}
+                        onPress={() => adjustPlanServings(date, 1)}
                         hitSlop={10}
                       >
                         <Text style={styles.stepBtnText}>+</Text>
@@ -1779,21 +1893,7 @@ export default function PlannerScreen() {
                   {(plan.leftoverOfDate ?? null) == null ? (
                     <Pressable
                       style={[styles.multiCookRow, { borderColor: theme.accentBorderMuted }]}
-                      onPress={() => {
-                        const nextOn = plan.cooksForDays <= 1;
-                        const next = nextOn ? 7 : 1;
-                        setPlansByDate((prev) => ({
-                          ...prev,
-                          [date]: { ...plan, cooksForDays: next },
-                        }));
-                        persistPlan({
-                          date,
-                          recipeId: plan.recipeId,
-                          servings: plan.servings,
-                          cooksForDays: next,
-                          leftoverOfDate: null,
-                        });
-                      }}
+                      onPress={() => togglePlanMultiDay(date)}
                       hitSlop={10}
                     >
                       <View
@@ -1928,9 +2028,13 @@ export default function PlannerScreen() {
                   : pendingCook
                     ? `Restje: ${pendingCook.title}`
                     : plan
-                      ? plan.leftoverOfDate
-                        ? `Restje: ${recipeById.get(plan.recipeId)?.title ?? ''}`
-                        : (recipeById.get(plan.recipeId)?.title ?? '')
+                      ? plan.labelText
+                        ? plan.labelText
+                        : plan.recipeId != null
+                          ? plan.leftoverOfDate
+                            ? `Restje: ${recipeById.get(plan.recipeId)?.title ?? ''}`
+                            : (recipeById.get(plan.recipeId)?.title ?? '')
+                          : ''
                       : '';
                 return (
                   <Pressable
@@ -2000,15 +2104,34 @@ export default function PlannerScreen() {
               <Text style={[styles.close, { color: theme.accent }]}>Sluiten</Text>
             </Pressable>
           </View>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Zoek recept..."
-            placeholderTextColor="#999"
-            value={pickerQuery}
-            onChangeText={setPickerQuery}
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
+          <View style={styles.pickerSearchRow}>
+            <TextInput
+              style={[styles.searchInput, styles.pickerSearchInput]}
+              placeholder="Zoek recept… of typ een tekst (bijv. 'uit eten')"
+              placeholderTextColor="#999"
+              value={pickerQuery}
+              onChangeText={setPickerQuery}
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+            <Pressable
+              style={[
+                styles.pickerLabelBtn,
+                pickerQuery.trim().length === 0 ? styles.pickerLabelBtnOff : null,
+              ]}
+              onPress={commitPickerLabel}
+              disabled={pickerQuery.trim().length === 0}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Zoektekst als tekstlabel voor deze dag gebruiken"
+            >
+              <MaterialIcons
+                name="arrow-forward"
+                size={20}
+                color={pickerQuery.trim().length === 0 ? '#bbb' : theme.accent}
+              />
+            </Pressable>
+          </View>
 
           <View style={styles.pickerChipRowMain}>
             <View style={styles.pickerChipRowLeft}>
@@ -2037,6 +2160,21 @@ export default function PlannerScreen() {
                 >
                   Wil proberen
                 </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.pickerChip, pickerAiIds ? pickerChipOnStyle : null]}
+                onPress={() => {
+                  void handlePickerDiscover();
+                }}
+                disabled={!pickerAiIds && (pickerQuery.trim().length < 5 || pickerAiLoading)}
+              >
+                {pickerAiLoading ? (
+                  <ActivityIndicator size="small" color={theme.accentSoftText} />
+                ) : (
+                  <Text style={[styles.pickerChipText, pickerAiIds ? pickerChipTextOnStyle : null]}>
+                    AI zoeken
+                  </Text>
+                )}
               </Pressable>
             </View>
             <Pressable
@@ -2078,6 +2216,7 @@ export default function PlannerScreen() {
                     ...prev,
                     [date]: {
                       recipeId: item.id,
+                      labelText: null,
                       servings: prev[date]?.servings ?? defaultServings,
                       cooksForDays: prev[date]?.cooksForDays ?? 1,
                       leftoverOfDate: null,
@@ -2134,6 +2273,7 @@ export default function PlannerScreen() {
                           ...prev,
                           [date]: {
                             recipeId: opt.recipeId,
+                            labelText: null,
                             servings: prev[date]?.servings ?? opt.servings ?? 2,
                             cooksForDays: 1,
                             leftoverOfDate: opt.sourceDate,
@@ -2986,6 +3126,31 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     marginTop: 8,
     marginBottom: 10,
+  },
+  pickerSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  pickerSearchInput: {
+    flex: 1,
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  pickerLabelBtn: {
+    marginLeft: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2ddd5',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickerLabelBtnOff: {
+    backgroundColor: '#f7f5f1',
   },
   pickerChipRowMain: {
     flexDirection: 'row',

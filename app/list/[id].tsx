@@ -1,4 +1,10 @@
-import { useFocusEffect , useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import {
+  useFocusEffect,
+  useLocalSearchParams,
+  useNavigation,
+  usePreventRemove,
+  useRouter,
+} from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -80,14 +86,9 @@ export default function ListDetailScreen() {
     setAddOpen(false);
   }, []);
 
-  useEffect(() => {
-    const unsub = navigation.addListener('beforeRemove', (e: any) => {
-      if (!addOpen) return;
-      e.preventDefault();
-      closeAdd();
-    });
-    return unsub;
-  }, [addOpen, closeAdd, navigation]);
+  usePreventRemove(addOpen, () => {
+    closeAdd();
+  });
 
   const toggleSelected = useCallback((recipeId: number) => {
     setSelectedIds((prev) => {

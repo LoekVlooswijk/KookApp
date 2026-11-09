@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Swipeable } from 'react-native-gesture-handler';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useBottomTabBarHeight } from 'expo-router/react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -331,11 +331,11 @@ export default function ShoppingScreen() {
               : (item.unit ?? '').trim();
           const showOrganic = isAlwaysOrganicItemName(item.name, organicSet);
           return (
-            <Swipeable
+            <ReanimatedSwipeable
               renderRightActions={() => renderRightActions(item)}
               overshootRight={false}
-              activeOffsetX={[-22, 22]}
-              failOffsetY={[-14, 14]}
+              dragOffsetFromLeft={22}
+              dragOffsetFromRight={-22}
             >
               <View style={styles.row}>
                 <Pressable
@@ -380,11 +380,11 @@ export default function ShoppingScreen() {
                   {qty ? <Text style={styles.qty}>{qty}</Text> : null}
                 </Pressable>
               </View>
-            </Swipeable>
+            </ReanimatedSwipeable>
           );
         }}
         ListFooterComponent={
-          sections[0].data.length === 0 && sections[1].data.length === 0 ? null : (
+          sections[0].data.length === 0 && sections[1].data.length === 0 ? undefined : (
             <View style={{ height: 12 }} />
           )
         }

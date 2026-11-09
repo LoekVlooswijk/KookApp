@@ -12,14 +12,15 @@ export type DiscoveredRecipe = {
 function formatRecipesForAi(
   recipes: { id: number; title: string; tags?: string[]; category?: string | null }[]
 ): string {
-  return JSON.stringify({
-    recipes: recipes.map((r) => ({
-      id: r.id,
-      title: r.title,
-      tags: r.tags ?? [],
-      category: r.category ?? null,
-    })),
-  });
+  // Leesbare platte lijst i.p.v. één gecomprimeerde JSON-regel: robuuster voor het model.
+  return recipes
+    .map((r) => {
+      const bits = [r.category?.trim() ?? '', (r.tags ?? []).join(', ')]
+        .filter((x) => x.length > 0)
+        .join(' | ');
+      return bits ? `${r.id} | ${r.title} | ${bits}` : `${r.id} | ${r.title}`;
+    })
+    .join('\n');
 }
 
 /** Parse AI response to extract recipe IDs */
@@ -60,7 +61,9 @@ export async function discoverRecipes(query: string): Promise<DiscoveredRecipe[]
     "Je bent een keukenassistent. Geef de beste recept-matches voor een zoekopdracht. Retourneer ALLEEN een JSON-array met de recept-ID's, gerangschikt op relevantie. Gebruik geen andere tekst.";
 
   const userPrompt = `Zoekopdracht: "${query}"
-Recepten: ${recipesForAi}
+
+RECEPTEN (één per regel: id | titel | categorie | tags):
+${recipesForAi}
 
 Geef de beste matches als JSON-array: [id1, id2, id3, ...]`;
 

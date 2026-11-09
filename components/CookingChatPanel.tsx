@@ -1,5 +1,5 @@
 import { Link } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ComponentRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,12 +18,12 @@ import { callAiChat, hasActiveAiKey, type AiChatTurn } from '../lib/aiClient';
 import { buildCookingSystemPrompt } from '../lib/cookingAssistant';
 import { applyAdjustmentFromChat } from '../lib/recipeAdjust';
 import { applyAiAdjustedRecipe } from '../lib/recipesRepo';
-import { 
-  loadChatHistory, 
-  saveChatMessage, 
+import {
+  loadChatHistory,
+  saveChatMessage,
   getOrCreateChatSession,
   chatMessageToAiTurn,
-  type ChatSession 
+  type ChatSession,
 } from '../lib/chatSessionRepo';
 import type { FullRecipe } from '../lib/types';
 import { ChatSheetKeyboardWrap } from './ChatSheetKeyboardWrap';
@@ -62,7 +62,7 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
   const [adjustSuggested, setAdjustSuggested] = useState(false);
   const [applying, setApplying] = useState(false);
   const [chatSession, setChatSession] = useState<ChatSession | null>(null);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const sendInFlightRef = useRef(false);
 
   const closePanel = useCallback(() => {
@@ -85,7 +85,7 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
   /** Load chat history when panel opens */
   useEffect(() => {
     if (!open || recipeId == null) return;
-    
+
     void (async () => {
       try {
         const history = await loadChatHistory(recipeId, servings);
@@ -107,7 +107,7 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
   /** Bij ander recept of andere porties: chat leegmaken (andere context). */
   useEffect(() => {
     if (!open) return;
-    
+
     void (async () => {
       try {
         // Load history for new recipe/servings
@@ -174,7 +174,7 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
         const assistantTurn: AiChatTurn = { role: 'assistant', text: clean };
         setTurns([...nextHistory, assistantTurn]);
         setAdjustSuggested(isAdjustment);
-        
+
         // Save assistant message to DB if we have a session
         if (chatSession) {
           try {

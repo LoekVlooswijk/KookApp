@@ -464,8 +464,16 @@ const MISTRAL_CHAT_URL = 'https://api.mistral.ai/v1/chat/completions';
 
 // ---------------- Gemini ----------------
 
-const GEMINI_CHAT_NON_STREAM_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/chat:generateMessage';
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+
+/**
+ * generateContent zet het model in het pad; een `model`-veld in de body is
+ * ongeldig voor deze endpoint.
+ */
+function geminiGenerateContentUrl(modelId: string): string {
+  const m = modelId.replace(/^models\//, '').trim();
+  return `${GEMINI_API_BASE}/models/${encodeURIComponent(m)}:generateContent`;
+}
 
 function approxGeminiTextChars(body: Record<string, unknown>): number {
   let n = 0;
@@ -497,8 +505,13 @@ async function fetchGemini(
   body: Record<string, unknown>,
   debug?: { tag?: string }
 ): Promise<{ ok: true; raw: string } | AiErr> {
-  const wireJson = JSON.stringify(body);
-  const model = typeof body.model === 'string' ? body.model : undefined;
+  const { model: modelField, ...wireBody } = body;
+  const model = typeof modelField === 'string' ? modelField.trim() : '';
+  if (!model) {
+    return { ok: false, message: 'Geen Gemini-model opgegeven.' };
+  }
+  const url = geminiGenerateContentUrl(model);
+  const wireJson = JSON.stringify(wireBody);
   const systemChars =
     typeof body.system_instruction === 'string' ? body.system_instruction.length : 0;
   const userTextCharsApprox = approxGeminiTextChars(body);
@@ -506,7 +519,7 @@ async function fetchGemini(
   const t0 = Date.now();
   let res: Response;
   try {
-    res = await fetch(GEMINI_CHAT_NON_STREAM_URL + '?key=' + apiKey, {
+    res = await fetch(url + '?key=' + apiKey, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -518,7 +531,7 @@ async function fetchGemini(
       recordAiRequestLog({
         provider: 'gemini',
         tag: debug?.tag,
-        url: GEMINI_CHAT_NON_STREAM_URL,
+        url: url,
         model,
         okHttp: false,
         requestJsonChars: wireJson.length,
@@ -558,7 +571,7 @@ async function fetchGemini(
     recordAiRequestLog({
       provider: 'gemini',
       tag: debug?.tag,
-      url: GEMINI_CHAT_NON_STREAM_URL,
+      url: url,
       model,
       httpStatus: res.status,
       okHttp: res.ok,
@@ -673,8 +686,9 @@ async function callGeminiChat(params: {
     return { ok: false, message: 'Ongeldige chat: begin met een gebruikersbericht.' };
   }
 
+  // Gemini generateContent kent alleen de rollen "user" en "model".
   const contents = params.messages.map((m) => ({
-    role: m.role,
+    role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: m.text }],
   }));
 

@@ -1,5 +1,5 @@
 import { Link } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ComponentRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,12 +16,12 @@ import {
 import { callAiChat, hasActiveAiKey, type AiChatTurn } from '../lib/aiClient';
 import { buildAdjustChatSystemPrompt, applyAdjustmentFromChat } from '../lib/recipeAdjust';
 import { applyAiAdjustedRecipe } from '../lib/recipesRepo';
-import { 
-  loadChatHistory, 
-  saveChatMessage, 
+import {
+  loadChatHistory,
+  saveChatMessage,
   getOrCreateChatSession,
   chatMessageToAiTurn,
-  type ChatSession 
+  type ChatSession,
 } from '../lib/chatSessionRepo';
 import type { FullRecipe } from '../lib/types';
 import { ChatSheetKeyboardWrap } from './ChatSheetKeyboardWrap';
@@ -40,7 +40,14 @@ type Props = {
   servings?: number;
 };
 
-export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied, servings = recipe.baseServings ?? 1 }: Props) {
+export function RecipeAdjustChat({
+  recipe,
+  recipeId,
+  visible,
+  onClose,
+  onApplied,
+  servings = recipe.baseServings ?? 1,
+}: Props) {
   const theme = useAppTheme();
   const [turns, setTurns] = useState<AiChatTurn[]>([]);
   const [input, setInput] = useState('');
@@ -49,7 +56,7 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
   const [error, setError] = useState<string | null>(null);
   const [hasKey, setHasKey] = useState(false);
   const [chatSession, setChatSession] = useState<ChatSession | null>(null);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const sendInFlightRef = useRef(false);
 
   const systemPrompt = useMemo(() => buildAdjustChatSystemPrompt(recipe), [recipe]);
@@ -64,7 +71,7 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
   /** Load chat history when panel becomes visible */
   useEffect(() => {
     if (!visible || recipeId == null) return;
-    
+
     void (async () => {
       try {
         const history = await loadChatHistory(recipeId, servings);
@@ -130,7 +137,7 @@ export function RecipeAdjustChat({ recipe, recipeId, visible, onClose, onApplied
         }
         const assistantTurn: AiChatTurn = { role: 'assistant', text: res.text.trim() };
         setTurns([...nextHistory, assistantTurn]);
-        
+
         // Save assistant message to DB if we have a session
         if (chatSession) {
           try {

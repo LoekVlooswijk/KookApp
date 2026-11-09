@@ -470,12 +470,7 @@ export async function extractRecipeFromPageHtml(
       : filterRecipePageHtml(html);
   const clip = clipHtmlForModel(filtered);
 
-  const debug =
-    `debug_chars: filtered=${filtered.length} clipped=${clip.clipped.length}` +
-    (preferJsonLdOnly
-      ? ` jsonld_scripts=${jsonLdChunks.length} recipe_only=${recipeOnly.length > 0}`
-      : '');
-  const user = `Bron-URL: ${sourceUrl}\n${debug}\n\nHTML:\n\n${clip.clipped}`;
+  const user = `Bron-URL: ${sourceUrl}\n\nHTML:\n\n${clip.clipped}`;
 
   const ai = await callAiText({
     system: EXTRACT_SYSTEM_PROMPT,

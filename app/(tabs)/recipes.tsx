@@ -1,4 +1,4 @@
-import { useFocusEffect , Link, useRouter } from 'expo-router';
+import { useFocusEffect, Link, useRouter } from 'expo-router';
 import Slider from '@react-native-community/slider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -27,6 +27,7 @@ import { RecipeListThumb } from '../../components/RecipeListThumb';
 import { useAppTheme } from '../../components/ThemeContext';
 import { getAiCookProfile, hydrateAiCookProfileFromDb } from '../../lib/aiCookProfile';
 import { ensureDatabaseAsync } from '../../lib/db';
+import { isBioScoreEnabled } from '../../lib/bioScoreEnabledPrefs';
 import { safeErrorMessage } from '../../lib/logSafe';
 import { getCustomDiets } from '../../lib/dietPrefs';
 import {
@@ -374,6 +375,7 @@ export default function RecipesScreen() {
   }, [browseFilters, discoveredIds]);
 
   const [items, setItems] = useState<RecipeListItem[]>(emptyRecipeList);
+  const [bioEnabled, setBioEnabled] = useState(isBioScoreEnabled());
   const [totalRecipeCount, setTotalRecipeCount] = useState(0);
 
   useEffect(() => {
@@ -521,6 +523,7 @@ export default function RecipesScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setBioEnabled(isBioScoreEnabled());
       refresh();
     }, [refresh])
   );
@@ -1012,7 +1015,7 @@ export default function RecipesScreen() {
                         />
                       </Pressable>
 
-                      {item.bioScoreColor ? (
+                      {bioEnabled && item.bioScoreColor ? (
                         <Ionicons
                           name="leaf"
                           size={16}

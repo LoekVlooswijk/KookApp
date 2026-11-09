@@ -13,6 +13,7 @@ import {
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
+import { hydrateBioScoreEnabledFromDb, isBioScoreEnabled } from '../../lib/bioScoreEnabledPrefs';
 import type { BioScoreOverride } from '../../lib/bioScoreOverridesPrefs';
 import {
   getBioScoreOverridesList,
@@ -40,6 +41,7 @@ export default function BioScoreOverridesSettingsScreen() {
   const web = Platform.OS === 'web';
 
   const [overrides, setOverrides] = useState<BioScoreOverride[]>([]);
+  const [enabled, setEnabled] = useState(true);
   const [nameInput, setNameInput] = useState('');
   const [locality, setLocality] = useState<BioScoreOverride['l']>('G');
   const [pesticide, setPesticide] = useState<BioScoreOverride['p']>('L');
@@ -48,6 +50,8 @@ export default function BioScoreOverridesSettingsScreen() {
     void (async () => {
       await ensureDatabaseAsync();
       await hydrateBioScoreOverridesPrefsFromDb();
+      await hydrateBioScoreEnabledFromDb();
+      setEnabled(isBioScoreEnabled());
       setOverrides([...getBioScoreOverridesList()]);
     })();
   }, []);
@@ -102,99 +106,110 @@ export default function BioScoreOverridesSettingsScreen() {
     >
       <ConfirmDialog />
 
-      <Text style={styles.lead}>
-        Vaste scores gelden bij elke herberekening. Herkomst: G = NL/BE/DE, O = rest Europa, R =
-        wereld. Pesticide: L/M/H.
-      </Text>
-
-      {web ? (
-        <View style={styles.notice}>
-          <Text style={styles.noticeText}>
-            Op web worden instellingen alleen weergegeven. Gebruik iOS of Android om op te slaan.
+      {!enabled ? (
+        <View style={styles.offNotice}>
+          <Text style={styles.offNoticeText}>
+            Bio-score staat uit. Zet hem bovenaan in de bio-score-instellingen aan om blaadjes en
+            scores weer te gebruiken. Bestaande scores blijven bewaard.
           </Text>
         </View>
       ) : null}
 
-      <Text style={styles.label}>Productnaam</Text>
-      <TextInput
-        style={[styles.input, web && styles.inputDisabled]}
-        value={nameInput}
-        onChangeText={setNameInput}
-        placeholder="Bijv. zoete aardappel"
-        placeholderTextColor="#999"
-        editable={!web}
-      />
+      <View style={!enabled && styles.disabledSection} pointerEvents={enabled ? 'auto' : 'none'}>
+        <Text style={styles.lead}>
+          Vaste scores gelden bij elke herberekening. Herkomst: G = NL/BE/DE, O = rest Europa, R =
+          wereld. Pesticide: L/M/H.
+        </Text>
 
-      <Text style={styles.subLabel}>Herkomst</Text>
-      <View style={styles.chipRow}>
-        {LOCALITY_OPTIONS.map((opt) => {
-          const on = locality === opt.id;
-          return (
-            <Pressable
-              key={opt.id}
-              style={[styles.chip, on && chipOn]}
-              onPress={() => setLocality(opt.id)}
-              disabled={web}
-            >
-              <Text style={[styles.chipText, on && chipTextOn]}>
-                {opt.id} · {opt.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <Text style={styles.subLabel}>Pesticide</Text>
-      <View style={styles.chipRow}>
-        {PESTICIDE_OPTIONS.map((opt) => {
-          const on = pesticide === opt.id;
-          return (
-            <Pressable
-              key={opt.id}
-              style={[styles.chip, on && chipOn]}
-              onPress={() => setPesticide(opt.id)}
-              disabled={web}
-            >
-              <Text style={[styles.chipText, on && chipTextOn]}>
-                {opt.id} · {opt.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <Pressable
-        style={[styles.btnPrimary, { backgroundColor: theme.accent }, web && styles.btnDisabled]}
-        onPress={onAdd}
-        disabled={web}
-      >
-        <Text style={styles.btnPrimaryText}>Toevoegen of bijwerken</Text>
-      </Pressable>
-
-      <Text style={styles.section}>Opgeslagen productscores</Text>
-      {overrides.length === 0 ? (
-        <Text style={styles.empty}>Nog geen vaste scores.</Text>
-      ) : (
-        overrides.map((ov) => (
-          <View key={ov.n} style={[styles.overrideRow, { borderColor: theme.accentBorderMuted }]}>
-            <View style={styles.overrideMain}>
-              <Text style={styles.overrideName}>{ov.n}</Text>
-              <Text style={styles.overrideMeta}>
-                herkomst {ov.l} · pesticide {ov.p}
-              </Text>
-            </View>
-            <Pressable
-              style={styles.removeBtn}
-              onPress={() => onRemove(ov.n)}
-              disabled={web}
-              accessibilityRole="button"
-              accessibilityLabel={`${ov.n} verwijderen`}
-            >
-              <Text style={styles.removeBtnText}>Verwijder</Text>
-            </Pressable>
+        {web ? (
+          <View style={styles.notice}>
+            <Text style={styles.noticeText}>
+              Op web worden instellingen alleen weergegeven. Gebruik iOS of Android om op te slaan.
+            </Text>
           </View>
-        ))
-      )}
+        ) : null}
+
+        <Text style={styles.label}>Productnaam</Text>
+        <TextInput
+          style={[styles.input, web && styles.inputDisabled]}
+          value={nameInput}
+          onChangeText={setNameInput}
+          placeholder="Bijv. zoete aardappel"
+          placeholderTextColor="#999"
+          editable={!web && enabled}
+        />
+
+        <Text style={styles.subLabel}>Herkomst</Text>
+        <View style={styles.chipRow}>
+          {LOCALITY_OPTIONS.map((opt) => {
+            const on = locality === opt.id;
+            return (
+              <Pressable
+                key={opt.id}
+                style={[styles.chip, on && chipOn]}
+                onPress={() => setLocality(opt.id)}
+                disabled={web || !enabled}
+              >
+                <Text style={[styles.chipText, on && chipTextOn]}>
+                  {opt.id} · {opt.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={styles.subLabel}>Pesticide</Text>
+        <View style={styles.chipRow}>
+          {PESTICIDE_OPTIONS.map((opt) => {
+            const on = pesticide === opt.id;
+            return (
+              <Pressable
+                key={opt.id}
+                style={[styles.chip, on && chipOn]}
+                onPress={() => setPesticide(opt.id)}
+                disabled={web || !enabled}
+              >
+                <Text style={[styles.chipText, on && chipTextOn]}>
+                  {opt.id} · {opt.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Pressable
+          style={[styles.btnPrimary, { backgroundColor: theme.accent }, web && styles.btnDisabled]}
+          onPress={onAdd}
+          disabled={web || !enabled}
+        >
+          <Text style={styles.btnPrimaryText}>Toevoegen of bijwerken</Text>
+        </Pressable>
+
+        <Text style={styles.section}>Opgeslagen productscores</Text>
+        {overrides.length === 0 ? (
+          <Text style={styles.empty}>Nog geen vaste scores.</Text>
+        ) : (
+          overrides.map((ov) => (
+            <View key={ov.n} style={[styles.overrideRow, { borderColor: theme.accentBorderMuted }]}>
+              <View style={styles.overrideMain}>
+                <Text style={styles.overrideName}>{ov.n}</Text>
+                <Text style={styles.overrideMeta}>
+                  herkomst {ov.l} · pesticide {ov.p}
+                </Text>
+              </View>
+              <Pressable
+                style={styles.removeBtn}
+                onPress={() => onRemove(ov.n)}
+                disabled={web || !enabled}
+                accessibilityRole="button"
+                accessibilityLabel={`${ov.n} verwijderen`}
+              >
+                <Text style={styles.removeBtnText}>Verwijder</Text>
+              </Pressable>
+            </View>
+          ))
+        )}
+      </View>
     </ScrollView>
   );
 }
@@ -212,6 +227,16 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   noticeText: { fontSize: 14, color: '#6b5a1e', lineHeight: 20 },
+  offNotice: {
+    backgroundColor: '#fdeeee',
+    borderWidth: 1,
+    borderColor: '#e3b9b9',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  offNoticeText: { fontSize: 14, color: '#7a3232', lineHeight: 20 },
+  disabledSection: { opacity: 0.45 },
   label: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', marginBottom: 6 },
   subLabel: { fontSize: 14, fontWeight: '700', color: '#444', marginTop: 8, marginBottom: 8 },
   input: {

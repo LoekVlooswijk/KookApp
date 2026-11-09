@@ -1,4 +1,4 @@
-import { useFocusEffect , useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
@@ -8,6 +8,7 @@ import { useAppTheme } from '../../components/ThemeContext';
 import { hydrateAiCookProfileFromDb } from '../../lib/aiCookProfile';
 import { hydrateAiPrefsFromDb } from '../../lib/aiPrefs';
 import { ensureDatabaseAsync } from '../../lib/db';
+import { hydrateBioScoreEnabledFromDb } from '../../lib/bioScoreEnabledPrefs';
 import { hydrateBioScoreExcludePrefsFromDb } from '../../lib/bioScoreExcludePrefs';
 import { hydrateBioScoreOverridesPrefsFromDb } from '../../lib/bioScoreOverridesPrefs';
 import { hydrateBioScoreThresholdsFromDb } from '../../lib/bioScoreThresholdsPrefs';
@@ -131,6 +132,7 @@ export default function SettingsScreen() {
       await hydrateShoppingStaplesPrefsFromDb();
       await hydrateShoppingOrganicPrefsFromDb();
       await hydrateBioScoreThresholdsFromDb();
+      await hydrateBioScoreEnabledFromDb();
       await hydrateBioScoreExcludePrefsFromDb();
       await hydrateBioScoreOverridesPrefsFromDb();
     })();

@@ -1,4 +1,4 @@
-import { useFocusEffect , Link, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -25,10 +25,11 @@ import {
   recomputeBioScoreFromPreparedItems,
 } from '../../../lib/bioScore';
 import { addToBioScoreExcludeList } from '../../../lib/bioScoreExcludePrefs';
+import { isBioScoreEnabled } from '../../../lib/bioScoreEnabledPrefs';
 import { ensureDatabaseAsync } from '../../../lib/db';
 import { checkHasInternet } from '../../../lib/internetCheck';
 import { getRecipeListMembership, setRecipeInList } from '../../../lib/listsRepo';
-import { effectiveBaseServings , servingFactor } from '../../../lib/scaling';
+import { effectiveBaseServings, servingFactor } from '../../../lib/scaling';
 import {
   deleteRecipe,
   getFullRecipe,
@@ -68,6 +69,7 @@ export default function RecipeDetailScreen() {
   >([]);
   const [bioDetailsOpen, setBioDetailsOpen] = useState(false);
   const [bioRecomputeBusy, setBioRecomputeBusy] = useState(false);
+  const [bioEnabled, setBioEnabled] = useState(isBioScoreEnabled());
 
   /** Eerste focus per recept: alleen `useEffect` laadt data; volgende focus = verversen (o.a. na bewerken). */
   const recipeDetailInitialFocus = useRef(true);
@@ -109,6 +111,7 @@ export default function RecipeDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setBioEnabled(isBioScoreEnabled());
       refreshLists();
       if (recipeDetailInitialFocus.current) {
         recipeDetailInitialFocus.current = false;
@@ -335,7 +338,7 @@ export default function RecipeDetailScreen() {
         ) : null}
         <View style={styles.titleRow}>
           <Text style={styles.title}>{recipe.title}</Text>
-          {recipe.bioScoreColor ? (
+          {bioEnabled && recipe.bioScoreColor ? (
             <Pressable
               style={styles.titleLeafWrap}
               onPress={() => setBioDetailsOpen(true)}
@@ -454,7 +457,10 @@ export default function RecipeDetailScreen() {
           </Pressable>
         </View>
 
-        {recipe.bioScoreColor && recipe.bioScoreItems && recipe.bioScoreItems.length > 0 ? (
+        {bioEnabled &&
+        recipe.bioScoreColor &&
+        recipe.bioScoreItems &&
+        recipe.bioScoreItems.length > 0 ? (
           <Pressable
             style={[styles.bioDetailsBtn, { borderColor: theme.accentBorderMuted }]}
             onPress={() => setBioDetailsOpen(true)}
@@ -670,7 +676,7 @@ export default function RecipeDetailScreen() {
       />
 
       <Modal
-        visible={bioDetailsOpen}
+        visible={bioEnabled && bioDetailsOpen}
         animationType="slide"
         onRequestClose={() => setBioDetailsOpen(false)}
       >

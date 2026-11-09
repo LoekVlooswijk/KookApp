@@ -11,6 +11,7 @@ import { hydrateAiPrefsFromDb } from '../lib/aiPrefs';
 import { hydrateAiRequestLogPrefsFromDb } from '../lib/aiRequestLogPrefs';
 import { closeAndResetDatabaseConnectionAsync, ensureDatabaseAsync } from '../lib/db';
 import { seedCookingTimesIfEmpty, seedTechniquesIfEmpty } from '../lib/knowledgeSeeds';
+import { hydrateBioScoreEnabledFromDb } from '../lib/bioScoreEnabledPrefs';
 import { hydrateBioScoreExcludePrefsFromDb } from '../lib/bioScoreExcludePrefs';
 import { hydrateBioScoreOverridesPrefsFromDb } from '../lib/bioScoreOverridesPrefs';
 import { hydrateBioScoreThresholdsFromDb } from '../lib/bioScoreThresholdsPrefs';
@@ -65,6 +66,7 @@ export default function RootLayout() {
     await hydrateAiRequestLogPrefsFromDb();
     await hydrateShoppingStaplesPrefsFromDb();
     await hydrateBioScoreThresholdsFromDb();
+    await hydrateBioScoreEnabledFromDb();
     await hydrateBioScoreExcludePrefsFromDb();
     await hydrateBioScoreOverridesPrefsFromDb();
     await seedTechniquesIfEmpty();

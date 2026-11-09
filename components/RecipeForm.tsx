@@ -35,6 +35,7 @@ import {
   assessProduceLocalityAndPesticides,
   finalizeBioScoreFromAssessment,
 } from '../lib/bioScore';
+import { isBioScoreEnabled } from '../lib/bioScoreEnabledPrefs';
 import {
   createRecipe,
   fullRecipeToPayload,
@@ -209,6 +210,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
   const [bioScoreItems, setBioScoreItems] = useState<RecipeSavePayload['bioScoreItems']>(null);
   const [bioScoreUpdatedAt, setBioScoreUpdatedAt] = useState<string | null>(null);
   const [bioBusy, setBioBusy] = useState(false);
+  const [bioEnabled, setBioEnabled] = useState(isBioScoreEnabled());
   const [notes, setNotes] = useState('');
   const [imageUri, setImageUri] = useState('');
   const [pickingCover, setPickingCover] = useState(false);
@@ -790,7 +792,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
           placeholder="Bijv. Pasta pesto"
         />
 
-        {recipeId && !bioScoreColor ? (
+        {recipeId && bioEnabled && !bioScoreColor ? (
           <View style={styles.bioRow}>
             <Pressable
               style={[

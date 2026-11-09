@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../../../components/ThemeContext';
 import {
   IconArrowLeft,
+  IconClock,
   IconFlame,
   IconHerb,
   IconPlus,
@@ -59,6 +60,8 @@ export default function SheetDetailScreen() {
     if (k === 'ochre') return KennisColors.ochre;
     if (k === 'rust') return KennisColors.rust;
     if (k === 'sky') return KennisColors.sky;
+    if (k === 'clay') return KennisColors.clay;
+    if (k === 'lavender') return KennisColors.lavender;
     return KennisColors.greenSoft;
   }, [sheet?.accent]);
 
@@ -69,6 +72,7 @@ export default function SheetDetailScreen() {
     if (k === 'thermometer') return IconThermometer;
     if (k === 'swap') return IconSwap;
     if (k === 'flame') return IconFlame;
+    if (k === 'clock') return IconClock;
     return null;
   }, [sheet?.icon]);
 

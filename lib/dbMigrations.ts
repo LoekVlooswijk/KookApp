@@ -459,6 +459,27 @@ async function migration12(db: MigrationDb) {
   `);
 }
 
+/** Kennisbank-sheet: Kooktijden. Technieken wordt half-breed zodat rij 3 twee tegels heeft. */
+async function migration13(db: MigrationDb) {
+  await db.runAsync(
+    `UPDATE knowledge_tags
+     SET is_wide = 0
+     WHERE name = ?`,
+    ['Technieken']
+  );
+  await db.runAsync(
+    `INSERT OR IGNORE INTO knowledge_tags (name, is_pinned, sort_order, icon, accent, is_wide)
+     VALUES (?, 1, 6, 'clock', 'lavender', 0)`,
+    ['Kooktijden']
+  );
+  await db.runAsync(
+    `UPDATE knowledge_tags
+     SET is_pinned = 1, sort_order = 6, icon = 'clock', accent = 'lavender', is_wide = 0
+     WHERE name = ?`,
+    ['Kooktijden']
+  );
+}
+
 const MIGRATIONS: Record<number, (db: MigrationDb) => Promise<void>> = {
   1: migration1,
   2: migration2,
@@ -472,6 +493,7 @@ const MIGRATIONS: Record<number, (db: MigrationDb) => Promise<void>> = {
   10: migration10,
   11: migration11,
   12: migration12,
+  13: migration13,
 };
 
 export const MAX_MIGRATION_VERSION = Math.max(

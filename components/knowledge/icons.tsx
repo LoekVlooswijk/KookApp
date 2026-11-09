@@ -196,3 +196,13 @@ export function IconFlame(p: IconProps) {
     </BaseIcon>
   );
 }
+
+export function IconClock(p: IconProps) {
+  return (
+    <BaseIcon {...p}>
+      <Circle cx="12" cy="13" r="8" />
+      <Path d="M12 9v4l2.5 2.5" />
+      <Path d="M9 2.5h6" />
+    </BaseIcon>
+  );
+}

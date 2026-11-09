@@ -22,4 +22,30 @@ describe('dbMigrations (sql.js)', () => {
     expect(v2).toBe(v1);
     expect(v2).toBe(MAX_MIGRATION_VERSION);
   });
+
+  it('adds the Kooktijden sheet next to Technieken on the kennis grid', async () => {
+    const { migrationDb } = await openSqlJsMigrationDb();
+    await prepareDatabaseSchemaAsync(migrationDb);
+    const kooktijden = await migrationDb.getFirstAsync<{
+      is_pinned: number;
+      sort_order: number;
+      icon: string | null;
+      accent: string | null;
+      is_wide: number;
+    }>(
+      `SELECT is_pinned, sort_order, icon, accent, is_wide FROM knowledge_tags WHERE name = 'Kooktijden'`
+    );
+    expect(kooktijden).toEqual({
+      is_pinned: 1,
+      sort_order: 6,
+      icon: 'clock',
+      accent: 'lavender',
+      is_wide: 0,
+    });
+
+    const technieken = await migrationDb.getFirstAsync<{ is_wide: number; sort_order: number }>(
+      `SELECT is_wide, sort_order FROM knowledge_tags WHERE name = 'Technieken'`
+    );
+    expect(technieken).toEqual({ is_wide: 0, sort_order: 5 });
+  });
 });

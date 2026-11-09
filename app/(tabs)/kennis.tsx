@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   IconClose,
   IconFlame,
+  IconClock,
   IconHerb,
   IconPin,
   IconPlus,
@@ -81,6 +82,7 @@ function SheetTile({ sheet, onPress }: { sheet: KnowledgeTagRow; onPress: () => 
     if (k === 'rust') return KennisColors.rust;
     if (k === 'sky') return KennisColors.sky;
     if (k === 'clay') return KennisColors.clay;
+    if (k === 'lavender') return KennisColors.lavender;
     return KennisColors.greenSoft;
   }, [sheet.accent]);
 
@@ -91,6 +93,7 @@ function SheetTile({ sheet, onPress }: { sheet: KnowledgeTagRow; onPress: () => 
     if (k === 'thermometer') return IconThermometer;
     if (k === 'swap') return IconSwap;
     if (k === 'flame') return IconFlame;
+    if (k === 'clock') return IconClock;
     return null;
   }, [sheet.icon]);
 

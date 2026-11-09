@@ -14,6 +14,7 @@ export const KennisColors = {
   rust: '#F1D8C9',
   sky: '#D9E2EA',
   clay: '#E8CFC2',
+  lavender: '#E0DDEC',
   searchMark: '#FFE9A8',
 } as const;
 

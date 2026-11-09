@@ -10,7 +10,7 @@ import { hydrateAiCookProfileFromDb } from '../lib/aiCookProfile';
 import { hydrateAiPrefsFromDb } from '../lib/aiPrefs';
 import { hydrateAiRequestLogPrefsFromDb } from '../lib/aiRequestLogPrefs';
 import { closeAndResetDatabaseConnectionAsync, ensureDatabaseAsync } from '../lib/db';
-import { seedTechniquesIfEmpty } from '../lib/knowledgeSeeds';
+import { seedCookingTimesIfEmpty, seedTechniquesIfEmpty } from '../lib/knowledgeSeeds';
 import { hydrateBioScoreExcludePrefsFromDb } from '../lib/bioScoreExcludePrefs';
 import { hydrateBioScoreOverridesPrefsFromDb } from '../lib/bioScoreOverridesPrefs';
 import { hydrateBioScoreThresholdsFromDb } from '../lib/bioScoreThresholdsPrefs';
@@ -68,6 +68,7 @@ export default function RootLayout() {
     await hydrateBioScoreExcludePrefsFromDb();
     await hydrateBioScoreOverridesPrefsFromDb();
     await seedTechniquesIfEmpty();
+    await seedCookingTimesIfEmpty();
   }, []);
 
   useEffect(() => {

@@ -84,3 +84,7 @@ De volledige product- en technisch-specificatie staat in `kookapp_plan_v2.html` 
 ## Bijdragen
 
 Pull requests zijn welkom. Houd je aan `npm run verify` (moet groen zijn) en gebruik kleine, feature-scoped commits. Backwardscompatibiliteit van opgeslagen data en exports staat centraal — zie `AGENTS.md` voor het DB- en export-contract.
+
+## Licentie
+
+De code valt onder de [PolyForm Noncommercial License 1.0.0](LICENSE) — iedereen mag de app gebruiken, aanpassen en delen, zolang het gebruik niet-commercieel is. Zie `LICENSE` voor de volledige voorwaarden.

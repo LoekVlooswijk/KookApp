@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useLocalSearchParams, usePreventRemove, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 
 import { useAppTheme } from '../../components/ThemeContext';
+import RecipeWebViewLoader from '../../components/RecipeWebViewLoader';
 import type { AiImageMediaType } from '../../lib/aiClient';
 import { hasActiveAiKey } from '../../lib/aiClient';
 import {
@@ -94,7 +95,6 @@ async function downscaleForVision(asset: ImagePicker.ImagePickerAsset): Promise<
 
 export default function ImportRecipeScreen() {
   const theme = useAppTheme();
-  const navigation = useNavigation();
   const router = useRouter();
   const params = useLocalSearchParams<{ saved?: string | string[] }>();
   const [tab, setTab] = useState<'url' | 'foto' | 'receptfotos'>('url');
@@ -174,39 +174,31 @@ export default function ImportRecipeScreen() {
     })();
   }, []);
 
-  useEffect(() => {
-    const unsub = navigation.addListener('beforeRemove', (e: any) => {
-      if (!importBusy) return;
-      e.preventDefault();
-      Alert.alert(
-        'Even wachten',
-        'De assistent is nog bezig met importeren. Wacht tot dit klaar is.'
-      );
-    });
-    return unsub;
-  }, [importBusy, navigation]);
+  usePreventRemove(importBusy, () => {
+    Alert.alert(
+      'Even wachten',
+      'De assistent is nog bezig met importeren. Wacht tot dit klaar is.'
+    );
+  });
 
-  useEffect(() => {
-    const unsub = navigation.addListener('beforeRemove', (e: any) => {
-      if (importBusy) return;
-      if (tab !== 'receptfotos') return;
-      if (recipeJobRunningRef.current <= 0) return;
-      e.preventDefault();
-      Alert.alert(
-        'Import stoppen?',
-        'Er worden nog recepten geanalyseerd. Als je dit scherm sluit, kunnen imports stoppen.',
-        [
-          { text: 'Blijven', style: 'cancel' },
-          {
-            text: 'Toch sluiten',
-            style: 'destructive',
-            onPress: () => navigation.dispatch(e.data.action),
-          },
-        ]
-      );
-    });
-    return unsub;
-  }, [importBusy, navigation, tab]);
+  const recipeJobsRunning =
+    !importBusy &&
+    tab === 'receptfotos' &&
+    recipeJobs.some((j) => j.status === 'ocr' || j.status === 'extract');
+  usePreventRemove(recipeJobsRunning, ({ repeat }) => {
+    Alert.alert(
+      'Import stoppen?',
+      'Er worden nog recepten geanalyseerd. Als je dit scherm sluit, kunnen imports stoppen.',
+      [
+        { text: 'Blijven', style: 'cancel' },
+        {
+          text: 'Toch sluiten',
+          style: 'destructive',
+          onPress: () => repeat(),
+        },
+      ]
+    );
+  });
 
   const runExtractUrl = useCallback(async () => {
     const okKey = await hasActiveAiKey();
@@ -866,6 +858,7 @@ export default function ImportRecipeScreen() {
         </View>
       </Modal>
 
+      <RecipeWebViewLoader />
       <ScrollView
         style={[styles.scroll, { backgroundColor: theme.background }]}
         contentContainerStyle={styles.content}

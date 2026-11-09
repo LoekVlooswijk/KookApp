@@ -216,7 +216,7 @@ export default function BioScoreSettingsScreen() {
           <Switch
             value={enabled}
             onValueChange={onToggleEnabled}
-            disabled={web || !loaded || !enabled}
+            disabled={web || !loaded}
             accessibilityLabel="Bio-score aan"
           />
         </View>
@@ -328,7 +328,7 @@ export default function BioScoreSettingsScreen() {
           <Pressable
             style={[styles.btnOutline, chipOutline, (web || busy) && styles.btnDisabled]}
             onPress={onComputeMissing}
-            disabled={web || busy || !loaded}
+            disabled={web || busy || !loaded || !enabled}
           >
             <Text style={[styles.btnOutlineText, { color: theme.accent }]}>
               Bio scores berekenen

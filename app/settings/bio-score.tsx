@@ -40,6 +40,15 @@ import {
 } from '../../lib/bioScoreThresholdsPrefs';
 import { ensureDatabaseAsync } from '../../lib/db';
 
+/** Parse a positive whole number from text input; null when invalid/empty. */
+function parsePositiveInt(s: string): number | null {
+  const t = s.trim();
+  if (!t) return null;
+  const n = Number.parseInt(t, 10);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
 export default function BioScoreSettingsScreen() {
   const theme = useAppTheme();
   const router = useRouter();
@@ -55,6 +64,8 @@ export default function BioScoreSettingsScreen() {
   const [busy, setBusy] = useState(false);
   const loadedRef = useRef(false);
   const nextExcludeTextRef = useRef('');
+  const nextOrangeTextRef = useRef('');
+  const nextRedTextRef = useRef('');
 
   const reload = useCallback(() => {
     void (async () => {
@@ -79,25 +90,34 @@ export default function BioScoreSettingsScreen() {
     nextExcludeTextRef.current = excludeText;
   }, [excludeText]);
 
+  useEffect(() => {
+    nextOrangeTextRef.current = orangeText;
+  }, [orangeText]);
+
+  useEffect(() => {
+    nextRedTextRef.current = redText;
+  }, [redText]);
+
   useFocusEffect(
     useCallback(() => {
       reload();
       return () => {
         if (web || !loadedRef.current) return;
         void (async () => {
+          // Drempels: opslaan bij teruggaan; ongeldige invoer wordt genegeerd
+          // (de getoonde waarden herstellen zich bij het opnieuw focussen).
+          const oRaw = parsePositiveInt(nextOrangeTextRef.current);
+          const rRaw = parsePositiveInt(nextRedTextRef.current);
+          if (oRaw != null && rRaw != null && rRaw > oRaw) {
+            await setBioScoreThresholds(
+              normalizeBioScoreThresholds({ orangeMin: oRaw, redMin: rRaw })
+            );
+          }
           await setBioScoreExcludeList(bioScoreExcludeTextToList(nextExcludeTextRef.current));
         })();
       };
     }, [reload, web])
   );
-
-  const parsePositiveInt = (s: string): number | null => {
-    const t = s.trim();
-    if (!t) return null;
-    const n = Number.parseInt(t, 10);
-    if (!Number.isFinite(n)) return null;
-    return n;
-  };
 
   const onToggleEnabled = useCallback((next: boolean) => {
     setEnabled(next);
@@ -106,36 +126,6 @@ export default function BioScoreSettingsScreen() {
       await setBioScoreEnabled(next);
     })();
   }, []);
-
-  const onSaveThresholds = useCallback(() => {
-    if (web) return;
-    const oRaw = parsePositiveInt(orangeText);
-    const rRaw = parsePositiveInt(redText);
-    if (oRaw == null || rRaw == null) {
-      Alert.alert(
-        'Ongeldige invoer',
-        'Vul twee hele getallen in (minimaal 1 voor oranje, 2 voor rood).'
-      );
-      return;
-    }
-    if (rRaw <= oRaw) {
-      Alert.alert(
-        'Ongeldige combinatie',
-        'De rode drempel moet hoger zijn dan de oranje drempel. Pas de waarden aan.'
-      );
-      return;
-    }
-    const norm = normalizeBioScoreThresholds({ orangeMin: oRaw, redMin: rRaw });
-    void (async () => {
-      await setBioScoreThresholds(norm);
-      setOrangeText(String(norm.orangeMin));
-      setRedText(String(norm.redMin));
-      Alert.alert(
-        'Opgeslagen',
-        'Nieuwe bio-score drempels worden gebruikt bij de volgende berekening.'
-      );
-    })();
-  }, [orangeText, redText, web]);
 
   const onResetDefaults = useCallback(() => {
     if (web) return;
@@ -261,19 +251,12 @@ export default function BioScoreSettingsScreen() {
             placeholder="4"
             placeholderTextColor="#999"
           />
+          <Text style={styles.lead}>
+            Wijzigingen worden opgeslagen wanneer je teruggaat. Ongeldige combinaties (rood lager
+            dan oranje) worden genegeerd.
+          </Text>
 
           <View style={styles.row}>
-            <Pressable
-              style={[
-                styles.btnPrimary,
-                { backgroundColor: theme.accent },
-                web && styles.btnDisabled,
-              ]}
-              onPress={onSaveThresholds}
-              disabled={web || !loaded || !enabled}
-            >
-              <Text style={styles.btnPrimaryText}>Drempels opslaan</Text>
-            </Pressable>
             <Pressable
               style={[styles.btnOutline, chipOutline, web && styles.btnDisabled]}
               onPress={onResetDefaults}

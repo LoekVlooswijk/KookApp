@@ -16,14 +16,6 @@ export const START_TAB_ORDER: readonly StartTabId[] = [
   'settings',
 ];
 
-export const START_TAB_LABELS: Record<StartTabId, string> = {
-  recipes: 'Recepten',
-  planner: 'Week',
-  shopping: 'Boodschappen',
-  kennis: 'Kennis',
-  settings: 'Instellingen',
-};
-
 const HREF: Record<StartTabId, Href> = {
   recipes: '/(tabs)/recipes',
   planner: '/(tabs)/planner',

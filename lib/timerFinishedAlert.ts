@@ -1,6 +1,9 @@
 import type { AudioPlayer } from 'expo-audio';
 import { Alert, Vibration } from 'react-native';
 
+import { translate } from './i18n';
+import { getLanguageId } from './languagePrefs';
+
 type ExpoAudio = typeof import('expo-audio');
 
 let alarmPlayer: AudioPlayer | null = null;
@@ -72,11 +75,18 @@ export async function stopTimerAlarmSoundIfPlaying(): Promise<void> {
 
 /**
  * Plays a looping alarm, shows the timer alert, and stops the alarm when the user dismisses it.
+ * Alert-teksten volgen de gekozen app-taal (`pref_language`).
  */
 export function showTimerFinishedAlert(finishedCount: number): void {
-  const message = finishedCount > 1 ? 'Meerdere timers zijn afgerond.' : 'Timer is afgerond.';
-
   void (async () => {
+    const lang = await getLanguageId()
+      .catch(() => null)
+      .then((id) => id ?? 'nl');
+    const message = translate(
+      lang,
+      finishedCount > 1 ? 'common.timer.finishedMany' : 'common.timer.finishedOne'
+    );
+
     try {
       await startAlarmSoundLoop();
     } catch {
@@ -87,9 +97,14 @@ export function showTimerFinishedAlert(finishedCount: number): void {
       void stopAlarmSound();
     };
 
-    Alert.alert('Timer', message, [{ text: 'OK', onPress: onClose }], {
-      cancelable: true,
-      onDismiss: onClose,
-    });
+    Alert.alert(
+      translate(lang, 'common.timer.title'),
+      message,
+      [{ text: translate(lang, 'common.timer.ok'), onPress: onClose }],
+      {
+        cancelable: true,
+        onDismiss: onClose,
+      }
+    );
   })();
 }

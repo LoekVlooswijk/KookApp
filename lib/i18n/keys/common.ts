@@ -9,6 +9,12 @@ export const commonNl = {
     ok: 'OK',
     cancel: 'Annuleren',
   },
+  timer: {
+    title: 'Timer',
+    finishedOne: 'Timer is afgerond.',
+    finishedMany: 'Meerdere timers zijn afgerond.',
+    ok: 'OK',
+  },
 } as const;
 
 export const commonEn: Widen<typeof commonNl> = {
@@ -16,4 +22,10 @@ export const commonEn: Widen<typeof commonNl> = {
     ok: 'OK',
     cancel: 'Cancel',
   },
-} as const;
+  timer: {
+    title: 'Timer',
+    finishedOne: 'The timer has finished.',
+    finishedMany: 'Several timers have finished.',
+    ok: 'OK',
+  },
+};

@@ -44,15 +44,15 @@ Open de QR-code met **Expo Go** op je telefoon (zelfde netwerk; anders `npm run 
 
 ### Scripts
 
-| Commando             | Wat het doet                                            |
-| -------------------- | ------------------------------------------------------- |
-| `npm start`          | Expo dev server (LAN)                                   |
-| `npm run start:tunnel` | Expo dev server via tunnel (andere netwerken)         |
-| `npm run verify`     | Volledige poort: typecheck, lint, Prettier check, tests |
-| `npm run typecheck`  | TypeScript-controle                                     |
-| `npm run lint`       | ESLint (`lint:fix` voor auto-fixes)                    |
-| `npm test`           | Jest-testsuite                                          |
-| `npm run format`     | Prettier formatting toepassen                          |
+| Commando               | Wat het doet                                            |
+| ---------------------- | ------------------------------------------------------- |
+| `npm start`            | Expo dev server (LAN)                                   |
+| `npm run start:tunnel` | Expo dev server via tunnel (andere netwerken)           |
+| `npm run verify`       | Volledige poort: typecheck, lint, Prettier check, tests |
+| `npm run typecheck`    | TypeScript-controle                                     |
+| `npm run lint`         | ESLint (`lint:fix` voor auto-fixes)                     |
+| `npm test`             | Jest-testsuite                                          |
+| `npm run format`       | Prettier formatting toepassen                           |
 
 ## Projectstructuur
 

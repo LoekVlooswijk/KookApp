@@ -78,7 +78,7 @@ export default function ShoppingSettingsScreen() {
           await setShoppingOrganicAlwaysList(organicList);
         })();
       };
-    }, [reload])
+    }, [reload, web])
   );
 
   const onReset = useCallback(() => {

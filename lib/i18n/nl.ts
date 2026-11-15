@@ -1,8 +1,11 @@
 /**
  * Nederlandse UI-teksten — bron van waarheid voor de key-structuur.
- * Nieuwe keys hier toevoegen; `en.ts` is type-checked tegen deze vorm,
- * dus ontbrekende Engelse vertalingen vallen direct op in `npm run typecheck`.
+ * Gedeelde domains leven in `lib/i18n/keys/` (nl + en samen per domein);
+ * `en.ts` is type-checked tegen deze vorm, dus ontbrekende Engelse
+ * vertalingen vallen direct op in `npm run typecheck`.
  */
+import { settingsNl } from './keys/settings';
+
 export const nl = {
   boot: {
     loading: 'Database laden…',
@@ -31,56 +34,11 @@ export const nl = {
     tags: 'Tags',
     data: 'Databeheer',
   },
-  settings: {
-    languageMenuTitle: 'Taal',
-    sections: {
-      ai: 'AI',
-      app: 'App',
-      recipes: 'Recepten & boodschappen',
-      advanced: 'Geavanceerd',
-    },
-    rows: {
-      ai: {
-        title: 'AI-instellingen',
-        subtitle: 'Beheer providers, sleutels en modelkeuze.',
-      },
-      aiDebug: {
-        title: 'AI-debuglog',
-        subtitle: 'Recente Anthropic-aanroepen (optioneel, lokaal in geheugen).',
-      },
-      cook: {
-        title: 'Kookprofiel (AI)',
-        subtitle: 'Allergieën, dislikes en voorkeuren voor AI-antwoorden.',
-      },
-      appearance: {
-        title: 'Uiterlijk',
-        subtitle: 'Accentkleur en achtergrond.',
-      },
-      shopping: {
-        title: 'Boodschappen',
-        subtitle: 'Wat staat al thuis + wat altijd biologisch moet.',
-      },
-      bioScore: {
-        title: 'Bio-score',
-        subtitle: 'Drempels, uitsluitingen, vaste productscores en bulk berekenen.',
-      },
-      beheren: {
-        title: 'Beheren',
-        subtitle: 'Categorieën, tags, diëten en opschoonacties.',
-      },
-      data: {
-        title: 'Databeheer',
-        subtitle: 'Backup, importeren, opschonen en alles wissen.',
-        subtitleWeb: 'Op web alleen bekijken.',
-      },
-    },
-    footer: 'Kookapp v{version}',
-  },
+  settings: settingsNl,
 } as const;
 
-/** Zet letterlijke `as const`-types om naar gewone strings (gebruikt in `en.ts`). */
-type Widen<T> = {
-  readonly [K in keyof T]: T[K] extends string ? string : Widen<T[K]>;
+type WidenT<T> = {
+  readonly [K in keyof T]: T[K] extends string ? string : WidenT<T[K]>;
 };
 
-export type Translations = Widen<typeof nl>;
+export type Translations = WidenT<typeof nl>;

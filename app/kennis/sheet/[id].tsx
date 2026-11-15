@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '../../../components/ThemeContext';
+import { useI18n } from '../../../components/I18nContext';
 import {
   IconArrowLeft,
   IconClock,
@@ -48,6 +49,7 @@ function SheetBadgeIcon({
 
 export default function SheetDetailScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -103,7 +105,7 @@ export default function SheetDetailScreen() {
               style={styles.backBtn}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               accessibilityRole="button"
-              accessibilityLabel="Terug"
+              accessibilityLabel={t('kennis.common.back')}
             >
               <IconArrowLeft size={24} stroke={2} color={theme.accent} />
             </Pressable>
@@ -120,7 +122,8 @@ export default function SheetDetailScreen() {
               {sheet?.name ?? 'Sheet'}
             </Text>
             <Text style={styles.identityMeta}>
-              {entries.length} {plural(entries.length, 'kaart', 'kaarten')}
+              {entries.length}{' '}
+              {plural(entries.length, t('kennis.common.cardOne'), t('kennis.common.cardMany'))}
             </Text>
           </View>
         </View>
@@ -153,7 +156,7 @@ export default function SheetDetailScreen() {
       <Pressable
         style={[styles.fab, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
         accessibilityRole="button"
-        accessibilityLabel="Nieuwe kennis toevoegen"
+        accessibilityLabel={t('kennis.common.addEntry')}
         onPress={() =>
           router.push({ pathname: '/kennis/entry/new', params: { tagId: String(tagId) } })
         }

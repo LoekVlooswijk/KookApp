@@ -17,6 +17,7 @@ import {
 } from '../../components/knowledge/icons';
 import { KennisColors, KennisRadii } from '../../components/knowledge/tokens';
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
 import {
   listKnowledgeSheets,
   listLooseKnowledgeNotes,
@@ -75,6 +76,7 @@ function SectionLabel({ left, right }: { left: string; right?: string }) {
 }
 
 function SheetTile({ sheet, onPress }: { sheet: KnowledgeTagRow; onPress: () => void }) {
+  const { t } = useI18n();
   const accent = useMemo(() => {
     const k = sheet.accent ?? '';
     if (k === 'sage') return KennisColors.sage;
@@ -138,7 +140,8 @@ function SheetTile({ sheet, onPress }: { sheet: KnowledgeTagRow; onPress: () => 
           {sheet.name}
         </Text>
         <Text style={styles.sheetTileMeta}>
-          {sheet.entryCount} {plural(sheet.entryCount, 'kaart', 'kaarten')}
+          {sheet.entryCount}{' '}
+          {plural(sheet.entryCount, t('kennis.common.cardOne'), t('kennis.common.cardMany'))}
         </Text>
       </View>
     </Pressable>
@@ -156,6 +159,7 @@ function PinButton({
   accent: string;
   accentSoft: string;
 }) {
+  const { t } = useI18n();
   return (
     <Pressable
       onPress={onPress}
@@ -166,7 +170,7 @@ function PinButton({
       ]}
       hitSlop={8}
       accessibilityRole="button"
-      accessibilityLabel={pinned ? 'Losmaken' : 'Pinnen'}
+      accessibilityLabel={pinned ? t('kennis.common.unpin') : t('kennis.common.pin')}
       accessibilityState={{ selected: pinned }}
     >
       <IconPin
@@ -227,6 +231,7 @@ function NoteCard({
 
 export default function KennisbankScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
@@ -300,7 +305,7 @@ export default function KennisbankScreen() {
               <IconSearch size={18} stroke={1.8} color={KennisColors.inkMute} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Zoek in kennisbank..."
+                placeholder={t('kennis.home.searchPlaceholder')}
                 placeholderTextColor={KennisColors.inkMute}
                 value={query}
                 onChangeText={runSearch}
@@ -312,7 +317,7 @@ export default function KennisbankScreen() {
                   onPress={() => runSearch('')}
                   style={[styles.searchClearBtn, { backgroundColor: theme.background }]}
                   accessibilityRole="button"
-                  accessibilityLabel="Zoekopdracht wissen"
+                  accessibilityLabel={t('kennis.home.searchClear')}
                 >
                   <IconClose size={14} stroke={2} color={KennisColors.inkSoft} />
                 </Pressable>
@@ -327,13 +332,21 @@ export default function KennisbankScreen() {
               return (
                 <View style={styles.searchEmpty}>
                   <IconSearch size={32} stroke={1.4} color={KennisColors.inkSoft} />
-                  <Text style={styles.searchEmptyText}>{`Geen resultaten voor "${item.q}"`}</Text>
+                  <Text style={styles.searchEmptyText}>
+                    {t('kennis.home.searchEmpty', { query: item.q })}
+                  </Text>
                 </View>
               );
             }
             return (
               <View style={styles.searchResultsWrap}>
-                <SectionLabel left={`${m.length} ${plural(m.length, 'resultaat', 'resultaten')}`} />
+                <SectionLabel
+                  left={`${m.length} ${plural(
+                    m.length,
+                    t('kennis.common.resultOne'),
+                    t('kennis.common.resultMany')
+                  )}`}
+                />
                 <View style={styles.vGap10}>
                   {m.map((e) => (
                     <Pressable
@@ -395,7 +408,10 @@ export default function KennisbankScreen() {
 
           return (
             <View style={styles.notesSection}>
-              <SectionLabel left="NOTITIES" right={`${item.looseCount} losse`} />
+              <SectionLabel
+                left={t('kennis.home.notesSection')}
+                right={t('kennis.home.notesLooseCount', { count: item.looseCount })}
+              />
               <View style={styles.vGap10}>
                 {item.notes.map((e) => (
                   <NoteCard
@@ -433,7 +449,7 @@ export default function KennisbankScreen() {
           loading && styles.fabOff,
         ]}
         accessibilityRole="button"
-        accessibilityLabel="Nieuwe kennis toevoegen"
+        accessibilityLabel={t('kennis.common.addEntry')}
         onPress={() => router.push('/kennis/entry/new')}
         disabled={loading}
       >

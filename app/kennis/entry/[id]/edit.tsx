@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '../../../../components/ThemeContext';
+import { useI18n } from '../../../../components/I18nContext';
 import { IconClose, IconSearch, IconTag } from '../../../../components/knowledge/icons';
 import { KennisColors, KennisRadii } from '../../../../components/knowledge/tokens';
 import { searchRecipes, type RecipeBrowseFilters } from '../../../../lib/recipesRepo';
@@ -34,6 +35,7 @@ function inputToNull(s: string): string | null {
 
 export default function KnowledgeEntryEditScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -55,19 +57,22 @@ export default function KnowledgeEntryEditScreen() {
   const reload = useCallback(() => {
     if (!Number.isFinite(entryId)) return;
     void (async () => {
-      const [e, t] = await Promise.all([getKnowledgeEntry(entryId), listKnowledgeTags()]);
+      const [e, allTags] = await Promise.all([getKnowledgeEntry(entryId), listKnowledgeTags()]);
       setEntry(e);
-      setTags(t);
+      setTags(allTags);
       if (e) {
         setTitle(e.title);
         setRatio(e.ratio ?? '');
         setContent(e.content ?? '');
         setSelectedTagIds(e.tagIds ?? []);
         if (e.sourceRecipeId != null)
-          setSourceRecipe({ id: e.sourceRecipeId, title: e.sourceRecipeTitle ?? 'Recept' });
+          setSourceRecipe({
+            id: e.sourceRecipeId,
+            title: e.sourceRecipeTitle ?? t('kennis.common.recipe'),
+          });
       }
     })();
-  }, [entryId]);
+  }, [entryId, t]);
 
   useFocusEffect(
     useCallback(() => {
@@ -151,11 +156,13 @@ export default function KnowledgeEntryEditScreen() {
           onPress={() => router.back()}
           style={styles.headerBtn}
           accessibilityRole="button"
-          accessibilityLabel="Annuleren"
+          accessibilityLabel={t('kennis.common.cancelA11y')}
         >
-          <Text style={[styles.headerBtnText, { color: theme.accent }]}>Annuleer</Text>
+          <Text style={[styles.headerBtnText, { color: theme.accent }]}>
+            {t('kennis.common.cancel')}
+          </Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Bewerken</Text>
+        <Text style={styles.headerTitle}>{t('kennis.common.edit')}</Text>
         <Pressable
           onPress={save}
           style={[
@@ -165,9 +172,9 @@ export default function KnowledgeEntryEditScreen() {
           ]}
           disabled={!canSave || !entry}
           accessibilityRole="button"
-          accessibilityLabel="Opslaan"
+          accessibilityLabel={t('kennis.common.save')}
         >
-          <Text style={styles.saveBtnText}>Opslaan</Text>
+          <Text style={styles.saveBtnText}>{t('kennis.common.save')}</Text>
         </Pressable>
       </View>
 
@@ -179,35 +186,35 @@ export default function KnowledgeEntryEditScreen() {
         contentContainerStyle={{ paddingBottom: 24 + insets.bottom + 120 }}
         renderItem={() => (
           <View style={styles.form}>
-            <Text style={styles.label}>Titel *</Text>
+            <Text style={styles.label}>{t('kennis.entry.form.titleLabel')}</Text>
             <TextInput
               style={styles.input}
               value={title}
               onChangeText={setTitle}
-              placeholder="Titel"
+              placeholder={t('kennis.entry.form.titlePlaceholderEdit')}
               placeholderTextColor={KennisColors.inkMute}
             />
 
-            <Text style={styles.label}>Ratio (optioneel)</Text>
+            <Text style={styles.label}>{t('kennis.entry.form.ratioLabel')}</Text>
             <TextInput
               style={styles.input}
               value={ratio}
               onChangeText={setRatio}
-              placeholder="Bijv. 3:1 olie:zuur"
+              placeholder={t('kennis.entry.form.ratioPlaceholder')}
               placeholderTextColor={KennisColors.inkMute}
             />
 
-            <Text style={styles.label}>Inhoud</Text>
+            <Text style={styles.label}>{t('kennis.entry.form.contentLabel')}</Text>
             <TextInput
               style={[styles.input, styles.multiline]}
               value={content}
               onChangeText={setContent}
-              placeholder="Schrijf je kennis hier…"
+              placeholder={t('kennis.entry.form.contentPlaceholder')}
               placeholderTextColor={KennisColors.inkMute}
               multiline
             />
 
-            <Text style={styles.label}>Tags</Text>
+            <Text style={styles.label}>{t('kennis.entry.form.tagsLabel')}</Text>
             <View style={styles.tagRow}>
               {selectedTags.map((t) => (
                 <Pressable
@@ -227,7 +234,7 @@ export default function KnowledgeEntryEditScreen() {
                 style={styles.tagAddInput}
                 value={tagQuery}
                 onChangeText={setTagQuery}
-                placeholder="Voeg tag toe…"
+                placeholder={t('kennis.entry.form.tagAddPlaceholder')}
                 placeholderTextColor={KennisColors.inkMute}
                 onSubmitEditing={() => {
                   const q = tagQuery.trim();
@@ -290,7 +297,7 @@ export default function KnowledgeEntryEditScreen() {
               </View>
             ) : null}
 
-            <Text style={styles.label}>Geleerd bij (optioneel)</Text>
+            <Text style={styles.label}>{t('kennis.entry.form.sourceRecipeLabel')}</Text>
             {sourceRecipe ? (
               <View style={styles.recipePickedRow}>
                 <Text style={[styles.recipePickedText, { color: theme.accent }]} numberOfLines={1}>
@@ -299,7 +306,7 @@ export default function KnowledgeEntryEditScreen() {
                 <Pressable
                   onPress={() => setSourceRecipe(null)}
                   accessibilityRole="button"
-                  accessibilityLabel="Recept verwijderen"
+                  accessibilityLabel={t('kennis.entry.form.removeRecipeA11y')}
                 >
                   <IconClose size={16} stroke={2} color={KennisColors.inkSoft} />
                 </Pressable>
@@ -311,7 +318,7 @@ export default function KnowledgeEntryEditScreen() {
                   style={styles.recipeSearchInput}
                   value={recipeQuery}
                   onChangeText={searchRecipe}
-                  placeholder="Zoek recept… (meerdere woorden: spatie of komma)"
+                  placeholder={t('kennis.entry.form.recipeSearchPlaceholder')}
                   placeholderTextColor={KennisColors.inkMute}
                 />
               </View>

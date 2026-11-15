@@ -2,6 +2,7 @@ import type { Translations } from './nl';
 import { settingsEn } from './keys/settings';
 import { shoppingEn } from './keys/shopping';
 import { cookEn } from './keys/cook';
+import { kennisEn } from './keys/kennis';
 
 /** English UI texts — must stay in sync with `nl.ts` (enforced bij typecheck). */
 export const en: Translations = {
@@ -34,4 +35,5 @@ export const en: Translations = {
   settings: settingsEn,
   shopping: shoppingEn,
   cook: cookEn,
+  kennis: kennisEn,
 };

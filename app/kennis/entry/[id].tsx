@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useConfirmDialog } from '../../../components/ConfirmDialog';
 import { useAppTheme } from '../../../components/ThemeContext';
+import { useI18n } from '../../../components/I18nContext';
 import { IconArrowLeft, IconBook, IconPin, IconTag } from '../../../components/knowledge/icons';
 import { IconEdit, IconTrash } from '../../../components/knowledge/entryIcons';
 import { KennisColors, KennisRadii } from '../../../components/knowledge/tokens';
@@ -19,6 +20,7 @@ import {
 
 export default function KnowledgeEntryDetailScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -66,13 +68,13 @@ export default function KnowledgeEntryDetailScreen() {
             style={styles.backBtn}
             hitSlop={{ top: 12, bottom: 12, right: 12, left: 4 }}
             accessibilityRole="button"
-            accessibilityLabel="Terug"
+            accessibilityLabel={t('kennis.common.back')}
           >
             <IconArrowLeft size={22} stroke={2} color={theme.accent} />
           </Pressable>
         </View>
         <View style={{ padding: 16 }}>
-          <Text style={{ color: KennisColors.inkSoft }}>Laden…</Text>
+          <Text style={{ color: KennisColors.inkSoft }}>{t('kennis.common.loading')}</Text>
         </View>
       </View>
     );
@@ -98,7 +100,7 @@ export default function KnowledgeEntryDetailScreen() {
             style={styles.backBtn}
             hitSlop={{ top: 12, bottom: 12, right: 12, left: 4 }}
             accessibilityRole="button"
-            accessibilityLabel="Terug"
+            accessibilityLabel={t('kennis.common.back')}
           >
             <IconArrowLeft size={22} stroke={2} color={theme.accent} />
           </Pressable>
@@ -117,7 +119,9 @@ export default function KnowledgeEntryDetailScreen() {
               ]}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel={entry.isPinned ? 'Losmaken' : 'Pinnen'}
+              accessibilityLabel={
+                entry.isPinned ? t('kennis.common.unpin') : t('kennis.common.pin')
+              }
               accessibilityState={{ selected: entry.isPinned }}
             >
               <IconPin
@@ -132,7 +136,7 @@ export default function KnowledgeEntryDetailScreen() {
               style={styles.iconBtn}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel="Bewerken"
+              accessibilityLabel={t('kennis.common.edit')}
             >
               <IconEdit size={20} stroke={1.9} color={KennisColors.inkSoft} />
             </Pressable>
@@ -141,10 +145,10 @@ export default function KnowledgeEntryDetailScreen() {
               onPress={() => {
                 void (async () => {
                   const ok = await confirm({
-                    title: 'Kennis verwijderen?',
-                    message: 'Deze kennis-entry wordt verwijderd.',
-                    confirmText: 'Verwijderen',
-                    cancelText: 'Annuleren',
+                    title: t('kennis.entry.detail.deleteTitle'),
+                    message: t('kennis.entry.detail.deleteMessage'),
+                    confirmText: t('kennis.common.delete'),
+                    cancelText: t('kennis.common.cancelA11y'),
                     destructive: true,
                   });
                   if (!ok) return;
@@ -155,7 +159,7 @@ export default function KnowledgeEntryDetailScreen() {
               style={styles.iconBtn}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel="Verwijderen"
+              accessibilityLabel={t('kennis.common.delete')}
             >
               <IconTrash size={20} stroke={1.9} color={'#9A3D3D'} />
             </Pressable>
@@ -168,7 +172,7 @@ export default function KnowledgeEntryDetailScreen() {
 
         {hasRatio ? (
           <View style={styles.ratioRow}>
-            <Text style={styles.ratioLabel}>Ratio</Text>
+            <Text style={styles.ratioLabel}>{t('kennis.entry.detail.ratioLabel')}</Text>
             <Text style={[styles.ratioValue, { color: theme.accent }]}>{entry.ratio}</Text>
           </View>
         ) : null}
@@ -179,28 +183,30 @@ export default function KnowledgeEntryDetailScreen() {
           <View style={{ marginTop: 18 }}>
             <View style={styles.subHeadRow}>
               <IconTag size={14} stroke={2} color={KennisColors.inkSoft} />
-              <Text style={styles.subHead}>Tags</Text>
+              <Text style={styles.subHead}>{t('kennis.entry.form.tagsLabel')}</Text>
             </View>
             <View style={styles.tagWrap}>
               {entry.tagNames.map((name) => {
-                const t = tagByName.get(name) ?? null;
+                const tag = tagByName.get(name) ?? null;
                 return (
                   <Pressable
                     key={name}
                     style={[
                       styles.tagChip,
-                      t?.isSheet
+                      tag?.isSheet
                         ? { backgroundColor: theme.accentSoft, borderColor: theme.accentSoft }
                         : null,
                     ]}
                     onPress={() => {
-                      if (!t) return;
-                      router.push(`/kennis/sheet/${t.id}`);
+                      if (!tag) return;
+                      router.push(`/kennis/sheet/${tag.id}`);
                     }}
                     accessibilityRole="button"
-                    accessibilityLabel={`Open tag ${name}`}
+                    accessibilityLabel={t('kennis.entry.detail.openTagA11y', { name })}
                   >
-                    <Text style={[styles.tagChipText, t?.isSheet ? { color: theme.accent } : null]}>
+                    <Text
+                      style={[styles.tagChipText, tag?.isSheet ? { color: theme.accent } : null]}
+                    >
                       {name}
                     </Text>
                   </Pressable>
@@ -214,16 +220,16 @@ export default function KnowledgeEntryDetailScreen() {
           <View style={{ marginTop: 18 }}>
             <View style={styles.subHeadRow}>
               <IconBook size={14} stroke={1.8} color={KennisColors.inkSoft} />
-              <Text style={styles.subHead}>Geleerd bij</Text>
+              <Text style={styles.subHead}>{t('kennis.entry.detail.learnedAt')}</Text>
             </View>
             <Pressable
               onPress={() => router.push(`/recipe/${entry.sourceRecipeId}`)}
               style={styles.recipeLinkRow}
               accessibilityRole="button"
-              accessibilityLabel="Open recept"
+              accessibilityLabel={t('kennis.entry.detail.openRecipeA11y')}
             >
               <Text style={[styles.recipeLinkText, { color: theme.accent }]}>
-                {entry.sourceRecipeTitle ?? 'Recept'}
+                {entry.sourceRecipeTitle ?? t('kennis.common.recipe')}
               </Text>
             </Pressable>
           </View>

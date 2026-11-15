@@ -1,5 +1,6 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSharedValue } from 'react-native-reanimated';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -87,6 +88,37 @@ export default function ShoppingScreen() {
   const [newText, setNewText] = useState('');
   const [loading, setLoading] = useState(false);
   const [organicAlways, setOrganicAlways] = useState<string[]>([]);
+
+  // Elke rij is een ReanimatedSwipeable met een pan-gesture op de UI-thread.
+  // Tijdens het scrollen die gestures uitzetten, anders vechten alle rijen
+  // mee om de touch-stream en wordt snel scrollen stotterig.
+  const swipeEnabled = useSharedValue(true);
+  const swipeEnableTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Geen useCallback: react-hooks/immutability snapt niet dat een shared
+  // value juist bedoeld is om .value te muteren.
+  const disableSwipeDuringScroll = () => {
+    if (swipeEnableTimer.current) {
+      clearTimeout(swipeEnableTimer.current);
+      swipeEnableTimer.current = null;
+    }
+    swipeEnabled.value = false;
+  };
+
+  const scheduleSwipeReenable = () => {
+    if (swipeEnableTimer.current) clearTimeout(swipeEnableTimer.current);
+    swipeEnableTimer.current = setTimeout(() => {
+      swipeEnableTimer.current = null;
+      swipeEnabled.value = true;
+    }, 200);
+  };
+
+  useEffect(
+    () => () => {
+      if (swipeEnableTimer.current) clearTimeout(swipeEnableTimer.current);
+    },
+    []
+  );
 
   const reload = useCallback(() => {
     void (async () => {
@@ -282,6 +314,10 @@ export default function ShoppingScreen() {
         keyExtractor={(it) => String(it.id)}
         refreshing={loading}
         onRefresh={reload}
+        onScrollBeginDrag={disableSwipeDuringScroll}
+        onMomentumScrollBegin={disableSwipeDuringScroll}
+        onScrollEndDrag={scheduleSwipeReenable}
+        onMomentumScrollEnd={scheduleSwipeReenable}
         style={styles.sectionList}
         contentContainerStyle={[
           styles.list,
@@ -332,6 +368,7 @@ export default function ShoppingScreen() {
           const showOrganic = isAlwaysOrganicItemName(item.name, organicSet);
           return (
             <ReanimatedSwipeable
+              enabled={swipeEnabled}
               renderRightActions={() => renderRightActions(item)}
               overshootRight={false}
               dragOffsetFromLeft={22}

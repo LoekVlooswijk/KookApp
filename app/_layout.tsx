@@ -5,6 +5,8 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { FirstRunLanguagePicker } from '../components/FirstRunLanguagePicker';
+import { I18nProvider, useI18n } from '../components/I18nContext';
 import { ThemeProvider, useAppTheme } from '../components/ThemeContext';
 import { hydrateAiCookProfileFromDb } from '../lib/aiCookProfile';
 import { hydrateAiPrefsFromDb } from '../lib/aiPrefs';
@@ -17,6 +19,8 @@ import { hydrateBioScoreOverridesPrefsFromDb } from '../lib/bioScoreOverridesPre
 import { hydrateBioScoreThresholdsFromDb } from '../lib/bioScoreThresholdsPrefs';
 import { hydrateShoppingStaplesPrefsFromDb } from '../lib/shoppingStaplesPrefs';
 
+type BootState = 'loading' | 'ready' | 'fail';
+
 function darkenColor(hex: string, factor: number): string {
   const num = parseInt(hex.replace('#', ''), 16);
   const r = Math.floor(((num >> 16) & 0xff) * factor);
@@ -27,6 +31,7 @@ function darkenColor(hex: string, factor: number): string {
 
 function ThemedStack() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <StatusBar style="auto" />
@@ -38,16 +43,22 @@ function ThemedStack() {
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="settings/ai" options={{ title: 'AI' }} />
-        <Stack.Screen name="settings/ai-debug" options={{ title: 'AI-debuglog' }} />
-        <Stack.Screen name="settings/cook-profile-ai" options={{ title: 'Kookprofiel (AI)' }} />
-        <Stack.Screen name="settings/shopping" options={{ title: 'Boodschappen' }} />
-        <Stack.Screen name="settings/bio-score" options={{ title: 'Bio-score' }} />
-        <Stack.Screen name="settings/bio-score-overrides" options={{ title: 'Productscores' }} />
-        <Stack.Screen name="settings/appearance" options={{ title: 'Uiterlijk' }} />
-        <Stack.Screen name="settings/diets" options={{ title: 'Dieten' }} />
-        <Stack.Screen name="settings/tags" options={{ title: 'Tags' }} />
-        <Stack.Screen name="settings/data" options={{ title: 'Databeheer' }} />
+        <Stack.Screen name="settings/ai" options={{ title: t('headers.ai') }} />
+        <Stack.Screen name="settings/ai-debug" options={{ title: t('headers.aiDebug') }} />
+        <Stack.Screen
+          name="settings/cook-profile-ai"
+          options={{ title: t('headers.cookProfile') }}
+        />
+        <Stack.Screen name="settings/shopping" options={{ title: t('headers.shopping') }} />
+        <Stack.Screen name="settings/bio-score" options={{ title: t('headers.bioScore') }} />
+        <Stack.Screen
+          name="settings/bio-score-overrides"
+          options={{ title: t('headers.bioScoreOverrides') }}
+        />
+        <Stack.Screen name="settings/appearance" options={{ title: t('headers.appearance') }} />
+        <Stack.Screen name="settings/diets" options={{ title: t('headers.diets') }} />
+        <Stack.Screen name="settings/tags" options={{ title: t('headers.tags') }} />
+        <Stack.Screen name="settings/data" options={{ title: t('headers.data') }} />
         <Stack.Screen name="recipe" options={{ headerShown: false }} />
         <Stack.Screen name="list" options={{ headerShown: false }} />
         <Stack.Screen name="kennis" options={{ headerShown: false }} />
@@ -56,8 +67,54 @@ function ThemedStack() {
   );
 }
 
+function AppShell({
+  boot,
+  failMessage,
+  onRetry,
+}: {
+  boot: BootState;
+  failMessage: string | null;
+  onRetry: () => void;
+}) {
+  const { t, languageId, languageReady } = useI18n();
+  const theme = useAppTheme();
+
+  if (boot === 'loading') {
+    return (
+      <View style={[styles.bootRoot, { backgroundColor: theme.background }]}>
+        <View style={styles.bootCenter}>
+          <ActivityIndicator size="large" color="#c45c3e" />
+          <Text style={styles.bootHint}>{t('boot.loading')}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (boot === 'fail') {
+    return (
+      <View style={[styles.bootRoot, { backgroundColor: theme.background }]}>
+        <View style={styles.failWrap}>
+          <Text style={styles.failTitle}>{t('boot.failTitle')}</Text>
+          <Text style={styles.failBody}>{t('boot.failBody')}</Text>
+          {failMessage ? <Text style={styles.failDetail}>{failMessage}</Text> : null}
+          <Pressable style={styles.retryBtn} onPress={onRetry}>
+            <Text style={styles.retryBtnText}>{t('boot.retry')}</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <>
+      <ThemedStack />
+      {languageReady && languageId == null ? <FirstRunLanguagePicker /> : null}
+    </>
+  );
+}
+
 export default function RootLayout() {
-  const [boot, setBoot] = useState<'loading' | 'ready' | 'fail'>('loading');
+  const [boot, setBoot] = useState<BootState>('loading');
   const [failMessage, setFailMessage] = useState<string | null>(null);
 
   const hydrateAfterDb = useCallback(async () => {
@@ -85,7 +142,7 @@ export default function RootLayout() {
         }
       } catch (e) {
         if (!cancelled) {
-          setFailMessage(e instanceof Error ? e.message : 'Onbekende fout.');
+          setFailMessage(e instanceof Error ? e.message : null);
           setBoot('fail');
         }
       }
@@ -105,53 +162,27 @@ export default function RootLayout() {
         await hydrateAfterDb();
         setBoot('ready');
       } catch (e) {
-        setFailMessage(e instanceof Error ? e.message : 'Onbekende fout.');
+        setFailMessage(e instanceof Error ? e.message : null);
         setBoot('fail');
       }
     })();
   }, [hydrateAfterDb]);
 
-  if (boot === 'loading') {
-    return (
-      <GestureHandlerRootView style={styles.bootRoot}>
-        <View style={styles.bootCenter}>
-          <ActivityIndicator size="large" color="#c45c3e" />
-          <Text style={styles.bootHint}>Database laden…</Text>
-        </View>
-      </GestureHandlerRootView>
-    );
-  }
-
-  if (boot === 'fail') {
-    return (
-      <GestureHandlerRootView style={styles.bootRoot}>
-        <View style={styles.failWrap}>
-          <Text style={styles.failTitle}>Database niet beschikbaar</Text>
-          <Text style={styles.failBody}>
-            De app kan je lokale gegevens nu niet openen. Sluit andere vensters of probeer opnieuw.
-          </Text>
-          {failMessage ? <Text style={styles.failDetail}>{failMessage}</Text> : null}
-          <Pressable style={styles.retryBtn} onPress={onRetryDatabase}>
-            <Text style={styles.retryBtnText}>Opnieuw proberen</Text>
-          </Pressable>
-        </View>
-      </GestureHandlerRootView>
-    );
-  }
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <ThemeProvider>
-          <ThemedStack />
-        </ThemeProvider>
+        <I18nProvider>
+          <ThemeProvider>
+            <AppShell boot={boot} failMessage={failMessage} onRetry={onRetryDatabase} />
+          </ThemeProvider>
+        </I18nProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
-  bootRoot: { flex: 1, backgroundColor: '#faf8f5' },
+  bootRoot: { flex: 1 },
   bootCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   bootHint: { fontSize: 14, color: '#666' },
   failWrap: { flex: 1, justifyContent: 'center', padding: 24 },

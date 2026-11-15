@@ -5,6 +5,8 @@ import Constants from 'expo-constants';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
+import { type TranslationKey } from '../../lib/i18n';
 import { hydrateAiCookProfileFromDb } from '../../lib/aiCookProfile';
 import { hydrateAiPrefsFromDb } from '../../lib/aiPrefs';
 import { ensureDatabaseAsync } from '../../lib/db';
@@ -19,12 +21,14 @@ const version = Constants.expoConfig?.version ?? '0.0.0';
 
 type Section = {
   id: string;
-  title: string;
+  titleKey: TranslationKey;
   first?: boolean;
   rows: {
     key: string;
-    title: string;
-    subtitle: string;
+    titleKey: TranslationKey;
+    subtitleKey: TranslationKey;
+    /** Optionele extra regel op web (b.v. "Op web alleen bekijken."). */
+    subtitleWebKey?: TranslationKey;
     href: string;
     icon: keyof typeof MaterialIcons.glyphMap;
     titleColor?: string;
@@ -35,27 +39,27 @@ type Section = {
 const SECTIONS: Section[] = [
   {
     id: 'ai',
-    title: 'AI',
+    titleKey: 'settings.sections.ai',
     first: true,
     rows: [
       {
         key: 'ai',
-        title: 'AI-instellingen',
-        subtitle: 'Beheer providers, sleutels en modelkeuze.',
+        titleKey: 'settings.rows.ai.title',
+        subtitleKey: 'settings.rows.ai.subtitle',
         href: '/settings/ai',
         icon: 'smart-toy',
       },
       {
         key: 'ai_debug',
-        title: 'AI-debuglog',
-        subtitle: 'Recente Anthropic-aanroepen (optioneel, lokaal in geheugen).',
+        titleKey: 'settings.rows.aiDebug.title',
+        subtitleKey: 'settings.rows.aiDebug.subtitle',
         href: '/settings/ai-debug',
         icon: 'bug-report',
       },
       {
         key: 'cook',
-        title: 'Kookprofiel (AI)',
-        subtitle: 'Allergieën, dislikes en voorkeuren voor AI-antwoorden.',
+        titleKey: 'settings.rows.cook.title',
+        subtitleKey: 'settings.rows.cook.subtitle',
         href: '/settings/cook-profile-ai',
         icon: 'restaurant-menu',
       },
@@ -63,12 +67,12 @@ const SECTIONS: Section[] = [
   },
   {
     id: 'app',
-    title: 'App',
+    titleKey: 'settings.sections.app',
     rows: [
       {
         key: 'appearance',
-        title: 'Uiterlijk',
-        subtitle: 'Accentkleur en achtergrond.',
+        titleKey: 'settings.rows.appearance.title',
+        subtitleKey: 'settings.rows.appearance.subtitle',
         href: '/settings/appearance',
         icon: 'palette',
       },
@@ -76,26 +80,26 @@ const SECTIONS: Section[] = [
   },
   {
     id: 'recepten',
-    title: 'Recepten & boodschappen',
+    titleKey: 'settings.sections.recipes',
     rows: [
       {
         key: 'shopping',
-        title: 'Boodschappen',
-        subtitle: 'Wat staat al thuis + wat altijd biologisch moet.',
+        titleKey: 'settings.rows.shopping.title',
+        subtitleKey: 'settings.rows.shopping.subtitle',
         href: '/settings/shopping',
         icon: 'shopping-cart',
       },
       {
         key: 'bio_score',
-        title: 'Bio-score',
-        subtitle: 'Drempels, uitsluitingen, vaste productscores en bulk berekenen.',
+        titleKey: 'settings.rows.bioScore.title',
+        subtitleKey: 'settings.rows.bioScore.subtitle',
         href: '/settings/bio-score',
         icon: 'eco',
       },
       {
         key: 'beheren',
-        title: 'Beheren',
-        subtitle: 'Categorieën, tags, diëten en opschoonacties.',
+        titleKey: 'settings.rows.beheren.title',
+        subtitleKey: 'settings.rows.beheren.subtitle',
         href: '/settings/beheren',
         icon: 'category',
       },
@@ -103,14 +107,13 @@ const SECTIONS: Section[] = [
   },
   {
     id: 'advanced',
-    title: 'Geavanceerd',
+    titleKey: 'settings.sections.advanced',
     rows: [
       {
         key: 'data',
-        title: 'Databeheer',
-        subtitle: `Backup, importeren, opschonen en alles wissen${
-          Platform.OS === 'web' ? '. Op web alleen bekijken.' : '.'
-        }`,
+        titleKey: 'settings.rows.data.title',
+        subtitleKey: 'settings.rows.data.subtitle',
+        subtitleWebKey: 'settings.rows.data.subtitleWeb',
         href: '/settings/data',
         icon: 'storage',
         titleColor: '#9a3d3d',
@@ -123,6 +126,7 @@ const SECTIONS: Section[] = [
 export default function SettingsScreen() {
   const theme = useAppTheme();
   const router = useRouter();
+  const { t } = useI18n();
 
   const reloadPrefs = useCallback(() => {
     void (async () => {
@@ -155,7 +159,7 @@ export default function SettingsScreen() {
           <Text
             style={[styles.sectionHeader, (section.first ?? false) && styles.sectionHeaderFirst]}
           >
-            {section.title}
+            {t(section.titleKey)}
           </Text>
           {section.rows.map((row) => {
             const iconC = row.iconColorKey === 'destructive' ? '#9a3d3d' : theme.accent;
@@ -173,9 +177,14 @@ export default function SettingsScreen() {
                       row.titleColor != null && { color: row.titleColor },
                     ]}
                   >
-                    {row.title}
+                    {t(row.titleKey)}
                   </Text>
-                  <Text style={styles.navRowSubtitle}>{row.subtitle}</Text>
+                  <Text style={styles.navRowSubtitle}>
+                    {t(row.subtitleKey)}
+                    {Platform.OS === 'web' && row.subtitleWebKey != null
+                      ? ` ${t(row.subtitleWebKey)}`
+                      : ''}
+                  </Text>
                 </View>
                 <Text style={[styles.navRowHint, { color: theme.accent }]}>›</Text>
               </Pressable>
@@ -183,7 +192,7 @@ export default function SettingsScreen() {
           })}
         </View>
       ))}
-      <Text style={styles.versionFooter}>{`Kookapp v${version}`}</Text>
+      <Text style={styles.versionFooter}>{t('settings.footer', { version })}</Text>
     </ScrollView>
   );
 }

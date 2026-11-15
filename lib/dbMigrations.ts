@@ -495,6 +495,22 @@ async function migration14(db: MigrationDb) {
   `);
 }
 
+/**
+ * i18n: installaties met bestaande data krijgen Nederlands als standaard,
+ * zodat alleen écht nieuwe installaties de taalkeuze-overlay zien.
+ * `app_meta.key` is PRIMARY KEY, dus INSERT OR IGNORE is veilig.
+ */
+async function migration15(db: MigrationDb) {
+  await db.execAsync(`
+    INSERT OR IGNORE INTO app_meta (key, value)
+    SELECT 'pref_language', 'nl'
+    WHERE EXISTS (SELECT 1 FROM recipes LIMIT 1)
+       OR EXISTS (SELECT 1 FROM recipe_lists LIMIT 1)
+       OR EXISTS (SELECT 1 FROM week_plans LIMIT 1)
+       OR EXISTS (SELECT 1 FROM shopping_items LIMIT 1);
+  `);
+}
+
 const MIGRATIONS: Record<number, (db: MigrationDb) => Promise<void>> = {
   1: migration1,
   2: migration2,
@@ -510,6 +526,7 @@ const MIGRATIONS: Record<number, (db: MigrationDb) => Promise<void>> = {
   12: migration12,
   13: migration13,
   14: migration14,
+  15: migration15,
 };
 
 export const MAX_MIGRATION_VERSION = Math.max(

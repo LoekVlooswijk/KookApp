@@ -81,4 +81,28 @@ describe('dbMigrations (sql.js)', () => {
     expect(plan?.recipe_id).toBe(1);
     expect(MAX_MIGRATION_VERSION).toBeGreaterThanOrEqual(14);
   });
+
+  it('pref_language: pas gekozen na migratie 15 — stille nl-default alleen bij bestaande data', async () => {
+    const { migrationDb } = await openSqlJsMigrationDb();
+    await prepareDatabaseSchemaAsync(migrationDb);
+
+    // Verse installatie (geen data): geen default, de taalkeuze-overlay verschijnt.
+    const fresh = await migrationDb.getFirstAsync<{ value: string }>(
+      `SELECT value FROM app_meta WHERE key = 'pref_language'`
+    );
+    expect(fresh).toBeNull();
+
+    // Bestaande installatie: data aanwezig, versie terug op 14 → migratie 15 draait
+    // en zet stilletjes Nederlands als gekozen taal.
+    await migrationDb.runAsync(
+      `INSERT INTO recipes (title, created_at, updated_at) VALUES ('Bestaand recept', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')`
+    );
+    await migrationDb.runAsync(`UPDATE app_meta SET value = '14' WHERE key = 'schema_version'`);
+    await prepareDatabaseSchemaAsync(migrationDb);
+
+    const existing = await migrationDb.getFirstAsync<{ value: string }>(
+      `SELECT value FROM app_meta WHERE key = 'pref_language'`
+    );
+    expect(existing?.value).toBe('nl');
+  });
 });

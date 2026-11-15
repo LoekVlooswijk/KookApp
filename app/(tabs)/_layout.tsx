@@ -3,6 +3,8 @@ import { Image } from 'react-native';
 import type { ImageSourcePropType } from 'react-native';
 
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
+import { LanguageMenuButton } from '../../components/LanguageMenuButton';
 import { IconBrain } from '../../components/knowledge/icons';
 
 function darkenColor(hex: string, factor: number): string {
@@ -33,6 +35,7 @@ function tabBarIconNode(render: (focused: boolean) => React.ReactNode) {
 
 export default function TabsLayout() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   return (
     <Tabs
       screenOptions={{
@@ -49,28 +52,28 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="recipes"
         options={{
-          title: 'Recepten',
+          title: t('tabs.recipes'),
           tabBarIcon: tabBarIcon(require('../../assets/recipe-book.png')),
         }}
       />
       <Tabs.Screen
         name="planner"
         options={{
-          title: 'Week',
+          title: t('tabs.week'),
           tabBarIcon: tabBarIcon(require('../../assets/schedule.png')),
         }}
       />
       <Tabs.Screen
         name="shopping"
         options={{
-          title: 'Boodschappen',
+          title: t('tabs.shopping'),
           tabBarIcon: tabBarIcon(require('../../assets/food.png')),
         }}
       />
       <Tabs.Screen
         name="kennis"
         options={{
-          title: 'Kennis',
+          title: t('tabs.kennis'),
           tabBarIcon: tabBarIconNode((focused) => (
             <IconBrain
               size={24}
@@ -84,8 +87,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Instellingen',
+          title: t('tabs.settings'),
           tabBarIcon: tabBarIcon(require('../../assets/settings.png')),
+          headerRight: () => <LanguageMenuButton />,
         }}
       />
 

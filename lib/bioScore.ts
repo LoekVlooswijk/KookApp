@@ -46,68 +46,120 @@ function isPesticideCode(x: unknown): x is BioPesticideCode {
   return x === 'L' || x === 'M' || x === 'H';
 }
 
-function isProduceCandidate(name: string): boolean {
+// Aromatics like onion/garlic are ignored on purpose (as requested).
+// NL tokens only define the original Dutch behaviour; EN adds English
+// ingredient names so the filter keeps working when the app language is EN.
+const EXCLUDE_AROMATICS_NL = [
+  'ui',
+  'uien',
+  'sjalot',
+  'sjalotten',
+  'knoflook',
+  'look',
+  'prei',
+  'bosui',
+  'lente-ui',
+  'lenteui',
+];
+const EXCLUDE_AROMATICS_EN = [
+  'onion',
+  'onions',
+  'shallot',
+  'shallots',
+  'garlic',
+  'leek',
+  'leeks',
+  'spring onion',
+  'scallion',
+  'scallions',
+  'chives',
+];
+
+// Obvious non-produce pantry items (NL tokens, original behaviour).
+const EXCLUDE_PANTRY_NL = [
+  'zout',
+  'water',
+  'suiker',
+  'bloem',
+  'meel',
+  'rijst',
+  'pasta',
+  'noedels',
+  'olie',
+  'olijfolie',
+  'boter',
+  'azijn',
+  'sojasaus',
+  'bouillon',
+  'melk',
+  'kaas',
+  'yoghurt',
+  'ei',
+  'eieren',
+  'vlees',
+  'kip',
+  'rund',
+  'varken',
+  'vis',
+  'zalm',
+  'tonijn',
+];
+const EXCLUDE_PANTRY_EN = [
+  'salt',
+  'sugar',
+  'flour',
+  'rice',
+  'noodles',
+  'oil',
+  'butter',
+  'vinegar',
+  'soy sauce',
+  'stock',
+  'broth',
+  'milk',
+  'cheese',
+  'yogurt',
+  'yoghurt',
+  'egg',
+  'eggs',
+  'meat',
+  'chicken',
+  'beef',
+  'pork',
+  'fish',
+  'salmon',
+  'tuna',
+];
+
+function isProduceCandidate(name: string, lang: AiLanguage): boolean {
   const n = normalizeBioScoreIngredientName(name);
   if (!n) return false;
 
   if (isBioScoreExcludedName(n)) return false;
 
-  // Explicitly ignore aromatics like onion/garlic (as requested).
-  const excludeAromatics = [
-    'ui',
-    'uien',
-    'sjalot',
-    'sjalotten',
-    'knoflook',
-    'look',
-    'prei',
-    'bosui',
-    'lente-ui',
-    'lenteui',
-  ];
-  if (excludeAromatics.some((t) => n === t || n.includes(t))) return false;
+  // English pantry token 'egg' must not catch produce like eggplant/aubergine
+  // (unless the name also mentions eggs, e.g. a mixed pantry line).
+  if (lang === 'en' && (n.includes('eggplant') || n.includes('aubergine')) && !n.includes('eggs')) {
+    return true;
+  }
 
-  // Exclude obvious non-produce pantry items.
-  const excludeTokens = [
-    'zout',
-    'water',
-    'suiker',
-    'bloem',
-    'meel',
-    'rijst',
-    'pasta',
-    'noedels',
-    'olie',
-    'olijfolie',
-    'boter',
-    'azijn',
-    'sojasaus',
-    'bouillon',
-    'melk',
-    'kaas',
-    'yoghurt',
-    'ei',
-    'eieren',
-    'vlees',
-    'kip',
-    'rund',
-    'varken',
-    'vis',
-    'zalm',
-    'tonijn',
-  ];
-  if (excludeTokens.some((t) => n === t || n.includes(t))) return false;
+  const aromatics =
+    lang === 'en' ? [...EXCLUDE_AROMATICS_NL, ...EXCLUDE_AROMATICS_EN] : EXCLUDE_AROMATICS_NL;
+  if (aromatics.some((t) => n === t || n.includes(t))) return false;
+
+  const pantry = lang === 'en' ? [...EXCLUDE_PANTRY_NL, ...EXCLUDE_PANTRY_EN] : EXCLUDE_PANTRY_NL;
+  if (pantry.some((t) => n === t || n.includes(t))) return false;
 
   return true;
 }
 
-function uniqueNames(ingredients: string[], max: number): string[] {
+function uniqueNames(ingredients: string[], max: number, lang: AiLanguage): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const raw of Array.isArray(ingredients) ? ingredients : []) {
     const n = normalizeBioScoreIngredientName(typeof raw === 'string' ? raw : '');
     if (!n || seen.has(n)) continue;
-    if (!isProduceCandidate(n)) continue;
+    if (!isProduceCandidate(n, lang)) continue;
     seen.add(n);
     out.push(n);
     if (out.length >= max) break;
@@ -119,13 +171,12 @@ export async function assessProduceLocalityAndPesticides(
   ingredients: string[],
   lang: AiLanguage = 'nl'
 ): Promise<{ ok: true; items: BioAssessmentItem[] } | { ok: false; message: string }> {
-  void lang; // EN-variant: zie ai-taalfase
   await hydrateBioScoreExcludePrefsFromDb();
-  const uniq = uniqueNames(ingredients, 40);
+  const uniq = uniqueNames(ingredients, 40, lang);
   if (uniq.length === 0) return { ok: true, items: [] };
   const requested = new Set(uniq);
 
-  const system = buildBioScoreSystemPrompt();
+  const system = buildBioScoreSystemPrompt(lang);
   const user = buildBioScoreUserPrompt(uniq);
   const tryParse = (raw: string): { ok: true; items: BioAssessmentItem[] } | { ok: false } => {
     let root: unknown;
@@ -161,13 +212,18 @@ export async function assessProduceLocalityAndPesticides(
     outputSchema: BIO_SCORE_OUTPUT_SCHEMA,
     previousOutput: ai.text,
     validationErrors: ['JSON parse failed or did not match expected shape (object.items[])'],
+    lang,
   });
   const repaired = await callAiText({ system, user: repairUser, maxTokens: 900, task: 'import' });
   if (!repaired.ok) return { ok: false, message: repaired.message };
   const parsed2 = tryParse(repaired.text);
   if (parsed2.ok) return parsed2;
 
-  return { ok: false, message: 'AI gaf geen geldige JSON terug.' };
+  return {
+    ok: false,
+    message:
+      lang === 'en' ? 'The AI did not return valid JSON.' : 'AI gaf geen geldige JSON terug.',
+  };
 }
 
 function downgradePesticide(p: BioPesticideCode): BioPesticideCode {

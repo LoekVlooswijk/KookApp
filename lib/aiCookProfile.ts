@@ -146,7 +146,6 @@ export function formatAiCookProfileForPrompt(
   purpose: AiCookProfilePurpose,
   lang: AiLanguage = 'nl'
 ): string {
-  void lang; // EN-variant: zie ai-taalfase
   const p = getAiCookProfile();
   if (!p.appliesTo[purpose]) return '';
 
@@ -166,16 +165,31 @@ export function formatAiCookProfileForPrompt(
     includeTimeNotes;
   if (!hasAny) return '';
 
+  const en = lang === 'en';
   const lines: string[] = [];
   lines.push('---');
-  lines.push('KOOKPROFIEL VAN DE GEBRUIKER (altijd respecteren)');
-  lines.push('');
-  lines.push('Regels:');
   lines.push(
-    '- MUST NOT: dit zijn harde grenzen (allergie/verboden). Als een vraag hiermee botst: weiger kort en bied 2 alternatieven.'
+    en
+      ? 'COOKING PROFILE OF THE USER (always respect)'
+      : 'KOOKPROFIEL VAN DE GEBRUIKER (altijd respecteren)'
   );
-  lines.push('- AVOID: vermijd waar mogelijk; als je toch gebruikt, leg kort uit waarom.');
-  lines.push('- PREFER: volg meestal; als je afwijkt, leg kort uit waarom.');
+  lines.push('');
+  lines.push(en ? 'Rules:' : 'Regels:');
+  lines.push(
+    en
+      ? '- MUST NOT: these are hard limits (allergy/forbidden). If a request conflicts with them: refuse briefly and offer 2 alternatives.'
+      : '- MUST NOT: dit zijn harde grenzen (allergie/verboden). Als een vraag hiermee botst: weiger kort en bied 2 alternatieven.'
+  );
+  lines.push(
+    en
+      ? '- AVOID: avoid where possible; if you do use it, briefly explain why.'
+      : '- AVOID: vermijd waar mogelijk; als je toch gebruikt, leg kort uit waarom.'
+  );
+  lines.push(
+    en
+      ? '- PREFER: follow most of the time; if you deviate, briefly explain why.'
+      : '- PREFER: volg meestal; als je afwijkt, leg kort uit waarom.'
+  );
   lines.push('');
 
   if (must.length > 0) {
@@ -194,18 +208,26 @@ export function formatAiCookProfileForPrompt(
     lines.push('');
   }
   if (shops.length > 0) {
-    lines.push('Beschikbare winkels (ingrediënten moeten daar verkrijgbaar zijn):');
+    lines.push(
+      en
+        ? 'Available shops (ingredients must be obtainable there):'
+        : 'Beschikbare winkels (ingrediënten moeten daar verkrijgbaar zijn):'
+    );
     for (const x of shops) lines.push(`- ${x}`);
     lines.push('');
   }
   if (free) {
-    lines.push('Extra instructie:');
+    lines.push(en ? 'Extra instructions:' : 'Extra instructie:');
     lines.push(free);
     lines.push('');
   }
 
   if (includeTimeNotes) {
-    lines.push('Weekplanning — tijdschema / beschikbaarheid:');
+    lines.push(
+      en
+        ? 'Week planning — time schedule / availability:'
+        : 'Weekplanning — tijdschema / beschikbaarheid:'
+    );
     lines.push(timeNotes);
     lines.push('');
   }

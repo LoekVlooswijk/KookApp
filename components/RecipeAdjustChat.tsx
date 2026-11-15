@@ -81,7 +81,8 @@ export function RecipeAdjustChat(props: Props) {
   const onApplied = mode === 'adjust' ? props.onApplied : undefined;
   const onApplyPayload = mode === 'create' ? props.onApplyPayload : undefined;
   const theme = useAppTheme();
-  const { t } = useI18n();
+  const { t, languageId } = useI18n();
+  const lang = languageId ?? 'nl';
   const [turns, setTurns] = useState<AiChatTurn[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -93,8 +94,8 @@ export function RecipeAdjustChat(props: Props) {
   const sendInFlightRef = useRef(false);
 
   const systemPrompt = useMemo(
-    () => (recipe ? buildAdjustChatSystemPrompt(recipe) : buildCreateChatSystemPrompt()),
-    [recipe]
+    () => (recipe ? buildAdjustChatSystemPrompt(recipe, lang) : buildCreateChatSystemPrompt(lang)),
+    [recipe, lang]
   );
 
   useEffect(() => {
@@ -222,7 +223,7 @@ export function RecipeAdjustChat(props: Props) {
     try {
       if (mode === 'adjust') {
         if (!recipe || recipeId == null || !onApplied) return;
-        const result = await applyAdjustmentFromChat(recipe, turns);
+        const result = await applyAdjustmentFromChat(recipe, turns, lang);
         if (!result.ok) {
           setError(result.message);
           return;
@@ -238,8 +239,8 @@ export function RecipeAdjustChat(props: Props) {
       } else {
         if (!onApplyPayload) return;
         const result = recipe
-          ? await applyAdjustmentFromChat(recipe, turns)
-          : await applyRecipeFromChat(turns);
+          ? await applyAdjustmentFromChat(recipe, turns, lang)
+          : await applyRecipeFromChat(turns, lang);
         if (!result.ok) {
           setError(result.message);
           return;
@@ -256,7 +257,7 @@ export function RecipeAdjustChat(props: Props) {
     } finally {
       setApplying(false);
     }
-  }, [busy, mode, recipe, recipeId, turns, onApplied, onClose, onApplyPayload, t]);
+  }, [busy, mode, recipe, recipeId, turns, onApplied, onClose, onApplyPayload, t, lang]);
 
   useEffect(() => {
     if (!visible) return;

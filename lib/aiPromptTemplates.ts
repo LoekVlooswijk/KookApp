@@ -4,12 +4,16 @@ import { formatAiCookProfileForPrompt } from './aiCookProfile';
 /** Cap repair-round previous output to limit tokens and accidental large pastes. */
 const REPAIR_PREVIOUS_OUTPUT_MAX_CHARS = 14_000;
 
-function truncateForAiRepairPreviousOutput(text: string): string {
+function truncateForAiRepairPreviousOutput(text: string, lang: AiLanguage = 'nl'): string {
   const t = text.trim();
   if (t.length <= REPAIR_PREVIOUS_OUTPUT_MAX_CHARS) return t;
   const head = Math.floor(REPAIR_PREVIOUS_OUTPUT_MAX_CHARS * 0.55);
   const tail = REPAIR_PREVIOUS_OUTPUT_MAX_CHARS - head - 100;
-  return `${t.slice(0, head)}\n\n[… midden weggelaten (token-/privacylimiet) …]\n\n${t.slice(-tail)}`;
+  const marker =
+    lang === 'en'
+      ? '[… middle omitted (token/privacy limit) …]'
+      : '[… midden weggelaten (token-/privacylimiet) …]';
+  return `${t.slice(0, head)}\n\n${marker}\n\n${t.slice(-tail)}`;
 }
 
 export type AiPurpose =
@@ -102,8 +106,8 @@ type BuildSystemPromptParams = {
   jsonOnly?: boolean;
   /** AI volgt de app-taal; default Nederlands. */
   lang?: AiLanguage;
-  /** Extra purpose-specific instructions (Dutch). */
-  instructionsNl?: string;
+  /** Extra purpose-specifieke instructies per taal. */
+  instructions?: Partial<Record<AiLanguage, string>>;
 };
 
 export function buildAiSystemPrompt(params: BuildSystemPromptParams): string {
@@ -117,8 +121,8 @@ export function buildAiSystemPrompt(params: BuildSystemPromptParams): string {
     lines.push('');
   }
 
-  if (params.instructionsNl?.trim()) {
-    lines.push(params.instructionsNl.trim());
+  if (params.instructions?.[lang]?.trim()) {
+    lines.push((params.instructions[lang] ?? '').trim());
     lines.push('');
   }
 
@@ -133,7 +137,7 @@ export function buildAiSystemPrompt(params: BuildSystemPromptParams): string {
           : null;
 
   if (profilePurpose) {
-    const block = formatAiCookProfileForPrompt(profilePurpose);
+    const block = formatAiCookProfileForPrompt(profilePurpose, lang);
     if (block) {
       lines.push(block);
       lines.push('');
@@ -162,8 +166,7 @@ export function buildAiRepairUserPrompt(params: BuildRepairPromptParams): string
     lang === 'en'
       ? 'Your previous answer was invalid or broke the rules. Fix it.'
       : 'Je vorige antwoord was ongeldig of schond regels. Repareer het.';
-  const noDetails =
-    lang === 'en' ? '- (no details available)' : '- (geen details beschikbaar)';
+  const noDetails = lang === 'en' ? '- (no details available)' : '- (geen details beschikbaar)';
   const outro =
     lang === 'en'
       ? 'Return again ONLY JSON that exactly matches the schema.'
@@ -183,7 +186,7 @@ export function buildAiRepairUserPrompt(params: BuildRepairPromptParams): string
   lines.push(params.outputSchema.trim());
   lines.push('');
   lines.push('PREVIOUS_OUTPUT:');
-  lines.push(truncateForAiRepairPreviousOutput(params.previousOutput));
+  lines.push(truncateForAiRepairPreviousOutput(params.previousOutput, lang));
   lines.push('');
   lines.push(outro);
   return lines.join('\n').trim();
@@ -194,7 +197,8 @@ export function buildRecipeExtractSystemPrompt(lang: AiLanguage = 'nl'): string 
     purpose: 'recipeExtract',
     jsonOnly: true,
     lang,
-    instructionsNl: `Je bent een recept-parser. Extraheer het recept uit de volgende HTML en retourneer ALLEEN één JSON-object (geen markdown, geen uitleg ervoor of erna) in exact dit schema:
+    instructions: {
+      nl: `Je bent een recept-parser. Extraheer het recept uit de volgende HTML en retourneer ALLEEN één JSON-object (geen markdown, geen uitleg ervoor of erna) in exact dit schema:
 
 Schema:
 ${RECIPE_JSON_SCHEMA}
@@ -234,6 +238,47 @@ Regels:
     - Voor avondmaaltijd: gebruik "hoofdgerecht" niet "diner", "avondeten" of "avondmaaltijd"
     - Vegetarisch vs vegan: "vegetarisch" voor vlees/vis-vrij, "vegan" ALLEEN voor 100% plantaardig (geen dierlijke producten)
     - Geen combinatie van maaltijdmoment (lunch, ontbijt, brunch, borrel, middageten) met gang (hoofdgerecht, voorgerecht, nagerecht, bijgerecht, tussengerecht)`,
+      en: `You are a recipe parser. Extract the recipe from the following HTML and return ONLY one JSON object (no markdown, no explanation before or after) in exactly this schema:
+
+Schema:
+${RECIPE_JSON_SCHEMA}
+
+Rules:
+- If the input contains a "JSONLD_BLOCKS" section: use that embedded JSON-LD (often schema.org/Recipe) as the primary source for title, ingredients and preparation; supplement with the visible HTML where needed.
+- Normalise units: use g, kg, ml, l, tbsp, tsp, piece(s), clove, slice, sprig, leaf, pinch, or "to taste" where appropriate.
+- Group ingredients if the page has clear sections.
+- Estimate prep_time_min, cook_time_min, total_time_min if they are not stated explicitly.
+- timer_seconds: always a whole number of seconds (e.g. 30, 90; no fractions of minutes such as 0.5).
+- All text in English; if the source is in another language, translate it into natural English.
+- Tags ("tags"): at most 6–8 useful keywords that characterise the recipe.
+    Use ONLY tags that genuinely help with categorising and searching.
+
+    **Allowed (and always standardise to English):**
+    - Cuisine: italian, french, asian, dutch, mediterranean, mexican, thai, indonesian
+    - Diet: vegetarian, vegan, gluten-free, dairy-free, keto, sugar-free
+    - Technique: oven, baked, fried, grilled, steamed, roasted, stir-fried, raw, cold
+    - Season: summer, spring, autumn, winter
+    - Course: main course, starter, dessert, side dish, in-between course
+    - Main ingredient: chicken, beef, pork, fish, seafood, vegetable, pasta, rice, potato
+      (only if it is the most important component, not for every ingredient)
+
+    **Never generate (this information already lives in separate fields):**
+    - Numeric serving counts: "4 servings", "2 people", "6 pieces", "1-2 servings", "4-6 people"
+    - Preparation times: "30 minutes", "1 hour", "2 hours", "45 min", "15 minutes"
+
+    **Never generate (no search value or redundant):**
+    - Generic compliments: delicious, tasty, yummy, lovely, lekker, heerlijk, smakelijk
+    - Difficulty: easy, simple, quick, difficult, complicated, medium, makkelijk, snel
+    - Shop/brand names: ah, albert heijn, jumbo, lidl, plus, coop, dirk, ekoplaza, tesco, sainsbury's, asda, morrisons, aldi, waitrose
+    - Generic recipe words: recipe, recipes, dish, gerecht, recept
+    - Generic cooking terms: cooking, cook, prepare, make, koken, bereiden
+
+    **Standardisation rules:**
+    - ALWAYS use English terms: "summer" not "zomer", "italian" not "italiaans", "grilled" not "gegrild"
+    - For an evening meal: use "main course" not "dinner" or "evening meal"
+    - Vegetarian vs vegan: "vegetarian" for meat/fish-free, "vegan" ONLY for 100% plant-based (no animal products)
+    - Do not combine a meal moment (lunch, breakfast, brunch, drinks, midday meal) with a course (main course, starter, dessert, side dish, in-between course)`,
+    },
   });
 }
 
@@ -246,7 +291,8 @@ export function buildRecipePhotoOcrSystemPrompt(lang: AiLanguage = 'nl'): string
     purpose: 'recipeExtract',
     jsonOnly: false,
     lang,
-    instructionsNl: `Je helpt bij het importeren van een recept uit een foto (boek/print/screenshot).
+    instructions: {
+      nl: `Je helpt bij het importeren van een recept uit een foto (boek/print/screenshot).
 
 Taak:
 - Schrijf alle leesbare recepttekst uit de afbeelding over als PLAIN TEXT.
@@ -258,6 +304,19 @@ Regels:
 - GEEN JSON.
 - GEEN markdown.
 - GEEN uitleg; alleen de getranscribeerde tekst.`,
+      en: `You are helping to import a recipe from a photo (book/print/screenshot).
+
+Task:
+- Transcribe all readable recipe text from the image as PLAIN TEXT.
+- Keep line breaks and headings (e.g. "Ingredients", "Preparation", "For the sauce") where visible.
+- Copy quantities, units and times over literally (e.g. "200 g", "1 tbsp", "20 min").
+- If part of the text is illegible: leave it out (do not guess) or mark it with "…".
+
+Rules:
+- NO JSON.
+- NO markdown.
+- NO explanation; only the transcribed text.`,
+    },
   });
 }
 
@@ -269,7 +328,8 @@ export function buildRecipeExtractFromOcrTextSystemPrompt(lang: AiLanguage = 'nl
     purpose: 'recipeExtract',
     jsonOnly: true,
     lang,
-    instructionsNl: `Je bent een recept-parser.
+    instructions: {
+      nl: `Je bent een recept-parser.
 Je krijgt OCR-tekst die uit één of meerdere foto’s is getranscribeerd.
 Extraheer het recept uit die tekst en retourneer ALLEEN één JSON-object (geen markdown, geen uitleg ervoor of erna) in exact dit schema:
 
@@ -310,6 +370,48 @@ Regels:
     - Voor avondmaaltijd: gebruik "hoofdgerecht" niet "diner", "avondeten" of "avondmaaltijd"
     - Vegetarisch vs vegan: "vegetarisch" voor vlees/vis-vrij, "vegan" ALLEEN voor 100% plantaardig (geen dierlijke producten)
     - Geen combinatie van maaltijdmoment (lunch, ontbijt, brunch, borrel, middageten) met gang (hoofdgerecht, voorgerecht, nagerecht, bijgerecht, tussengerecht)`,
+      en: `You are a recipe parser.
+You receive OCR text transcribed from one or more photos.
+Extract the recipe from that text and return ONLY one JSON object (no markdown, no explanation before or after) in exactly this schema:
+
+Schema:
+${RECIPE_JSON_SCHEMA}
+
+Rules:
+- Normalise units: use g, kg, ml, l, tbsp, tsp, piece(s), clove, slice, sprig, leaf, pinch, or "to taste" where appropriate.
+- Group ingredients if the text has clear sections.
+- Estimate prep_time_min, cook_time_min, total_time_min if they are not stated explicitly.
+- timer_seconds: always a whole number of seconds (e.g. 30, 90; no fractions of minutes such as 0.5).
+- All text in English.
+- Tags ("tags"): at most 6–8 useful keywords that characterise the recipe.
+    Use ONLY tags that genuinely help with categorising and searching.
+
+    **Allowed (and always standardise to English):**
+    - Cuisine: italian, french, asian, dutch, mediterranean, mexican, thai, indonesian
+    - Diet: vegetarian, vegan, gluten-free, dairy-free, keto, sugar-free
+    - Technique: oven, baked, fried, grilled, steamed, roasted, stir-fried, raw, cold
+    - Season: summer, spring, autumn, winter
+    - Course: main course, starter, dessert, side dish, in-between course
+    - Main ingredient: chicken, beef, pork, fish, seafood, vegetable, pasta, rice, potato
+      (only if it is the most important component, not for every ingredient)
+
+    **Never generate (this information already lives in separate fields):**
+    - Numeric serving counts: "4 servings", "2 people", "6 pieces", "1-2 servings", "4-6 people"
+    - Preparation times: "30 minutes", "1 hour", "2 hours", "45 min", "15 minutes"
+
+    **Never generate (no search value or redundant):**
+    - Generic compliments: delicious, tasty, yummy, lovely, lekker, heerlijk, smakelijk
+    - Difficulty: easy, simple, quick, difficult, complicated, medium, makkelijk, snel
+    - Shop/brand names: ah, albert heijn, jumbo, lidl, plus, coop, dirk, ekoplaza, tesco, sainsbury's, asda, morrisons, aldi, waitrose
+    - Generic recipe words: recipe, recipes, dish, gerecht, recept
+    - Generic cooking terms: cooking, cook, prepare, make, koken, bereiden
+
+    **Standardisation rules:**
+    - ALWAYS use English terms: "summer" not "zomer", "italian" not "italiaans", "grilled" not "gegrild"
+    - For an evening meal: use "main course" not "dinner" or "evening meal"
+    - Vegetarian vs vegan: "vegetarian" for meat/fish-free, "vegan" ONLY for 100% plant-based (no animal products)
+    - Do not combine a meal moment (lunch, breakfast, brunch, drinks, midday meal) with a course (main course, starter, dessert, side dish, in-between course)`,
+    },
   });
 }
 
@@ -318,7 +420,8 @@ export function buildRecipeAdjustSystemPrompt(lang: AiLanguage = 'nl'): string {
     purpose: 'adjustRecipe',
     jsonOnly: true,
     lang,
-    instructionsNl: `De gebruiker heeft een notitie geschreven over een recept.
+    instructions: {
+      nl: `De gebruiker heeft een notitie geschreven over een recept.
 Pas het recept aan op basis van de notitie.
 Retourneer het VOLLEDIGE aangepaste recept in hetzelfde JSON-schema als hieronder.
 Wijzig ALLEEN wat de notitie impliceert; behoud overige onderdelen waar mogelijk.
@@ -329,6 +432,18 @@ Belangrijk (kooklogica):
 
 Schema:
 ${RECIPE_JSON_SCHEMA}`,
+      en: `The user has written a note about a recipe.
+Adjust the recipe based on the note.
+Return the FULL adjusted recipe in the same JSON schema as below.
+Change ONLY what the note implies; keep the remaining parts where possible.
+
+Important (cooking logic):
+- If a change affects technique (order, temperature, timing, "briefly bake/fry", adding liquid, etc.), also adjust the preparation steps so the result is culinarily correct.
+- You may reorder, split or merge steps if necessary for a correct technique, but limit yourself to what the note logically causes.
+
+Schema:
+${RECIPE_JSON_SCHEMA}`,
+    },
   });
 }
 
@@ -337,7 +452,8 @@ export function buildWeekPlanSystemPrompt(lang: AiLanguage = 'nl'): string {
     purpose: 'weekPlan',
     jsonOnly: true,
     lang,
-    instructionsNl: `Je helpt met weekplanning voor maaltijden (alleen diner).
+    instructions: {
+      nl: `Je helpt met weekplanning voor maaltijden (alleen diner).
 Je krijgt een lijst met dagen en een lijst met beschikbare recepten (met id's).
 Houd rekening met de wensen van de gebruiker en met het tijdschema / beschikbaarheid uit het kookprofiel.
 
@@ -369,6 +485,39 @@ Regels:
   - Gebruik in "plan" dan "recipe_id" als string: de "temp_id" van het nieuwe recept.
   - Als de gebruiker dit niet vraagt: laat "new_recipes" weg of leeg.
 - Als iets niet kan: vul "unsatisfied_constraints" met concrete redenen, maar geef alsnog een best-effort plan.`,
+      en: `You help with weekly meal planning (dinner only).
+You get a list of days and a list of available recipes (with ids).
+Take into account the user's wishes and the time schedule / availability from the cooking profile.
+
+Output:
+- Return one JSON object according to this schema:
+${WEEK_PLAN_OUTPUT_SCHEMA}
+
+Rules:
+- Use only recipe_id's that appear in the input.
+- Each date must appear exactly once in "plan".
+- Servings:
+  - "servings" means the number of eaters for that day (so usually equal to servings_default, unless the user asks for something else).
+  - With "cooks_for_days" > 1 you cook extra IN ADVANCE, but "servings" stays the same (do not double it).
+- Leftovers (cooking for 2 days at once):
+  - HARD RULE: try to plan the week as much as possible in 2-day blocks: cooking day + leftover day after it.
+    - Example: days 1–2 together, 3–4 together, 5–6 together, etc. (the last day may be solo).
+  - PREFER: plan leftovers preferably on the directly following selected day(s) (so without gaps).
+    - If you do use a gap (e.g. because only one cooking day is possible), do so sparingly and explain briefly in "rationale" and/or "unsatisfied_constraints".
+  - On the cooking day, set "cooks_for_days" to 2 or 3.
+  - For the following day(s) that are leftovers: set "leftover_of_date" to the cooking day (YYYY-MM-DD) and set "cooks_for_days" to 1.
+  - Leftover days must not generate new leftovers (so no cooks_for_days > 1 when leftover_of_date is set).
+- Variation (against repetition):
+  - HARD RULE: do not use the same recipe more than once as "cooking fresh" within the selected days.
+  - Repetition is only allowed when it is explicitly a leftover day (leftover_of_date set).
+  - HARD RULE: if INPUT_JSON contains "recently_used_recipe_ids": avoid those recipes as "cooking fresh".
+    - Only if there are too few unique options may you deviate from this; then put a clear reason in "unsatisfied_constraints".
+- If the user explicitly asks to add a new recipe (e.g. "add a new recipe: ..."):
+  - You may create at most 2 new recipes in "new_recipes".
+  - In "plan", use "recipe_id" as a string: the "temp_id" of the new recipe.
+  - If the user does not ask this: leave "new_recipes" out or empty.
+- If something is impossible: fill "unsatisfied_constraints" with concrete reasons, but still provide a best-effort plan.`,
+    },
   });
 }
 
@@ -377,7 +526,8 @@ export function buildBioScoreSystemPrompt(lang: AiLanguage = 'nl'): string {
     purpose: 'bioScore',
     jsonOnly: true,
     lang,
-    instructionsNl: `Je beoordeelt ingrediënten voor een bio-score in een kookapp.
+    instructions: {
+      nl: `Je beoordeelt ingrediënten voor een bio-score in een kookapp.
 Je krijgt een lijst met ingredient-namen (losse woorden/phrases).
 
 Taak:
@@ -398,6 +548,28 @@ Pesticiden (p):
 
 OUTPUT_SCHEMA:
 ${BIO_SCORE_OUTPUT_SCHEMA}`,
+      en: `You assess ingredients for a bio score in a cooking app.
+You get a list of ingredient names (loose words/phrases).
+
+Task:
+- Assess ONLY ingredients that are clearly vegetables or fruit.
+- Ignore anything that is not a vegetable/fruit (meat/fish/dairy/grains/oil/herbs/spices/water/salt/etc.). Do NOT put those in the output.
+- Return ONLY JSON according to the schema below.
+
+Origin buckets (l):
+- "G": NL/BE/DE (green)
+- "O": rest of Europe (orange)
+- "R": world/elsewhere (outside Europe) (red)
+- If the origin is unknown: pick the most likely bucket (default "O"), unless the ingredient is almost always from NL/BE/DE.
+
+Pesticides (p):
+- "L": none/very little
+- "M": some
+- "H": a lot
+
+OUTPUT_SCHEMA:
+${BIO_SCORE_OUTPUT_SCHEMA}`,
+    },
   });
 }
 
@@ -514,11 +686,26 @@ export function buildWeekPlanUserPrompt(params: {
             total_in_library: sel.totalInLibrary,
             included_in_prompt: sel.includedInPrompt,
             note_nl:
-              'Niet je volledige receptenbibliotheek staat in deze lijst; alleen onderstaande recepten zijn meegestuurd (favorieten en recent eerst). Gebruik alleen recipe_id’s uit recipes.',
+              lang === 'en'
+                ? 'Your full recipe library is not in this list; only the recipes below have been included (favourites and recent ones first). Use only recipe_id’s from recipes.'
+                : 'Niet je volledige receptenbibliotheek staat in deze lijst; alleen onderstaande recepten zijn meegestuurd (favorieten en recent eerst). Gebruik alleen recipe_id’s uit recipes.',
           },
         }
       : {}),
   };
+  const hardRules =
+    lang === 'en'
+      ? `- Return ONLY JSON.
+- Use only recipe_id’s from INPUT_JSON.
+- If the user mentions ingredients in wishes_text that are “left over / still in the fridge / need using up” (e.g. “I still have some carrots” or “ik heb nog wortel”):
+  - By default, assume these are used up with 1x cooking (so work them into at most 1 cooking day + any leftover day depending on it).
+  - Do NOT use such ingredients in every dish, unless the user explicitly says there is a lot of it or it must go into several dishes.`
+      : `- Retourneer ALLEEN JSON.
+- Gebruik uitsluitend recipe_id’s uit INPUT_JSON.
+- Als de gebruiker in wishes_text ingrediënten noemt die “nog over zijn / nog liggen / op moeten” (bijv. “ik heb nog wortel”):
+  - Ga er standaard van uit dat dit met 1× koken op gaat (dus verwerk het in maximaal 1 kookdag + eventuele restjesdag die daarvan afhangt).
+  - Gebruik zulke ingrediënten NIET in alle gerechten, tenzij de gebruiker expliciet zegt dat het veel is of in meerdere gerechten moet.`;
+
   return `PURPOSE: weekPlan
 
 TASK:
@@ -531,9 +718,5 @@ OUTPUT_SCHEMA:
 ${WEEK_PLAN_OUTPUT_SCHEMA}
 
 HARD RULES:
-- Retourneer ALLEEN JSON.
-- Gebruik uitsluitend recipe_id’s uit INPUT_JSON.
-- Als de gebruiker in wishes_text ingrediënten noemt die “nog over zijn / nog liggen / op moeten” (bijv. “ik heb nog wortel”):
-  - Ga er standaard van uit dat dit met 1× koken op gaat (dus verwerk het in maximaal 1 kookdag + eventuele restjesdag die daarvan afhangt).
-  - Gebruik zulke ingrediënten NIET in alle gerechten, tenzij de gebruiker expliciet zegt dat het veel is of in meerdere gerechten moet.`;
+${hardRules}`;
 }

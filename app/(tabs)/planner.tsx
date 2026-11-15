@@ -24,6 +24,7 @@ import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useI18n } from '../../components/I18nContext';
 import { useAppTheme } from '../../components/ThemeContext';
 import { callAiText, hasActiveAiKey } from '../../lib/aiClient';
+import type { AiLanguage } from '../../lib/aiLanguage';
 import {
   buildAiRepairUserPrompt,
   buildWeekPlanSystemPrompt,
@@ -85,12 +86,102 @@ function diffDays(a: string, b: string): number {
   return Math.round((dateOnlyToMs(a) - dateOnlyToMs(b)) / (24 * 60 * 60 * 1000));
 }
 
+/**
+ * Tweetalige validatie-meldingen voor de weekplan-AI-output. Deze teksten gaan
+ * zowel naar de AI (repair-prompt: VALIDATION_ERRORS) als naar de gebruiker.
+ */
+function weekPlanValidationTexts(lang: AiLanguage) {
+  if (lang === 'en') {
+    return {
+      notValidJson: 'Response was not valid JSON.',
+      jsonRootNotObject: 'JSON root is not an object.',
+      planMissingOrNotArray: 'Field "plan" is missing or is not an array.',
+      newRecipeItemNotObject: 'An item in "new_recipes" is not an object.',
+      newRecipeItemMissingTempId: 'An item in "new_recipes" is missing "temp_id".',
+      duplicateTempId: (tempId: string) => `Duplicate temp_id in "new_recipes": ${tempId}.`,
+      recipeMissingForTempId: (tempId: string) =>
+        `"recipe" is missing or is not an object for temp_id ${tempId}.`,
+      planItemNotObject: 'A plan item is not an object.',
+      planItemMissingDate: 'Plan item is missing "date".',
+      unexpectedDate: (date: string) => `Unexpected date in plan: ${date}.`,
+      duplicateDate: (date: string) => `Duplicate date in plan: ${date}.`,
+      unknownRecipeId: (recipeId: number, date: string) =>
+        `Unknown recipe_id in plan (${recipeId}) for ${date}.`,
+      emptyRecipeId: (date: string) => `Empty recipe_id in plan for ${date}.`,
+      unknownTempRecipeId: (recipeId: string, date: string) =>
+        `Unknown temp recipe_id in plan (${recipeId}) for ${date}.`,
+      leftoverOutsideDays: (leftoverOfDate: string, date: string) =>
+        `leftover_of_date (${leftoverOfDate}) is not within the selected days (for ${date}).`,
+      leftoverMustBeBefore: (leftoverOfDate: string, date: string) =>
+        `leftover_of_date (${leftoverOfDate}) must be before ${date}.`,
+      leftoverNoMultiDay: (date: string) =>
+        `Leftovers day ${date} must not have cooks_for_days > 1.`,
+      missingDate: (date: string) => `Missing date in plan: ${date}.`,
+      leftoverMissingCookDay: (date: string, leftoverOfDate: string) =>
+        `Leftovers day ${date} refers to missing cooking day ${leftoverOfDate}.`,
+      leftoverPointsToLeftover: (date: string, leftoverOfDate: string) =>
+        `Leftovers day ${date} refers to ${leftoverOfDate}, but that day is itself a leftovers day.`,
+      leftoverSameRecipe: (date: string, leftoverOfDate: string) =>
+        `Leftovers day ${date} must have the same recipe as ${leftoverOfDate}.`,
+      invalidLeftoverCombination: (srcDate: string, date: string) =>
+        `Invalid leftovers date combination: ${srcDate} -> ${date}.`,
+      cookDaysTooSmall: (srcDate: string, cooksForDays: number, needed: number, date: string) =>
+        `Cooking day ${srcDate} has cooks_for_days=${cooksForDays}, but it must be ≥ ${needed} to cover leftovers on ${date}.`,
+      recipeRecentlyUsed: (recipeId: string) =>
+        `Recipe ${recipeId} was used recently. Prefer a different recipe (unless there are too few options).`,
+      noPlanForDay: 'No plan for the selected day.',
+      unknownRecipeIdShort: 'Unknown recipe_id.',
+      unknownTempRecipeIdShort: 'Unknown temp recipe_id.',
+    };
+  }
+  return {
+    notValidJson: 'Antwoord was geen geldige JSON.',
+    jsonRootNotObject: 'JSON-root is geen object.',
+    planMissingOrNotArray: 'Veld "plan" ontbreekt of is geen array.',
+    newRecipeItemNotObject: 'Een item in "new_recipes" is geen object.',
+    newRecipeItemMissingTempId: 'Een item in "new_recipes" mist "temp_id".',
+    duplicateTempId: (tempId: string) => `Dubbele temp_id in "new_recipes": ${tempId}.`,
+    recipeMissingForTempId: (tempId: string) =>
+      `"recipe" ontbreekt of is geen object voor temp_id ${tempId}.`,
+    planItemNotObject: 'Een plan-item is geen object.',
+    planItemMissingDate: 'Plan-item mist "date".',
+    unexpectedDate: (date: string) => `Onverwachte date in plan: ${date}.`,
+    duplicateDate: (date: string) => `Duplicate date in plan: ${date}.`,
+    unknownRecipeId: (recipeId: number, date: string) =>
+      `Onbekende recipe_id in plan (${recipeId}) voor ${date}.`,
+    emptyRecipeId: (date: string) => `Lege recipe_id in plan voor ${date}.`,
+    unknownTempRecipeId: (recipeId: string, date: string) =>
+      `Onbekende temp recipe_id in plan (${recipeId}) voor ${date}.`,
+    leftoverOutsideDays: (leftoverOfDate: string, date: string) =>
+      `leftover_of_date (${leftoverOfDate}) valt niet binnen de gekozen dagen (voor ${date}).`,
+    leftoverMustBeBefore: (leftoverOfDate: string, date: string) =>
+      `leftover_of_date (${leftoverOfDate}) moet vóór ${date} liggen.`,
+    leftoverNoMultiDay: (date: string) => `Restjes-dag ${date} mag geen cooks_for_days > 1 hebben.`,
+    missingDate: (date: string) => `Ontbrekende date in plan: ${date}.`,
+    leftoverMissingCookDay: (date: string, leftoverOfDate: string) =>
+      `Restjes-dag ${date} verwijst naar ontbrekende kookdag ${leftoverOfDate}.`,
+    leftoverPointsToLeftover: (date: string, leftoverOfDate: string) =>
+      `Restjes-dag ${date} verwijst naar ${leftoverOfDate}, maar die is zelf ook een restjes-dag.`,
+    leftoverSameRecipe: (date: string, leftoverOfDate: string) =>
+      `Restjes-dag ${date} moet hetzelfde recept hebben als ${leftoverOfDate}.`,
+    invalidLeftoverCombination: (srcDate: string, date: string) =>
+      `Ongeldige restjes-datum combinatie: ${srcDate} -> ${date}.`,
+    cookDaysTooSmall: (srcDate: string, cooksForDays: number, needed: number, date: string) =>
+      `Kookdag ${srcDate} heeft cooks_for_days=${cooksForDays}, maar moet ≥ ${needed} zijn voor restjes op ${date}.`,
+    recipeRecentlyUsed: (recipeId: string) =>
+      `Recept ${recipeId} is recent gebruikt. Kies liever een ander recept (tenzij er te weinig opties zijn).`,
+    noPlanForDay: 'Geen plan voor de gekozen dag.',
+    unknownRecipeIdShort: 'Onbekende recipe_id.',
+    unknownTempRecipeIdShort: 'Onbekende temp recipe_id.',
+  };
+}
+
 export default function PlannerScreen() {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { confirm, ConfirmDialog } = useConfirmDialog();
-  const { t } = useI18n();
+  const { t, languageId } = useI18n();
   const { recipeId: recipeIdParam } = useLocalSearchParams<{ recipeId?: string }>();
   const quickRecipeId = Number.parseInt(String(recipeIdParam ?? ''), 10);
 
@@ -558,6 +649,7 @@ export default function PlannerScreen() {
 
   const openRecipePreview = useCallback(
     (date: string) => {
+      const lang: AiLanguage = languageId ?? 'nl';
       const plan = plansByDate[date] ?? null;
       const pendingNew = pendingNewByDate[date] ?? null;
       const pendingLeftoverSrc = pendingLeftoverOfDateByDate[date] ?? null;
@@ -603,7 +695,7 @@ export default function PlannerScreen() {
                 applyIfCurrent(() => setPreviewRecipeId(null));
                 const src = pendingNew ?? pendingCook;
                 if (!src) throw new Error(t('planner.preview.errorBuild'));
-                const parsed = parseExtractedRecipeJson(src.recipeJsonText, '');
+                const parsed = parseExtractedRecipeJson(src.recipeJsonText, '', lang);
                 if (!parsed.ok) throw new Error(parsed.reason);
                 const p = parsed.payload;
                 applyIfCurrent(() => {
@@ -654,7 +746,7 @@ export default function PlannerScreen() {
         finishPreviewLoad();
       })();
     },
-    [defaultServings, pendingLeftoverOfDateByDate, pendingNewByDate, plansByDate, t]
+    [defaultServings, pendingLeftoverOfDateByDate, pendingNewByDate, plansByDate, t, languageId]
   );
 
   const filteredRecipes = useMemo(() => pickerItems, [pickerItems]);
@@ -764,8 +856,9 @@ export default function PlannerScreen() {
     if (q.length < 5) return;
 
     setPickerAiLoading(true);
+    const lang: AiLanguage = languageId ?? 'nl';
     try {
-      const results = await discoverRecipes(q);
+      const results = await discoverRecipes(q, lang);
       if (results.length === 0) {
         Alert.alert(
           t('planner.picker.alertNoRecipesTitle'),
@@ -779,7 +872,7 @@ export default function PlannerScreen() {
     } finally {
       setPickerAiLoading(false);
     }
-  }, [pickerAiIds, pickerQuery, t]);
+  }, [pickerAiIds, pickerQuery, t, languageId]);
 
   const leftoversForDate = useCallback(
     (date: string): { sourceDate: string; recipeId: number; title: string; servings: number }[] => {
@@ -886,6 +979,7 @@ export default function PlannerScreen() {
 
   const generateWeekPlan = useCallback(() => {
     if (busyGenerate) return;
+    const lang: AiLanguage = languageId ?? 'nl';
     void (async () => {
       setBusyGenerate(true);
       try {
@@ -931,7 +1025,7 @@ export default function PlannerScreen() {
         const recentlyUsedSet = new Set(recentlyUsedRecipeIds.map((x) => String(x)));
 
         const recipeIdSet = new Set(promptRecipes.map((r) => r.id));
-        const system = buildWeekPlanSystemPrompt();
+        const system = buildWeekPlanSystemPrompt(lang);
         const user = buildWeekPlanUserPrompt({
           currentDate: toIsoDateOnly(new Date()),
           days: selectedDays,
@@ -942,6 +1036,7 @@ export default function PlannerScreen() {
           selectionMeta: promptPack.capped
             ? { totalInLibrary: promptPack.totalInLibrary, includedInPrompt: promptRecipes.length }
             : undefined,
+          lang,
         });
 
         const res = await callAiText({
@@ -970,41 +1065,42 @@ export default function PlannerScreen() {
               newRecipes: { tempId: string; recipeJsonText: string }[];
             }
           | { ok: false; errors: string[] } => {
+          const msgs = weekPlanValidationTexts(lang);
           let j: unknown;
           try {
             j = JSON.parse(rawText);
           } catch {
-            return { ok: false, errors: ['Antwoord was geen geldige JSON.'] };
+            return { ok: false, errors: [msgs.notValidJson] };
           }
-          if (!isRecord(j)) return { ok: false, errors: ['JSON-root is geen object.'] };
+          if (!isRecord(j)) return { ok: false, errors: [msgs.jsonRootNotObject] };
           const newRecipesIn = Array.isArray(j.new_recipes) ? j.new_recipes : [];
           const newRecipes: { tempId: string; recipeJsonText: string }[] = [];
           const seenTemp = new Set<string>();
           const newRecipeErrs: string[] = [];
           for (const row of newRecipesIn) {
             if (!isRecord(row)) {
-              newRecipeErrs.push('Een item in "new_recipes" is geen object.');
+              newRecipeErrs.push(msgs.newRecipeItemNotObject);
               continue;
             }
             const tempId = typeof row.temp_id === 'string' ? row.temp_id.trim() : '';
             if (!tempId) {
-              newRecipeErrs.push('Een item in "new_recipes" mist "temp_id".');
+              newRecipeErrs.push(msgs.newRecipeItemMissingTempId);
               continue;
             }
             if (seenTemp.has(tempId)) {
-              newRecipeErrs.push(`Dubbele temp_id in "new_recipes": ${tempId}.`);
+              newRecipeErrs.push(msgs.duplicateTempId(tempId));
               continue;
             }
             seenTemp.add(tempId);
             if (!isRecord(row.recipe)) {
-              newRecipeErrs.push(`"recipe" ontbreekt of is geen object voor temp_id ${tempId}.`);
+              newRecipeErrs.push(msgs.recipeMissingForTempId(tempId));
               continue;
             }
             newRecipes.push({ tempId, recipeJsonText: JSON.stringify(row.recipe) });
           }
 
           const plan = Array.isArray(j.plan) ? j.plan : null;
-          if (!plan) return { ok: false, errors: ['Veld "plan" ontbreekt of is geen array.'] };
+          if (!plan) return { ok: false, errors: [msgs.planMissingOrNotArray] };
 
           const expected = new Set(selectedDays);
           const seen = new Set<string>();
@@ -1019,7 +1115,7 @@ export default function PlannerScreen() {
 
           for (const row of plan) {
             if (!isRecord(row)) {
-              errs.push('Een plan-item is geen object.');
+              errs.push(msgs.planItemNotObject);
               continue;
             }
             const date = typeof row.date === 'string' ? row.date.trim() : '';
@@ -1039,46 +1135,44 @@ export default function PlannerScreen() {
                   : null;
 
             if (!date) {
-              errs.push('Plan-item mist "date".');
+              errs.push(msgs.planItemMissingDate);
               continue;
             }
             if (!expected.has(date)) {
-              errs.push(`Onverwachte date in plan: ${date}.`);
+              errs.push(msgs.unexpectedDate(date));
               continue;
             }
             if (seen.has(date)) {
-              errs.push(`Duplicate date in plan: ${date}.`);
+              errs.push(msgs.duplicateDate(date));
               continue;
             }
             if (typeof recipeId === 'number') {
               if (!recipeIdSet.has(recipeId)) {
-                errs.push(`Onbekende recipe_id in plan (${recipeId}) voor ${date}.`);
+                errs.push(msgs.unknownRecipeId(recipeId, date));
                 continue;
               }
             } else {
               if (!recipeId) {
-                errs.push(`Lege recipe_id in plan voor ${date}.`);
+                errs.push(msgs.emptyRecipeId(date));
                 continue;
               }
               if (!seenTemp.has(recipeId)) {
-                errs.push(`Onbekende temp recipe_id in plan (${recipeId}) voor ${date}.`);
+                errs.push(msgs.unknownTempRecipeId(recipeId, date));
                 continue;
               }
             }
 
             if (leftoverOfDate) {
               if (!expected.has(leftoverOfDate)) {
-                errs.push(
-                  `leftover_of_date (${leftoverOfDate}) valt niet binnen de gekozen dagen (voor ${date}).`
-                );
+                errs.push(msgs.leftoverOutsideDays(leftoverOfDate, date));
                 continue;
               }
               if (leftoverOfDate >= date) {
-                errs.push(`leftover_of_date (${leftoverOfDate}) moet vóór ${date} liggen.`);
+                errs.push(msgs.leftoverMustBeBefore(leftoverOfDate, date));
                 continue;
               }
               if (cooksForDays > 1) {
-                errs.push(`Restjes-dag ${date} mag geen cooks_for_days > 1 hebben.`);
+                errs.push(msgs.leftoverNoMultiDay(date));
                 continue;
               }
             }
@@ -1088,7 +1182,7 @@ export default function PlannerScreen() {
           }
 
           for (const d of expected) {
-            if (!seen.has(d)) errs.push(`Ontbrekende date in plan: ${d}.`);
+            if (!seen.has(d)) errs.push(msgs.missingDate(d));
           }
 
           if (errs.length === 0) {
@@ -1097,21 +1191,15 @@ export default function PlannerScreen() {
               if (!p.leftoverOfDate) continue;
               const src = byDate.get(p.leftoverOfDate) ?? null;
               if (!src) {
-                errs.push(
-                  `Restjes-dag ${p.date} verwijst naar ontbrekende kookdag ${p.leftoverOfDate}.`
-                );
+                errs.push(msgs.leftoverMissingCookDay(p.date, p.leftoverOfDate));
                 continue;
               }
               if (src.leftoverOfDate) {
-                errs.push(
-                  `Restjes-dag ${p.date} verwijst naar ${p.leftoverOfDate}, maar die is zelf ook een restjes-dag.`
-                );
+                errs.push(msgs.leftoverPointsToLeftover(p.date, p.leftoverOfDate));
                 continue;
               }
               if (String(src.recipeId) !== String(p.recipeId)) {
-                errs.push(
-                  `Restjes-dag ${p.date} moet hetzelfde recept hebben als ${p.leftoverOfDate}.`
-                );
+                errs.push(msgs.leftoverSameRecipe(p.date, p.leftoverOfDate));
                 continue;
               }
               // Normalize: leftovers day servings must match the cooking day servings (servings = eaters, not total cooked portions).
@@ -1122,13 +1210,11 @@ export default function PlannerScreen() {
               // We still validate that cooks_for_days is large enough to cover the calendar span.
               const needed = diffDays(p.date, src.date) + 1;
               if (!Number.isFinite(needed) || needed <= 1) {
-                errs.push(`Ongeldige restjes-datum combinatie: ${src.date} -> ${p.date}.`);
+                errs.push(msgs.invalidLeftoverCombination(src.date, p.date));
                 continue;
               }
               if (src.cooksForDays < needed) {
-                errs.push(
-                  `Kookdag ${src.date} heeft cooks_for_days=${src.cooksForDays}, maar moet ≥ ${needed} zijn voor restjes op ${p.date}.`
-                );
+                errs.push(msgs.cookDaysTooSmall(src.date, src.cooksForDays, needed, p.date));
               }
             }
           }
@@ -1174,9 +1260,7 @@ export default function PlannerScreen() {
               if (p.leftoverOfDate) continue;
               const key = String(p.recipeId);
               if (recentlyUsedSet.has(key)) {
-                errs.push(
-                  `Recept ${key} is recent gebruikt. Kies liever een ander recept (tenzij er te weinig opties zijn).`
-                );
+                errs.push(msgs.recipeRecentlyUsed(key));
                 break;
               }
             }
@@ -1194,9 +1278,10 @@ export default function PlannerScreen() {
             outputSchema: WEEK_PLAN_OUTPUT_SCHEMA,
             previousOutput: res.text,
             validationErrors: parsed.errors,
+            lang,
           });
           const repaired = await callAiText({
-            system: buildWeekPlanSystemPrompt(),
+            system: buildWeekPlanSystemPrompt(lang),
             user: repairUser,
             maxTokens: 4096,
             task: 'weekplan',
@@ -1220,7 +1305,7 @@ export default function PlannerScreen() {
 
         const newRecipeByTemp = new Map<string, { title: string; recipeJsonText: string }>();
         for (const nr of parsed.newRecipes) {
-          const parsedRecipe = parseExtractedRecipeJson(nr.recipeJsonText, '');
+          const parsedRecipe = parseExtractedRecipeJson(nr.recipeJsonText, '', lang);
           if (!parsedRecipe.ok) {
             Alert.alert(
               t('planner.alerts.newRecipeInvalidTitle'),
@@ -1300,14 +1385,18 @@ export default function PlannerScreen() {
         setBusyGenerate(false);
       }
     })();
-  }, [busyGenerate, dates, reload, selectedByDate, t, wishesText]);
+  }, [busyGenerate, dates, languageId, reload, selectedByDate, t, wishesText]);
 
   const approvePendingNewRecipe = useCallback(
     (date: string) => {
       const pending = pendingNewByDate[date] ?? null;
       if (!pending) return;
       void (async () => {
-        const parsedRecipe = parseExtractedRecipeJson(pending.recipeJsonText, '');
+        const parsedRecipe = parseExtractedRecipeJson(
+          pending.recipeJsonText,
+          '',
+          languageId ?? 'nl'
+        );
         if (!parsedRecipe.ok) {
           Alert.alert(t('planner.alerts.newRecipeInvalidTitle'), parsedRecipe.reason);
           return;
@@ -1353,7 +1442,7 @@ export default function PlannerScreen() {
         reload();
       })();
     },
-    [pendingLeftoverOfDateByDate, pendingNewByDate, reload, t]
+    [languageId, pendingLeftoverOfDateByDate, pendingNewByDate, reload, t]
   );
 
   const openReplacePopup = useCallback((date: string) => {
@@ -1369,6 +1458,7 @@ export default function PlannerScreen() {
     if (!prev) return;
     if (busyReplace) return;
     const comment = pendingReplaceText.trim();
+    const lang: AiLanguage = languageId ?? 'nl';
     void (async () => {
       setBusyReplace(true);
       try {
@@ -1381,7 +1471,7 @@ export default function PlannerScreen() {
         const promptPack = await listRecipesForWeekPlanningPrompt();
         const promptRecipes = promptPack.recipes;
         const recipeIdSet = new Set(promptRecipes.map((r) => r.id));
-        const system = buildWeekPlanSystemPrompt();
+        const system = buildWeekPlanSystemPrompt(lang);
         const fixedPlan = dates
           .filter((d) => d !== date)
           .map((d) => {
@@ -1406,23 +1496,38 @@ export default function PlannerScreen() {
           })
           .filter(Boolean);
         const contextLines: string[] = [];
-        contextLines.push('CONTEXT (vaste planning, niet aanpassen):');
+        contextLines.push(
+          lang === 'en'
+            ? 'CONTEXT (fixed planning, do not change):'
+            : 'CONTEXT (vaste planning, niet aanpassen):'
+        );
         contextLines.push(JSON.stringify(fixedPlan));
         contextLines.push('');
-        contextLines.push(`OUD VOORSTEL (vervangen, niet toevoegen): ${prev.title}`);
+        contextLines.push(
+          lang === 'en'
+            ? `OLD SUGGESTION (to be replaced, do not add): ${prev.title}`
+            : `OUD VOORSTEL (vervangen, niet toevoegen): ${prev.title}`
+        );
         contextLines.push('');
         contextLines.push(
-          'INSTRUCTIE: pas ALLEEN deze dag aan. Houd je aan eerdere wensen/constraints uit wishes_text over de hele week.'
+          lang === 'en'
+            ? 'INSTRUCTION: change ONLY this day. Stick to the earlier wishes/constraints from wishes_text for the whole week.'
+            : 'INSTRUCTIE: pas ALLEEN deze dag aan. Houd je aan eerdere wensen/constraints uit wishes_text over de hele week.'
         );
+        const replacementWishes =
+          lang === 'en'
+            ? 'Come up with a different new recipe than the previous suggestion. Return a new recipe as new_recipes and schedule it on this day.'
+            : 'Maak liever een ander nieuw recept dan het vorige voorstel. Geef een nieuw recept terug als new_recipes en plan het op deze dag.';
         const user = buildWeekPlanUserPrompt({
           days: [date],
           recipes: promptRecipes,
-          wishesText: `${wishesText.trim() || ''}${comment ? `\n\nExtra wensen: ${comment}` : ''}\n\n${contextLines.join('\n')}\n\nMaak liever een ander nieuw recept dan het vorige voorstel. Geef een nieuw recept terug als new_recipes en plan het op deze dag.`,
+          wishesText: `${wishesText.trim() || ''}${comment ? `\n\n${lang === 'en' ? 'Extra wishes' : 'Extra wensen'}: ${comment}` : ''}\n\n${contextLines.join('\n')}\n\n${replacementWishes}`,
           defaultServings,
           recentlyUsedRecipeIds: [],
           selectionMeta: promptPack.capped
             ? { totalInLibrary: promptPack.totalInLibrary, includedInPrompt: promptRecipes.length }
             : undefined,
+          lang,
         });
 
         const res = await callAiText({
@@ -1461,13 +1566,14 @@ export default function PlannerScreen() {
               newRecipes: { tempId: string; recipeJsonText: string }[];
             }
           | { ok: false; errors: string[] } => {
+          const msgs = weekPlanValidationTexts(lang);
           let j: unknown;
           try {
             j = JSON.parse(rawText);
           } catch {
-            return { ok: false, errors: ['Antwoord was geen geldige JSON.'] };
+            return { ok: false, errors: [msgs.notValidJson] };
           }
-          if (!isRecord(j)) return { ok: false, errors: ['JSON-root is geen object.'] };
+          if (!isRecord(j)) return { ok: false, errors: [msgs.jsonRootNotObject] };
           const newRecipesIn = Array.isArray(j.new_recipes) ? j.new_recipes : [];
           const newRecipes: { tempId: string; recipeJsonText: string }[] = [];
           const seenTemp = new Set<string>();
@@ -1480,7 +1586,7 @@ export default function PlannerScreen() {
             newRecipes.push({ tempId, recipeJsonText: JSON.stringify(row.recipe) });
           }
           const planIn = Array.isArray(j.plan) ? j.plan : null;
-          if (!planIn) return { ok: false, errors: ['Veld "plan" ontbreekt of is geen array.'] };
+          if (!planIn) return { ok: false, errors: [msgs.planMissingOrNotArray] };
           const out: {
             date: string;
             recipeId: number | string;
@@ -1504,15 +1610,15 @@ export default function PlannerScreen() {
               typeof lodRaw === 'string' ? lodRaw.trim() : lodRaw == null ? null : null;
             out.push({ date: d, recipeId, servings, cooksForDays, leftoverOfDate });
           }
-          if (out.length === 0) return { ok: false, errors: ['Geen plan voor de gekozen dag.'] };
+          if (out.length === 0) return { ok: false, errors: [msgs.noPlanForDay] };
           // Validate recipe id exists or temp exists.
           const p0 = out[0];
           if (typeof p0.recipeId === 'number') {
             if (!recipeIdSet.has(p0.recipeId))
-              return { ok: false, errors: ['Onbekende recipe_id.'] };
+              return { ok: false, errors: [msgs.unknownRecipeIdShort] };
           } else {
             if (!seenTemp.has(p0.recipeId))
-              return { ok: false, errors: ['Onbekende temp recipe_id.'] };
+              return { ok: false, errors: [msgs.unknownTempRecipeIdShort] };
           }
           return { ok: true, plan: out, newRecipes };
         };
@@ -1524,9 +1630,10 @@ export default function PlannerScreen() {
             outputSchema: WEEK_PLAN_OUTPUT_SCHEMA,
             previousOutput: res.text,
             validationErrors: parsed.errors,
+            lang,
           });
           const repaired = await callAiText({
-            system: buildWeekPlanSystemPrompt(),
+            system: buildWeekPlanSystemPrompt(lang),
             user: repairUser,
             maxTokens: 4096,
             task: 'weekplan',
@@ -1607,6 +1714,7 @@ export default function PlannerScreen() {
   }, [
     busyReplace,
     defaultServings,
+    languageId,
     pendingNewByDate,
     pendingReplaceDate,
     pendingReplaceText,

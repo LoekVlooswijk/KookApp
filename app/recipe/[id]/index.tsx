@@ -51,7 +51,7 @@ import type { FullRecipe } from '../../../lib/types';
 
 export default function RecipeDetailScreen() {
   const theme = useAppTheme();
-  const { t } = useI18n();
+  const { t, languageId } = useI18n();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const { id: idParam, openLists } = useLocalSearchParams<{ id: string; openLists?: string }>();
   const router = useRouter();
@@ -730,6 +730,7 @@ export default function RecipeDetailScreen() {
                 setBioRecomputeBusy(true);
                 void (async () => {
                   try {
+                    const lang = languageId ?? 'nl';
                     const ok = await checkHasInternet();
                     if (!ok) {
                       Alert.alert(
@@ -745,7 +746,7 @@ export default function RecipeDetailScreen() {
                         if (i.name?.trim()) ingNames.push(i.name.trim());
                       }
                     }
-                    const assessed = await assessProduceLocalityAndPesticides(ingNames);
+                    const assessed = await assessProduceLocalityAndPesticides(ingNames, lang);
                     if (!assessed.ok) {
                       Alert.alert(t('recipes.common.error'), assessed.message);
                       return;

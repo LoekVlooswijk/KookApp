@@ -4,20 +4,62 @@ import {
   callAiWithImageText,
   type AiImageMediaType,
 } from './aiClient';
+import type { AiLanguage } from './aiLanguage';
 import { getImportAhSiteSearchEnabled } from './aiAhSearchPrefs';
 import { getImportWebSearchEnabled } from './aiImportPrefs';
 import { fetchRecipePageHtml } from './fetchRecipePage';
 import { coerceModelJsonText, extractRecipeFromPageHtml } from './recipeExtract';
 import type { RecipeSavePayload } from './types';
 
-const AH_URL_RULES = `Albert Heijn / Allerhande (belangrijk):
+/** Albert Heijn / Allerhande URL-heuristiek: inhoud gelijk, alleen de instructietaal wisselt. */
+function buildAhUrlRules(lang: AiLanguage): string {
+  if (lang === 'en') {
+    return `Albert Heijn / Allerhande (important):
+- Valid recipe URLs look like this: https://www.ah.nl/allerhande/recept/R-R<digits>/<slug> OR a short link https://www.ah.nl/r/<digits only>.
+- NEVER use https://www.ah.nl/recepten/<anything> — that path is not a recipe page and usually returns 404.
+- NEVER use https://www.ah.nl/allerhande/recepten/<category> — those are overview/theme pages, not a single recipe.
+- Without a visible URL or a known recipe number: set "url" to null and fill "zoekhint" (e.g. title + "Albert Heijn allerhande").`;
+  }
+  return `Albert Heijn / Allerhande (belangrijk):
 - Geldige recept-URL’s zien er zo uit: https://www.ah.nl/allerhande/recept/R-R<digits>/<slug> OF korte link https://www.ah.nl/r/<alleen cijfers>.
 - Gebruik NOOIT https://www.ah.nl/recepten/<iets> — dat pad is geen receptpagina en levert meestal 404.
 - Gebruik NOOIT https://www.ah.nl/allerhande/recepten/<categorie> — dat zijn overzichts-/themapagina’s, geen enkel recept.
 - Zonder zichtbare URL of zonder bekend receptnummer: zet "url" op null en vul "zoekhint" (bijv. titel + "Albert Heijn allerhande").`;
+}
 
 /** System prompt: vision stap — recepten herkennen op een foto. */
-export const DISCOVER_SYSTEM = `Je helpt bij het importeren van recepten uit een screenshot of foto.
+export function buildDiscoverSystem(lang: AiLanguage = 'nl'): string {
+  if (lang === 'en') {
+    return `You help import recipes from a screenshot or photo.
+
+You only see the image (no live web in this step). Prefer "url": null over a guessed link.
+
+Task:
+1. Recognise all recipes in the image (a single large recipe, a scroll with several, a list of titles, a website with a visible URL, etc.).
+2. If at least one recipe name or a clear dish is visible on the photo: fill "recepten" with at least one item. One good item beats an empty list.
+3. For each recipe:
+   - If a URL is literally visible (address bar, link, QR code), use it exactly.
+   - Otherwise set "url" to null and fill "zoekhint" — required — with a short search line that can later be searched on Google/the web (e.g. the exact title + "Albert Heijn recept", or "allerhande pasta rode pesto"). Without a good search hint the app cannot find the recipe.
+   - With an Albert Heijn / Allerhande / AH logo or house style: include that in "zoekhint" (e.g. title + "ah.nl allerhande recept").
+   - Do not guess a URL from a title slug if you are not sure about the URL pattern.
+
+${buildAhUrlRules(lang)}
+
+Other Dutch-language sites: only fill in the URL if you are reasonably sure of the URL pattern; otherwise url null + search hint with title + site name.
+
+Answer ONLY with one JSON object (no markdown), exactly this schema:
+{
+  "recepten": [
+    {
+      "titel": string,
+      "url": string | null,
+      "zoekhint": string | null,
+      "toelichting": string
+    }
+  ]
+}`;
+  }
+  return `Je helpt bij het importeren van recepten uit een screenshot of foto.
 
 Je ziet alleen de afbeelding (geen live web in deze stap). Liever "url": null dan een gegokte link.
 
@@ -30,7 +72,7 @@ Taak:
    - Bij logo of huisstijl van Albert Heijn / Allerhande / AH: verwerk dat in "zoekhint" (bv. titel + "ah.nl allerhande recept").
    - Gok geen URL op basis van een titel-slug als je het URL-patroon niet zeker weet.
 
-${AH_URL_RULES}
+${buildAhUrlRules(lang)}
 
 Andere Nederlandstalige sites: alleen url invullen als je het URL-patroon redelijk zeker weet; anders url null + zoekhint met titel + sitenaam.
 
@@ -45,19 +87,55 @@ Antwoord ALLEEN met één JSON-object (geen markdown), exact dit schema:
     }
   ]
 }`;
+}
+
+/** Standaard NL-variant (o.a. ai-prompts-catalog toont bewust de NL-variant). */
+export const DISCOVER_SYSTEM = buildDiscoverSystem();
 
 /** System prompt: URL-resolutie zonder web search. */
-export const RESOLVE_URLS_SYSTEM = `Je krijgt een JSON-lijst met recepttitels en per item een "zoekhint" (titel + context van de screenshot). Je hebt geen web search in deze modus: gebruik alleen URL’s die je uit training zeker weet.
+export function buildResolveUrlsSystem(lang: AiLanguage = 'nl'): string {
+  if (lang === 'en') {
+    return `You receive a JSON list of recipe titles and, per item, a "zoekhint" (title + context from the screenshot). You have no web search in this mode: use only URLs you know for certain from training.
+
+For each item: give ONE concrete https-URL to a recipe page, or url null if you are not sure. Prefer null over a URL that will probably 404. Use the search hint to work out which site it probably is, but do not fill in a URL you are not certain of.
+
+${buildAhUrlRules(lang)}
+
+Answer ONLY with JSON: {"recepten":[{"titel":"exactly the same title as the input","url":"https:..." | null}]}
+The order and titles must match the input.`;
+  }
+  return `Je krijgt een JSON-lijst met recepttitels en per item een "zoekhint" (titel + context van de screenshot). Je hebt geen web search in deze modus: gebruik alleen URL’s die je uit training zeker weet.
 
 Voor elk item: geef ÉÉN concrete https-URL naar een receptpagina, of url null als je het niet zeker weet. Liever null dan een URL die waarschijnlijk 404 is. Gebruik de zoekhint om te bepalen welke site het waarschijnlijk is, maar vul geen URL in als je die niet zeker kent.
 
-${AH_URL_RULES}
+${buildAhUrlRules(lang)}
 
 Antwoord ALLEEN met JSON: {"recepten":[{"titel":"exact zelfde titel als input","url":"https:..." | null}]}
 De volgorde en titels moeten overeenkomen met de input.`;
+}
+
+/** Standaard NL-variant (o.a. ai-prompts-catalog toont bewust de NL-variant). */
+export const RESOLVE_URLS_SYSTEM = buildResolveUrlsSystem();
 
 /** System prompt: URL-resolutie met web_search tool (indien ingeschakeld). */
-export const RESOLVE_URLS_SYSTEM_WEB = `Je krijgt een JSON-lijst met recepttitels en per item een "zoekhint" om op het web te zoeken. Je hebt de tool web_search, maar je organisatie heeft een strikte tokens-per-minute limiet.
+export function buildResolveUrlsSystemWeb(lang: AiLanguage = 'nl'): string {
+  if (lang === 'en') {
+    return `You receive a JSON list of recipe titles and, per item, a "zoekhint" to search the web. You have the web_search tool, but your organisation has a strict tokens-per-minute limit.
+
+So limit web_search to at most 1 call per recipe. If a single search does not turn up a real recipe page: set url to null.
+
+Priority for the Netherlands: Albert Heijn / Allerhande (ah.nl, allerhande). Search e.g. on the search hint or on "<title> site:ah.nl recept" if the hint suggests AH/Allerhande. Other sites: njam, 24kitchen, lekker en simpel, etc.
+
+After searching: start your answer directly with the "{" character (no introductory sentence). JSON only:
+{"recepten":[{"titel":"exactly the same title as the input","url":"https:..." | null}]}
+
+For each item exactly one URL to exactly one recipe page, or null. Prefer null over an invented path.
+
+${buildAhUrlRules(lang)}
+
+The order and titles must match the input.`;
+  }
+  return `Je krijgt een JSON-lijst met recepttitels en per item een "zoekhint" om op het web te zoeken. Je hebt de tool web_search, maar je organisatie heeft een strikte tokens-per-minute limiet.
 
 Beperk daarom web_search tot maximaal 1 keer per recept. Als je na 1 zoekopdracht geen echte receptpagina hebt: zet url op null.
 
@@ -68,9 +146,13 @@ Na het zoeken: begin je antwoord direct met het teken "{" (geen inleidende zin).
 
 Voor elk item precies één URL naar één receptpagina, of null. Liever null dan een verzonnen pad.
 
-${AH_URL_RULES}
+${buildAhUrlRules(lang)}
 
 De volgorde en titels moeten overeenkomen met de input.`;
+}
+
+/** Standaard NL-variant (o.a. ai-prompts-catalog toont bewust de NL-variant). */
+export const RESOLVE_URLS_SYSTEM_WEB = buildResolveUrlsSystemWeb();
 
 export type DiscoveredRecipeRef = {
   titel: string;
@@ -299,25 +381,26 @@ function stripDiscouragedAhRecipeUrls(items: DiscoveredRecipeRef[]): DiscoveredR
  * met web search op zoekhint/titel (zodat een foto zonder zichtbare link alsnog gevonden kan worden).
  */
 export async function resolveRecipeUrlsForPhotoImport(
-  items: DiscoveredRecipeRef[]
+  items: DiscoveredRecipeRef[],
+  lang: AiLanguage = 'nl'
 ): Promise<DiscoveredRecipeRef[]> {
   let out = stripDiscouragedAhRecipeUrls(enrichDiscoveredForWebSearch(items));
 
   const noneHaveUrl = out.every((i) => !i.url?.trim());
   if (noneHaveUrl) {
-    out = await resolveMissingRecipeUrls(out, { forceWebSearch: true });
+    out = await resolveMissingRecipeUrls(out, { forceWebSearch: true }, lang);
     out = stripDiscouragedAhRecipeUrls(out);
   } else {
-    out = await resolveMissingRecipeUrls(out);
+    out = await resolveMissingRecipeUrls(out, undefined, lang);
     out = stripDiscouragedAhRecipeUrls(out);
   }
 
   if (out.some((i) => !i.url?.trim())) {
-    out = await resolveMissingRecipeUrls(out);
+    out = await resolveMissingRecipeUrls(out, undefined, lang);
     out = stripDiscouragedAhRecipeUrls(out);
   }
   if (out.some((i) => !i.url?.trim())) {
-    out = await resolveMissingRecipeUrls(out, { forceWebSearch: true });
+    out = await resolveMissingRecipeUrls(out, { forceWebSearch: true }, lang);
     out = stripDiscouragedAhRecipeUrls(out);
   }
   return out;
@@ -382,13 +465,16 @@ function parseResolveJson(raw: string): Map<string, string | null> {
 
 export async function discoverRecipesFromPhoto(
   imageBase64: string,
-  imageMediaType: AiImageMediaType
+  imageMediaType: AiImageMediaType,
+  lang: AiLanguage = 'nl'
 ): Promise<{ ok: true; recepten: DiscoveredRecipeRef[] } | { ok: false; message: string }> {
   const userPrimary =
-    'Analyseer deze afbeelding en geef het JSON-object met alle recepten volgens het schema. Geen markdown, alleen JSON.';
+    lang === 'en'
+      ? 'Analyse this image and give the JSON object with all recipes according to the schema. No markdown, JSON only.'
+      : 'Analyseer deze afbeelding en geef het JSON-object met alle recepten volgens het schema. Geen markdown, alleen JSON.';
 
   const res = await callAiWithImageText({
-    system: DISCOVER_SYSTEM,
+    system: buildDiscoverSystem(lang),
     userText: userPrimary,
     imageBase64,
     imageMediaType,
@@ -400,9 +486,11 @@ export async function discoverRecipesFromPhoto(
   let recepten = parseDiscoverJson(res.text);
   if (!recepten) {
     const res2 = await callAiWithImageText({
-      system: DISCOVER_SYSTEM,
+      system: buildDiscoverSystem(lang),
       userText:
-        'De vorige poging was geen geldig JSON of "recepten" was leeg. Probeer opnieuw: alleen één JSON-object, velden titel, url (of null), zoekhint (verplicht als url null), toelichting. Minstens 1 recept als er een gerecht of recepttitel op de foto staat. Geen code fences.',
+        lang === 'en'
+          ? 'The previous attempt was not valid JSON or "recepten" was empty. Try again: one JSON object only, fields titel, url (or null), zoekhint (required when url is null), toelichting. At least 1 recipe if a dish or recipe title is visible on the photo. No code fences.'
+          : 'De vorige poging was geen geldig JSON of "recepten" was leeg. Probeer opnieuw: alleen één JSON-object, velden titel, url (of null), zoekhint (verplicht als url null), toelichting. Minstens 1 recept als er een gerecht of recepttitel op de foto staat. Geen code fences.',
       imageBase64,
       imageMediaType,
       maxTokens: 4096,
@@ -415,7 +503,10 @@ export async function discoverRecipesFromPhoto(
   if (!recepten) {
     return {
       ok: false,
-      message: 'Kon geen recepten uit de afbeelding halen. Probeer een scherpere foto.',
+      message:
+        lang === 'en'
+          ? 'Could not get any recipes from the image. Try a sharper photo.'
+          : 'Kon geen recepten uit de afbeelding halen. Probeer een scherpere foto.',
     };
   }
   return { ok: true, recepten: enrichDiscoveredForWebSearch(recepten) };
@@ -424,7 +515,8 @@ export async function discoverRecipesFromPhoto(
 /** Vul ontbrekende URL’s aan met een (tekst-only) AI-aanroep. */
 export async function resolveMissingRecipeUrls(
   items: DiscoveredRecipeRef[],
-  options?: { forceWebSearch?: boolean }
+  options?: { forceWebSearch?: boolean },
+  lang: AiLanguage = 'nl'
 ): Promise<DiscoveredRecipeRef[]> {
   const need = items.filter((i) => !i.url?.trim());
   if (need.length === 0) return items;
@@ -461,7 +553,7 @@ export async function resolveMissingRecipeUrls(
     }
     const baseUser = JSON.stringify({ recepten: payload }, null, 2);
     const res = await callAiText({
-      system: RESOLVE_URLS_SYSTEM,
+      system: buildResolveUrlsSystem(lang),
       user: baseUser,
       maxTokens: 2048,
       task: 'import',
@@ -479,7 +571,7 @@ export async function resolveMissingRecipeUrls(
       const row = remaining[idx];
       const baseUser = JSON.stringify({ recepten: [payloadFor(row)] }, null, 2);
       const res = await callAiTextWithWebSearch({
-        system: RESOLVE_URLS_SYSTEM_WEB,
+        system: buildResolveUrlsSystemWeb(lang),
         user: baseUser,
         maxTokens: 2048,
         task: 'import',
@@ -517,12 +609,16 @@ export async function resolveMissingRecipeUrls(
 }
 
 /** Zoek een recept-URL op het web op basis van vrije tekst (zelfde pipeline als foto-import). */
-export async function resolveRecipeUrlFromSearchQuery(query: string): Promise<string | null> {
+export async function resolveRecipeUrlFromSearchQuery(
+  query: string,
+  lang: AiLanguage = 'nl'
+): Promise<string | null> {
   const q = query.trim();
   if (!q) return null;
-  const resolved = await resolveRecipeUrlsForPhotoImport([
-    { titel: q, url: null, zoekhint: q, toelichting: '' },
-  ]);
+  const resolved = await resolveRecipeUrlsForPhotoImport(
+    [{ titel: q, url: null, zoekhint: q, toelichting: '' }],
+    lang
+  );
   const u = resolved[0]?.url?.trim();
   return u && u.startsWith('http') ? u : null;
 }
@@ -542,11 +638,12 @@ export type PhotoImportRow = {
 export function buildManualFallbackImportPayload(
   title: string,
   sourceUrl: string,
-  extractionHint?: string
+  extractionHint?: string,
+  lang: AiLanguage = 'nl'
 ): RecipeSavePayload {
   const hint = extractionHint?.trim();
   return {
-    title: title.trim() || 'Nieuw recept',
+    title: title.trim() || (lang === 'en' ? 'New recipe' : 'Nieuw recept'),
     description: '',
     sourceUrl: sourceUrl.trim(),
     baseServings: 4,
@@ -572,7 +669,9 @@ export function buildManualFallbackImportPayload(
         steps: [
           {
             description:
-              'Automatische import kon geen volledige structuur uit de pagina halen. Vul ingrediënten en stappen hieronder handmatig in, of open de bron-URL in je browser om te kopiëren.',
+              lang === 'en'
+                ? 'The automatic import could not get a complete structure from the page. Fill in the ingredients and steps below manually, or open the source URL in your browser to copy them.'
+                : 'Automatische import kon geen volledige structuur uit de pagina halen. Vul ingrediënten en stappen hieronder handmatig in, of open de bron-URL in je browser om te kopiëren.',
             timerSeconds: null,
           },
         ],
@@ -585,10 +684,13 @@ export type FetchAndExtractResult =
   | { ok: true; payload: RecipeSavePayload; sourceHtmlTruncated?: boolean }
   | { ok: false; message: string; rawModelText?: string; debugSnippet?: string };
 
-export async function fetchAndExtractOneRecipe(url: string): Promise<FetchAndExtractResult> {
+export async function fetchAndExtractOneRecipe(
+  url: string,
+  lang: AiLanguage = 'nl'
+): Promise<FetchAndExtractResult> {
   try {
-    const html = await fetchRecipePageHtml(url);
-    const extracted = await extractRecipeFromPageHtml(html, url);
+    const html = await fetchRecipePageHtml(url, lang);
+    const extracted = await extractRecipeFromPageHtml(html, url, lang);
     if (!extracted.ok) {
       return {
         ok: false,
@@ -606,7 +708,12 @@ export async function fetchAndExtractOneRecipe(url: string): Promise<FetchAndExt
   } catch (e) {
     return {
       ok: false,
-      message: e instanceof Error ? e.message : 'Download of extractie mislukt.',
+      message:
+        e instanceof Error
+          ? e.message
+          : lang === 'en'
+            ? 'Download or extraction failed.'
+            : 'Download of extractie mislukt.',
     };
   }
 }

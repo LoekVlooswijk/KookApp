@@ -52,7 +52,7 @@ function parsePositiveInt(s: string): number | null {
 
 export default function BioScoreSettingsScreen() {
   const theme = useAppTheme();
-  const { t } = useI18n();
+  const { t, languageId } = useI18n();
   const router = useRouter();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const web = Platform.OS === 'web';
@@ -172,7 +172,7 @@ export default function BioScoreSettingsScreen() {
       if (!ok) return;
       setBusy(true);
       try {
-        const res = await computeMissingBioScores();
+        const res = await computeMissingBioScores(languageId ?? 'nl');
         Alert.alert(
           t('settings.bioScorePage.doneTitle'),
           t('settings.bioScorePage.doneMessage', { updated: res.updated, failed: res.failed })
@@ -186,7 +186,7 @@ export default function BioScoreSettingsScreen() {
         setBusy(false);
       }
     })();
-  }, [confirm, t, web]);
+  }, [confirm, t, web, languageId]);
 
   const chipOutline = { borderColor: theme.accentBorderMuted };
 

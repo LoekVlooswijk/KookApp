@@ -12,23 +12,30 @@
  */
 import { Platform } from 'react-native';
 
+import type { AiLanguage } from './aiLanguage';
 import { safeErrorMessage } from './logSafe';
 import { getWebViewWorkerCount, requestRecipePageHtmlViaWebView } from './recipePageWebViewBridge';
 
-export function assertValidRecipeUrl(url: string): URL {
+export function assertValidRecipeUrl(url: string, lang: AiLanguage = 'nl'): URL {
   let parsed: URL;
   try {
     parsed = new URL(url.trim());
   } catch {
-    throw new Error('Voer een geldige http(s)-URL in.');
+    throw new Error(
+      lang === 'en' ? 'Please enter a valid http(s) URL.' : 'Voer een geldige http(s)-URL in.'
+    );
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('Alleen http- of https-URL’s zijn toegestaan.');
+    throw new Error(
+      lang === 'en'
+        ? 'Only http or https URLs are allowed.'
+        : 'Alleen http- of https-URL’s zijn toegestaan.'
+    );
   }
   return parsed;
 }
 
-async function fetchRecipePageHtmlDirect(url: string): Promise<string> {
+async function fetchRecipePageHtmlDirect(url: string, lang: AiLanguage = 'nl'): Promise<string> {
   let res: Response;
   try {
     res = await fetch(url.trim(), {
@@ -41,20 +48,26 @@ async function fetchRecipePageHtmlDirect(url: string): Promise<string> {
     });
   } catch {
     throw new Error(
-      'Download mislukt (netwerk). Op web blokkeren sommige sites externe aanroepen (CORS); probeer iOS/Android.'
+      lang === 'en'
+        ? 'Download failed (network). On web, some sites block external calls (CORS); try iOS/Android.'
+        : 'Download mislukt (netwerk). Op web blokkeren sommige sites externe aanroepen (CORS); probeer iOS/Android.'
     );
   }
 
   if (!res.ok) {
     console.error(`[fetchRecipePage] direct fetch ${url} -> HTTP ${res.status}`);
-    throw new Error(`Pagina kon niet worden geladen (HTTP ${res.status}).`);
+    throw new Error(
+      lang === 'en'
+        ? `The page could not be loaded (HTTP ${res.status}).`
+        : `Pagina kon niet worden geladen (HTTP ${res.status}).`
+    );
   }
 
   return await res.text();
 }
 
-export async function fetchRecipePageHtml(url: string): Promise<string> {
-  assertValidRecipeUrl(url);
+export async function fetchRecipePageHtml(url: string, lang: AiLanguage = 'nl'): Promise<string> {
+  assertValidRecipeUrl(url, lang);
 
   const useWebView = Platform.OS !== 'web' && getWebViewWorkerCount() > 0;
   if (useWebView) {
@@ -67,5 +80,5 @@ export async function fetchRecipePageHtml(url: string): Promise<string> {
     }
   }
 
-  return await fetchRecipePageHtmlDirect(url);
+  return await fetchRecipePageHtmlDirect(url, lang);
 }

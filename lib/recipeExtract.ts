@@ -117,21 +117,33 @@ export function parseExtractedRecipeJson(
   sourceUrl: string,
   lang: AiLanguage = 'nl'
 ): { ok: true; payload: RecipeSavePayload } | { ok: false; reason: string } {
-  void lang; // EN-variant: zie ai-taalfase (validatiefoutmeldingen per taal)
+  const reason = (nl: string, en: string): string => (lang === 'en' ? en : nl);
   let root: unknown;
   try {
     root = JSON.parse(stripCodeFence(modelText));
   } catch {
-    return { ok: false, reason: 'Het antwoord is geen geldige JSON.' };
+    return {
+      ok: false,
+      reason: reason('Het antwoord is geen geldige JSON.', 'The answer is not valid JSON.'),
+    };
   }
 
   if (!isRecord(root)) {
-    return { ok: false, reason: 'JSON moet een object zijn.' };
+    return {
+      ok: false,
+      reason: reason('JSON moet een object zijn.', 'The answer must be a single JSON object.'),
+    };
   }
 
   const title = (asString(root.title) ?? '').trim();
   if (!title) {
-    return { ok: false, reason: 'De extractie heeft geen titel opgeleverd.' };
+    return {
+      ok: false,
+      reason: reason(
+        'De extractie heeft geen titel opgeleverd.',
+        'The extraction did not produce a title.'
+      ),
+    };
   }
 
   const description = asString(root.description);
@@ -166,7 +178,13 @@ export function parseExtractedRecipeJson(
   }
 
   if (ingredientGroups.length === 0) {
-    return { ok: false, reason: 'Er zijn geen ingrediënten gevonden om te importeren.' };
+    return {
+      ok: false,
+      reason: reason(
+        'Er zijn geen ingrediënten gevonden om te importeren.',
+        'No ingredients were found to import.'
+      ),
+    };
   }
 
   const sectionsIn = Array.isArray(root.step_sections) ? root.step_sections : [];
@@ -194,7 +212,13 @@ export function parseExtractedRecipeJson(
   }
 
   if (stepSections.length === 0) {
-    return { ok: false, reason: 'Er zijn geen bereidingsstappen gevonden om te importeren.' };
+    return {
+      ok: false,
+      reason: reason(
+        'Er zijn geen bereidingsstappen gevonden om te importeren.',
+        'No preparation steps were found to import.'
+      ),
+    };
   }
 
   const ingredientNamesForTags: string[] = [];
@@ -429,7 +453,11 @@ function extractRecipeJsonLdOnlyFromScripts(jsonLdScripts: string[]): string[] {
   return [JSON.stringify(minimal.length > 0 ? minimal : recipes)];
 }
 
-function clipHtmlForModel(filtered: string): { clipped: string; truncated: boolean } {
+function clipHtmlForModel(
+  filtered: string,
+  lang: AiLanguage = 'nl'
+): { clipped: string; truncated: boolean } {
+  const t = (nl: string, en: string): string => (lang === 'en' ? en : nl);
   const maxChars = filtered.startsWith(JSON_LD_BLOCKS_MARKER)
     ? MAX_JSONLD_ONLY_CHARS
     : MAX_HTML_CHARS;
@@ -437,7 +465,7 @@ function clipHtmlForModel(filtered: string): { clipped: string; truncated: boole
   const i = filtered.indexOf(JSON_LD_BLOCKS_MARKER);
   if (i === -1) {
     return {
-      clipped: `${filtered.slice(0, maxChars)}\n\n<!-- HTML ingekort -->`,
+      clipped: `${filtered.slice(0, maxChars)}\n\n${t('<!-- HTML ingekort -->', '<!-- HTML truncated -->')}`,
       truncated: true,
     };
   }
@@ -446,20 +474,27 @@ function clipHtmlForModel(filtered: string): { clipped: string; truncated: boole
   const budget = maxChars - ldTail.length - 80;
   if (budget < 500) {
     return {
-      clipped: `${filtered.slice(0, maxChars)}\n\n<!-- HTML + JSON-LD ingekort -->`,
+      clipped: `${filtered.slice(0, maxChars)}\n\n${t(
+        '<!-- HTML + JSON-LD ingekort -->',
+        '<!-- HTML + JSON-LD truncated -->'
+      )}`,
       truncated: true,
     };
   }
   const clippedMain =
     htmlPart.length <= budget
       ? htmlPart
-      : `${htmlPart.slice(0, budget)}\n\n<!-- HTML ingekort; JSON-LD hieronder volledig -->`;
+      : `${htmlPart.slice(0, budget)}\n\n${t(
+          '<!-- HTML ingekort; JSON-LD hieronder volledig -->',
+          '<!-- HTML truncated; JSON-LD below in full -->'
+        )}`;
   return { clipped: clippedMain + ldTail, truncated: true };
 }
 
 export async function extractRecipeFromPageHtml(
   html: string,
-  sourceUrl: string
+  sourceUrl: string,
+  lang: AiLanguage = 'nl'
 ): Promise<ExtractResult> {
   // Allerhande/AH pages usually contain full schema.org/Recipe JSON-LD.
   // To cut tokens hard (esp. when importing multiple recipes quickly), prefer sending only JSON-LD if present.
@@ -471,12 +506,15 @@ export async function extractRecipeFromPageHtml(
     preferJsonLdOnly && recipeOnly.length > 0
       ? `${JSON_LD_BLOCKS_MARKER}${recipeOnly.join('\n---JSONLD---\n')}`
       : filterRecipePageHtml(html);
-  const clip = clipHtmlForModel(filtered);
+  const clip = clipHtmlForModel(filtered, lang);
 
-  const user = `Bron-URL: ${sourceUrl}\n\nHTML:\n\n${clip.clipped}`;
+  const user = `${
+    lang === 'en' ? 'Source URL' : 'Bron-URL'
+  }: ${sourceUrl}\n\nHTML:\n\n${clip.clipped}`;
 
+  const system = buildRecipeExtractSystemPrompt(lang);
   const ai = await callAiText({
-    system: EXTRACT_SYSTEM_PROMPT,
+    system,
     user,
     maxTokens: 8192,
     task: 'import',
@@ -490,7 +528,7 @@ export async function extractRecipeFromPageHtml(
     };
   }
 
-  const parsed = parseExtractedRecipeJson(ai.text, sourceUrl);
+  const parsed = parseExtractedRecipeJson(ai.text, sourceUrl, lang);
   if (!parsed.ok) {
     // One repair attempt: send the model its own output + validation errors.
     const repairUser = buildAiRepairUserPrompt({
@@ -498,9 +536,10 @@ export async function extractRecipeFromPageHtml(
       outputSchema: RECIPE_JSON_SCHEMA,
       previousOutput: ai.text,
       validationErrors: [parsed.reason],
+      lang,
     });
     const repaired = await callAiText({
-      system: EXTRACT_SYSTEM_PROMPT,
+      system,
       user: repairUser,
       maxTokens: 8192,
       task: 'import',
@@ -513,7 +552,7 @@ export async function extractRecipeFromPageHtml(
         debugSnippet: repaired.debugSnippet,
       };
     }
-    const parsed2 = parseExtractedRecipeJson(repaired.text, sourceUrl);
+    const parsed2 = parseExtractedRecipeJson(repaired.text, sourceUrl, lang);
     if (!parsed2.ok) {
       return { ok: false, message: parsed2.reason, rawModelText: repaired.text };
     }

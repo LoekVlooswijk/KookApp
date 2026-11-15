@@ -23,6 +23,7 @@ import { useI18n } from '../../components/I18nContext';
 import { useAnimatedValue } from '../../components/useAnimatedValue';
 import RecipeWebViewLoader from '../../components/RecipeWebViewLoader';
 import type { AiImageMediaType } from '../../lib/aiClient';
+import type { AiLanguage } from '../../lib/aiLanguage';
 import { hasActiveAiKey } from '../../lib/aiClient';
 import {
   getImportAhSiteSearchEnabled,
@@ -101,7 +102,7 @@ async function downscaleForVision(
 
 export default function ImportRecipeScreen() {
   const theme = useAppTheme();
-  const { t } = useI18n();
+  const { t, languageId } = useI18n();
   const router = useRouter();
   const params = useLocalSearchParams<{ saved?: string | string[] }>();
   const [tab, setTab] = useState<'url' | 'foto' | 'receptfotos'>('url');
@@ -207,6 +208,7 @@ export default function ImportRecipeScreen() {
   });
 
   const runExtractUrl = useCallback(async () => {
+    const lang: AiLanguage = languageId ?? 'nl';
     const okKey = await hasActiveAiKey();
     if (!okKey) {
       setUrlMessage(t('recipes.import.noApiKey'));
@@ -236,7 +238,7 @@ export default function ImportRecipeScreen() {
       if (classified.kind === 'direct') {
         fetchUrl = classified.url;
       } else {
-        const found = await resolveRecipeUrlFromSearchQuery(classified.query);
+        const found = await resolveRecipeUrlFromSearchQuery(classified.query, lang);
         if (!found) {
           setUrlMessage(t('recipes.import.noUrlFound'));
           setUrlPhase('error');
@@ -246,7 +248,7 @@ export default function ImportRecipeScreen() {
       }
 
       lastUrlImportFetchRef.current = fetchUrl;
-      const result = await fetchAndExtractOneRecipe(fetchUrl);
+      const result = await fetchAndExtractOneRecipe(fetchUrl, lang);
       if (!result.ok) {
         setUrlMessage(result.message);
         setRawDebug(result.rawModelText ?? result.debugSnippet ?? null);
@@ -262,7 +264,7 @@ export default function ImportRecipeScreen() {
       setRawDebug(null);
       setUrlPhase('error');
     }
-  }, [url, t]);
+  }, [url, t, languageId]);
 
   const goToEditor = useCallback(() => {
     if (!payload) return;
@@ -502,6 +504,7 @@ export default function ImportRecipeScreen() {
 
   const runRecipePhotoJob = useCallback(
     async (job: RecipePhotoJob) => {
+      const lang: AiLanguage = languageId ?? 'nl';
       recipeJobRunningRef.current += 1;
       try {
         const online = await checkHasInternet();
@@ -530,6 +533,7 @@ export default function ImportRecipeScreen() {
         const res = await extractRecipeFromRecipePhotos({
           photos: job.photos,
           hintText: job.hintText,
+          lang,
           onProgress: (p) => {
             if (p.phase === 'ocr') {
               setRecipeJobs((prev) =>
@@ -606,7 +610,7 @@ export default function ImportRecipeScreen() {
         setRecipeJobs((prev) => prev.map((j) => j));
       }
     },
-    [t]
+    [t, languageId]
   );
 
   useEffect(() => {
@@ -685,6 +689,7 @@ export default function ImportRecipeScreen() {
   }, [recipeJobs, saveRecipeJob, t]);
 
   const pickPhotoAndImport = useCallback(async () => {
+    const lang: AiLanguage = languageId ?? 'nl';
     if (Platform.OS === 'web') {
       Alert.alert(t('recipes.import.photoOnWeb.title'), t('recipes.import.photoOnWeb.body'));
       return;
@@ -720,13 +725,13 @@ export default function ImportRecipeScreen() {
 
     try {
       const { base64, mediaType } = await downscaleForVision(asset, t);
-      const discovered = await discoverRecipesFromPhoto(base64, mediaType);
+      const discovered = await discoverRecipesFromPhoto(base64, mediaType, lang);
       if (!discovered.ok) {
         setPhotoError(discovered.message);
         return;
       }
 
-      const withUrls = await resolveRecipeUrlsForPhotoImport(discovered.recepten);
+      const withUrls = await resolveRecipeUrlsForPhotoImport(discovered.recepten, lang);
 
       const rows: PhotoImportRow[] = withUrls.map((r) => ({
         titel: r.titel,
@@ -755,7 +760,7 @@ export default function ImportRecipeScreen() {
             prev.map((p, j) => (j === i ? { ...p, status: 'loading' as const } : p))
           );
 
-          const result = await fetchAndExtractOneRecipe(row.url);
+          const result = await fetchAndExtractOneRecipe(row.url, lang);
 
           setPhotoRows((prev) =>
             prev.map((p, j) =>
@@ -781,7 +786,7 @@ export default function ImportRecipeScreen() {
     } finally {
       setPhotoBusy(false);
     }
-  }, [t]);
+  }, [t, languageId]);
 
   const saveAllOk = useCallback(async () => {
     const okPayloads = photoRows
@@ -1049,7 +1054,8 @@ export default function ImportRecipeScreen() {
                           t('recipes.import.manualFallbackTitle'),
                           lastUrlImportFetchRef.current ??
                             (url.trim().toLowerCase().startsWith('http') ? url.trim() : ''),
-                          urlMessage
+                          urlMessage,
+                          languageId ?? 'nl'
                         )
                       )
                     }
@@ -1153,7 +1159,12 @@ export default function ImportRecipeScreen() {
                           const u = row.url;
                           if (!u) return;
                           goToEditorFromPayload(
-                            buildManualFallbackImportPayload(row.titel, u, row.message)
+                            buildManualFallbackImportPayload(
+                              row.titel,
+                              u,
+                              row.message,
+                              languageId ?? 'nl'
+                            )
                           );
                         }}
                       >

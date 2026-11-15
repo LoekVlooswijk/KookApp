@@ -53,7 +53,6 @@ export async function discoverRecipes(
   query: string,
   lang: AiLanguage = 'nl'
 ): Promise<DiscoveredRecipe[]> {
-  void lang; // EN-variant: zie ai-taalfase
   const allRecipes = await listRecipes();
 
   if (allRecipes.length === 0) {
@@ -62,10 +61,19 @@ export async function discoverRecipes(
 
   const recipesForAi = formatRecipesForAi(allRecipes);
 
-  const systemPrompt =
-    "Je bent een keukenassistent. Geef de beste recept-matches voor een zoekopdracht. Retourneer ALLEEN een JSON-array met de recept-ID's, gerangschikt op relevantie. Gebruik geen andere tekst.";
+  const en = lang === 'en';
+  const systemPrompt = en
+    ? 'You are a kitchen assistant. Return the best recipe matches for a search query. Return ONLY a JSON array of the recipe IDs, ranked by relevance. Use no other text.'
+    : "Je bent een keukenassistent. Geef de beste recept-matches voor een zoekopdracht. Retourneer ALLEEN een JSON-array met de recept-ID's, gerangschikt op relevantie. Gebruik geen andere tekst.";
 
-  const userPrompt = `Zoekopdracht: "${query}"
+  const userPrompt = en
+    ? `Search query: "${query}"
+
+RECIPES (one per line: id | title | category | tags):
+${recipesForAi}
+
+Return the best matches as a JSON array: [id1, id2, id3, ...]`
+    : `Zoekopdracht: "${query}"
 
 RECEPTEN (één per regel: id | titel | categorie | tags):
 ${recipesForAi}

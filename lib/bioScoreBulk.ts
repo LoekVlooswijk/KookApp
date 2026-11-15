@@ -1,14 +1,15 @@
+import type { AiLanguage } from './aiLanguage';
 import { ensureDatabaseAsync } from './db';
 import { checkHasInternet } from './internetCheck';
 import { assessProduceLocalityAndPesticides, finalizeBioScoreFromAssessment } from './bioScore';
 
-export async function computeMissingBioScores(): Promise<{
+export async function computeMissingBioScores(lang: AiLanguage = 'nl'): Promise<{
   updated: number;
   failed: number;
 }> {
   const hasInternet = await checkHasInternet();
   if (!hasInternet) {
-    throw new Error('Geen internetverbinding.');
+    throw new Error(lang === 'en' ? 'No internet connection.' : 'Geen internetverbinding.');
   }
 
   const db = await ensureDatabaseAsync();
@@ -26,7 +27,7 @@ export async function computeMissingBioScores(): Promise<{
         [r.id]
       );
       const names = ingRows.map((x) => x.name).filter(Boolean);
-      const assessed = await assessProduceLocalityAndPesticides(names);
+      const assessed = await assessProduceLocalityAndPesticides(names, lang);
       if (!assessed.ok) {
         failed += 1;
         continue;

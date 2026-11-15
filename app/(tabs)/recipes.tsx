@@ -81,7 +81,7 @@ const WEEKDAY_KEYS: readonly TranslationKey[] = [
 export default function RecipesScreen() {
   const theme = useAppTheme();
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, languageId } = useI18n();
   const { width: windowWidth } = useWindowDimensions();
   const listRef = useRef<FlatList<RecipeListItem>>(null);
   const [searchBlockY, setSearchBlockY] = useState(0);
@@ -244,8 +244,10 @@ export default function RecipesScreen() {
 
     setDiscoverLoading(true);
 
+    const lang = languageId ?? 'nl';
+
     try {
-      const results = await discoverRecipes(searchQuery);
+      const results = await discoverRecipes(searchQuery, lang);
       if (results.length === 0) {
         Alert.alert(
           t('recipes.browse.discover.emptyTitle'),
@@ -259,7 +261,7 @@ export default function RecipesScreen() {
     } finally {
       setDiscoverLoading(false);
     }
-  }, [searchQuery, discoveredIds, t]);
+  }, [searchQuery, discoveredIds, t, languageId]);
 
   const canSwipe = !filtersModalOpen && !modalOpen && !tagsPickerOpen;
 

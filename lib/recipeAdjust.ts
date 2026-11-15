@@ -14,27 +14,33 @@ import type { FullRecipe, RecipeSavePayload } from './types';
 /** Max messages sent on “apply” to cap tokens (full recipe is still in system prompt). */
 const MAX_ADJUST_CHAT_MESSAGES = 14;
 
-function buildAdjustSystemPrompt(): string {
+function buildAdjustSystemPrompt(lang: AiLanguage = 'nl'): string {
   // The prompt builder already includes cook profile + priority rules.
   // Keep this wrapper to avoid touching all call sites.
-  return buildRecipeAdjustSystemPrompt();
+  return buildRecipeAdjustSystemPrompt(lang);
 }
 
-function recipeToReadableText(recipe: FullRecipe): string {
+function recipeToReadableText(recipe: FullRecipe, lang: AiLanguage = 'nl'): string {
+  const en = lang === 'en';
   const lines: string[] = [];
-  lines.push(`Titel: ${recipe.title}`);
-  if (recipe.description?.trim()) lines.push(`Beschrijving: ${recipe.description.trim()}`);
-  if (recipe.category?.trim()) lines.push(`Categorie: ${recipe.category.trim()}`);
-  lines.push(`Porties: ${recipe.baseServings ?? '?'}`);
+  lines.push(`${en ? 'Title' : 'Titel'}: ${recipe.title}`);
+  if (recipe.description?.trim())
+    lines.push(`${en ? 'Description' : 'Beschrijving'}: ${recipe.description.trim()}`);
+  if (recipe.category?.trim())
+    lines.push(`${en ? 'Category' : 'Categorie'}: ${recipe.category.trim()}`);
+  lines.push(`${en ? 'Servings' : 'Porties'}: ${recipe.baseServings ?? '?'}`);
   const times: string[] = [];
-  if (recipe.prepTimeMin != null) times.push(`voorbereiding ${recipe.prepTimeMin} min`);
-  if (recipe.cookTimeMin != null) times.push(`koken ${recipe.cookTimeMin} min`);
-  if (recipe.totalTimeMin != null) times.push(`totaal ${recipe.totalTimeMin} min`);
-  if (times.length) lines.push(`Tijden: ${times.join(', ')}`);
+  if (recipe.prepTimeMin != null)
+    times.push(`${en ? 'prep' : 'voorbereiding'} ${recipe.prepTimeMin} min`);
+  if (recipe.cookTimeMin != null)
+    times.push(`${en ? 'cooking' : 'koken'} ${recipe.cookTimeMin} min`);
+  if (recipe.totalTimeMin != null)
+    times.push(`${en ? 'total' : 'totaal'} ${recipe.totalTimeMin} min`);
+  if (times.length) lines.push(`${en ? 'Times' : 'Tijden'}: ${times.join(', ')}`);
   if (recipe.tags.length > 0) lines.push(`Tags: ${recipe.tags.join(', ')}`);
 
   lines.push('');
-  lines.push('INGREDIËNTEN');
+  lines.push(en ? 'INGREDIENTS' : 'INGREDIËNTEN');
   for (const g of recipe.ingredientGroups) {
     if (g.title?.trim()) lines.push(`[${g.title.trim()}]`);
     for (const i of g.ingredients) {
@@ -46,7 +52,7 @@ function recipeToReadableText(recipe: FullRecipe): string {
   }
 
   lines.push('');
-  lines.push('BEREIDINGSSTAPPEN');
+  lines.push(en ? 'METHOD' : 'BEREIDINGSSTAPPEN');
   let stepNum = 1;
   for (const s of recipe.stepSections) {
     if (s.title?.trim()) lines.push(`[${s.title.trim()}]`);
@@ -63,15 +69,29 @@ function recipeToReadableText(recipe: FullRecipe): string {
 }
 
 export function buildAdjustChatSystemPrompt(recipe: FullRecipe, lang: AiLanguage = 'nl'): string {
-  void lang; // EN-variant: zie ai-taalfase
-  const profile = formatAiCookProfileForPrompt('adjustRecipe');
-  return `Je bent een ervaren kookassistent die helpt recepten te verbeteren.
+  const profile = formatAiCookProfileForPrompt('adjustRecipe', lang);
+  const intro =
+    lang === 'en'
+      ? `You are an experienced cooking assistant helping to improve recipes.
+You are looking at the following recipe together with the home cook:
+
+${recipeToReadableText(recipe, lang)}`
+      : `Je bent een ervaren kookassistent die helpt recepten te verbeteren.
 Je bekijkt samen met de thuiskok het volgende recept:
 
-${recipeToReadableText(recipe)}
+${recipeToReadableText(recipe, lang)}`;
 
-${profile ? `\n${profile}\n` : ''}
-Richtlijnen:
+  const guidelines =
+    lang === 'en'
+      ? `Guidelines:
+- Discuss proposed changes briefly and concretely in English.
+- You may change anything: ingredients, quantities, method steps, timers, timings, description, tags.
+- Take creative liberty: feel free to suggest related improvements too (better seasoning, a handier technique, merging or adding steps) if it fits what the user wants.
+- Refer to specific steps by number when you want to change them.
+- Give a clear overview of what you would change and why.
+- Keep answers short and practical — no long stories.
+- If the user agrees, confirm which changes you will apply.`
+      : `Richtlijnen:
 - Bespreek voorgestelde aanpassingen kort en concreet in het Nederlands.
 - Je mag alles aanpassen: ingrediënten, hoeveelheden, bereidingsstappen, timers, tijden, beschrijving, tags.
 - Neem creatieve vrijheid: stel gerust ook gerelateerde verbeteringen voor (betere kruiden, handiger bereidingswijze, stappen samenvoegen of toevoegen) als dat past bij wat de gebruiker wil.
@@ -79,6 +99,11 @@ Richtlijnen:
 - Geef een duidelijk overzicht van wat je zou veranderen en waarom.
 - Houd antwoorden kort en praktisch — geen lange verhalen.
 - Als de gebruiker akkoord gaat, bevestig dan welke aanpassingen je doorvoert.`;
+
+  return `${intro}
+
+${profile ? `\n${profile}\n` : ''}
+${guidelines}`;
 }
 
 /** Behoud bron-URL, favorieten, bio-score, eigen notities en afbeelding; AI levert alleen receptvelden. */
@@ -104,18 +129,25 @@ export type RecipeAdjustResult =
 
 export async function requestRecipeAdjustment(
   recipe: FullRecipe,
-  userNote: string
+  userNote: string,
+  lang: AiLanguage = 'nl'
 ): Promise<RecipeAdjustResult> {
   const note = userNote.trim();
   if (!note) {
-    return { ok: false, message: 'Schrijf eerst een korte notitie.' };
+    return {
+      ok: false,
+      message: lang === 'en' ? 'Write a short note first.' : 'Schrijf eerst een korte notitie.',
+    };
   }
 
   const shape = fullRecipeToExtractShape(recipe);
-  const userBlock = `Huidige recept (JSON):\n${JSON.stringify(shape)}\n\nNotitie van de gebruiker:\n${note}`;
+  const userBlock =
+    lang === 'en'
+      ? `Current recipe (JSON):\n${JSON.stringify(shape)}\n\nNote from the user:\n${note}`
+      : `Huidige recept (JSON):\n${JSON.stringify(shape)}\n\nNotitie van de gebruiker:\n${note}`;
 
   const res = await callAiText({
-    system: buildAdjustSystemPrompt(),
+    system: buildAdjustSystemPrompt(lang),
     user: userBlock,
     maxTokens: 8192,
     task: 'adjust',
@@ -125,7 +157,7 @@ export async function requestRecipeAdjustment(
     return { ok: false, message: res.message, raw: res.debugSnippet };
   }
 
-  const parsed = parseExtractedRecipeJson(res.text, recipe.sourceUrl ?? '');
+  const parsed = parseExtractedRecipeJson(res.text, recipe.sourceUrl ?? '', lang);
   if (!parsed.ok) {
     // One repair attempt: give the model the schema + its own output + the parse failure reason.
     const repairUser = buildAiRepairUserPrompt({
@@ -133,9 +165,10 @@ export async function requestRecipeAdjustment(
       outputSchema: RECIPE_JSON_SCHEMA,
       previousOutput: res.text,
       validationErrors: [parsed.reason],
+      lang,
     });
     const repaired = await callAiText({
-      system: buildAdjustSystemPrompt(),
+      system: buildAdjustSystemPrompt(lang),
       user: repairUser,
       maxTokens: 8192,
       task: 'adjust',
@@ -143,7 +176,7 @@ export async function requestRecipeAdjustment(
     if (!repaired.ok) {
       return { ok: false, message: parsed.reason, raw: res.text };
     }
-    const parsed2 = parseExtractedRecipeJson(repaired.text, recipe.sourceUrl ?? '');
+    const parsed2 = parseExtractedRecipeJson(repaired.text, recipe.sourceUrl ?? '', lang);
     if (!parsed2.ok) {
       return { ok: false, message: parsed2.reason, raw: repaired.text };
     }
@@ -162,23 +195,34 @@ export function buildApplyAdjustmentFromChatSystemPrompt(
   recipe: FullRecipe,
   lang: AiLanguage = 'nl'
 ): string {
-  void lang; // EN-variant: zie ai-taalfase
   const shape = fullRecipeToExtractShape(recipe);
-  const profile = formatAiCookProfileForPrompt('adjustRecipe');
-  return `Je bent een kookassistent. Je hebt zojuist aanpassingen aan een recept besproken met de gebruiker.
+  const profile = formatAiCookProfileForPrompt('adjustRecipe', lang);
+  const intro =
+    lang === 'en'
+      ? `You are a cooking assistant. You have just discussed changes to a recipe with the user.
+Now return the complete adjusted recipe as pure JSON, exactly matching the schema given.
+Apply all the changes discussed. No markdown, no explanation — only the JSON.`
+      : `Je bent een kookassistent. Je hebt zojuist aanpassingen aan een recept besproken met de gebruiker.
 Nu moet je het volledige aangepaste recept teruggeven als pure JSON, exact volgens het opgegeven schema.
-Voer alle besproken wijzigingen door. Geen markdown, geen uitleg — alleen de JSON.
+Voer alle besproken wijzigingen door. Geen markdown, geen uitleg — alleen de JSON.`;
 
-${profile ? `${profile}\n\n` : ''}Huidig recept:
+  return `${intro}
+
+${profile ? `${profile}\n\n` : ''}${lang === 'en' ? 'Current recipe' : 'Huidig recept'}:
 ${JSON.stringify(shape)}`;
 }
 
 export async function applyAdjustmentFromChat(
   recipe: FullRecipe,
-  chatHistory: AiChatTurn[]
+  chatHistory: AiChatTurn[],
+  lang: AiLanguage = 'nl'
 ): Promise<RecipeAdjustResult> {
   if (chatHistory.length === 0) {
-    return { ok: false, message: 'Geen bespreking om toe te passen.' };
+    return {
+      ok: false,
+      message:
+        lang === 'en' ? 'There is no discussion to apply.' : 'Geen bespreking om toe te passen.',
+    };
   }
 
   const trimmedHistory =
@@ -188,10 +232,13 @@ export async function applyAdjustmentFromChat(
 
   const applyMessage: AiChatTurn = {
     role: 'user',
-    text: `Top, voer de besproken aanpassingen nu door. Geef het VOLLEDIGE aangepaste recept terug als JSON (alleen JSON, geen markdown, geen uitleg). Gebruik dit schema:\n${RECIPE_JSON_SCHEMA}`,
+    text:
+      lang === 'en'
+        ? `Great, apply the changes we discussed now. Return the COMPLETE adjusted recipe as JSON (only JSON, no markdown, no explanation). Use this schema:\n${RECIPE_JSON_SCHEMA}`
+        : `Top, voer de besproken aanpassingen nu door. Geef het VOLLEDIGE aangepaste recept terug als JSON (alleen JSON, geen markdown, geen uitleg). Gebruik dit schema:\n${RECIPE_JSON_SCHEMA}`,
   };
 
-  const systemPrompt = buildApplyAdjustmentFromChatSystemPrompt(recipe);
+  const systemPrompt = buildApplyAdjustmentFromChatSystemPrompt(recipe, lang);
 
   const messages = [...trimmedHistory, applyMessage];
 
@@ -206,16 +253,17 @@ export async function applyAdjustmentFromChat(
     return { ok: false, message: res.message };
   }
 
-  let parsed = parseExtractedRecipeJson(res.text, recipe.sourceUrl ?? '');
+  let parsed = parseExtractedRecipeJson(res.text, recipe.sourceUrl ?? '', lang);
   if (!parsed.ok) {
     const repairUser = buildAiRepairUserPrompt({
       purpose: 'adjustRecipe',
       outputSchema: RECIPE_JSON_SCHEMA,
       previousOutput: res.text,
       validationErrors: [parsed.reason],
+      lang,
     });
     const repaired = await callAiText({
-      system: buildAdjustSystemPrompt(),
+      system: buildAdjustSystemPrompt(lang),
       user: repairUser,
       maxTokens: 8192,
       task: 'adjust',
@@ -223,7 +271,7 @@ export async function applyAdjustmentFromChat(
     if (!repaired.ok) {
       return { ok: false, message: parsed.reason, raw: res.text };
     }
-    parsed = parseExtractedRecipeJson(repaired.text, recipe.sourceUrl ?? '');
+    parsed = parseExtractedRecipeJson(repaired.text, recipe.sourceUrl ?? '', lang);
     if (!parsed.ok) {
       return { ok: false, message: parsed.reason, raw: repaired.text };
     }

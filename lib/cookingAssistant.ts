@@ -23,7 +23,11 @@ type AssistantLabels = {
   category: string;
   tags: string;
   times: string;
-  timesBits: { prep: (n: number) => string; cook: (n: number) => string; total: (n: number) => string };
+  timesBits: {
+    prep: (n: number) => string;
+    cook: (n: number) => string;
+    total: (n: number) => string;
+  };
   baseServings: (n: number | null) => string;
   ingredientsHeader: string;
   stepsHeader: string;
@@ -90,7 +94,7 @@ export function buildCookingSystemPrompt(
   const lines: string[] = [];
   lines.push(L.systemBase.trim());
 
-  const profileBlock = formatAiCookProfileForPrompt('tipsChat');
+  const profileBlock = formatAiCookProfileForPrompt('tipsChat', lang);
   if (profileBlock) {
     lines.push('');
     lines.push(profileBlock);

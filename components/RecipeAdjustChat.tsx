@@ -15,6 +15,7 @@ import {
 
 import { callAiChat, hasActiveAiKey, type AiChatTurn } from '../lib/aiClient';
 import { buildAdjustChatSystemPrompt, applyAdjustmentFromChat } from '../lib/recipeAdjust';
+import { applyRecipeFromChat, buildCreateChatSystemPrompt } from '../lib/recipeCreate';
 import { applyAiAdjustedRecipe } from '../lib/recipesRepo';
 import {
   loadChatHistory,
@@ -23,31 +24,55 @@ import {
   chatMessageToAiTurn,
   type ChatSession,
 } from '../lib/chatSessionRepo';
-import type { FullRecipe } from '../lib/types';
+import type { FullRecipe, RecipeSavePayload } from '../lib/types';
 import { ChatSheetKeyboardWrap } from './ChatSheetKeyboardWrap';
 import { FormattedText } from './FormattedText';
 import { useAppTheme } from './ThemeContext';
 
 const QUICK_SUGGESTIONS = ['Maak het sneller klaar', 'Maak het gezonder', 'Meer smaak / kruiden'];
+const CREATE_QUICK_SUGGESTIONS = [
+  'Een snel vegetarisch gerecht voor doordeweeks',
+  'Comfort food met pasta',
+  'Iets met kip, citroen en knoflook',
+];
 
-type Props = {
-  recipe: FullRecipe;
-  recipeId: number;
+type BaseProps = {
   visible: boolean;
   onClose: () => void;
+};
+
+/** Bestaand gedrag: chat over een opgeslagen recept; apply schrijft naar de DB. */
+type AdjustModeProps = {
+  mode: 'adjust';
+  recipe: FullRecipe;
+  recipeId: number;
   onApplied: () => void;
   /** Servings for this chat context, defaults to baseServings */
   servings?: number;
 };
 
-export function RecipeAdjustChat({
-  recipe,
-  recipeId,
-  visible,
-  onClose,
-  onApplied,
-  servings = recipe.baseServings ?? 1,
-}: Props) {
+/**
+ * Nieuw recept (of aanpassing van de huidige invoer) op de nieuw-recept pagina:
+ * apply levert een payload aan het formulier in plaats van naar de DB.
+ * Chat-historie wordt hier niet gepersisteerd (nog geen recipe_id).
+ */
+type CreateModeProps = {
+  mode: 'create';
+  /** Huidige formulierinhoud als basis; zonder baseDraft: recept vanaf nul. */
+  baseDraft?: FullRecipe | null;
+  /** Krijgt de AI-payload om in het formulier te laden. Retourneer false om de chat open te houden. */
+  onApplyPayload: (payload: RecipeSavePayload) => Promise<boolean> | boolean;
+};
+
+type Props = BaseProps & (AdjustModeProps | CreateModeProps);
+
+export function RecipeAdjustChat(props: Props) {
+  const { visible, onClose, mode } = props;
+  const recipe = mode === 'adjust' ? props.recipe : (props.baseDraft ?? null);
+  const recipeId = mode === 'adjust' ? props.recipeId : null;
+  const servings = mode === 'adjust' ? (props.servings ?? props.recipe.baseServings ?? 1) : 1;
+  const onApplied = mode === 'adjust' ? props.onApplied : undefined;
+  const onApplyPayload = mode === 'create' ? props.onApplyPayload : undefined;
   const theme = useAppTheme();
   const [turns, setTurns] = useState<AiChatTurn[]>([]);
   const [input, setInput] = useState('');
@@ -59,7 +84,10 @@ export function RecipeAdjustChat({
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const sendInFlightRef = useRef(false);
 
-  const systemPrompt = useMemo(() => buildAdjustChatSystemPrompt(recipe), [recipe]);
+  const systemPrompt = useMemo(
+    () => (recipe ? buildAdjustChatSystemPrompt(recipe) : buildCreateChatSystemPrompt()),
+    [recipe]
+  );
 
   useEffect(() => {
     if (!visible) return;
@@ -68,9 +96,9 @@ export function RecipeAdjustChat({
       .catch(() => setHasKey(false));
   }, [visible]);
 
-  /** Load chat history when panel becomes visible */
+  /** Load chat history when panel becomes visible (alleen adjust-modus heeft een DB-sessie) */
   useEffect(() => {
-    if (!visible || recipeId == null) return;
+    if (!visible || mode !== 'adjust' || recipeId == null) return;
 
     void (async () => {
       try {
@@ -86,17 +114,37 @@ export function RecipeAdjustChat({
         console.error('Failed to load adjust chat history:', e);
       }
     })();
-  }, [visible, recipeId, servings]);
+  }, [visible, mode, recipeId, servings]);
 
+  // In create-modus blijft het gesprek in het geheugen bij heropenen; in adjust-modus reset per recept.
+  const resetKey = mode === 'adjust' ? (recipe?.id ?? null) : null;
   useEffect(() => {
     setTurns([]);
     setError(null);
     setInput('');
     setChatSession(null);
-  }, [recipe.id]);
+  }, [resetKey]);
 
   const hasAssistantReply = turns.some((t) => t.role === 'assistant');
   const busy = loading || applying;
+
+  const isCreate = mode === 'create';
+  const sheetTitle = isCreate
+    ? recipe
+      ? 'Aanpassen met AI'
+      : 'Recept maken met AI'
+    : 'Recept aanpassen';
+  const introText = isCreate
+    ? recipe
+      ? 'Beschrijf wat je wilt veranderen aan de huidige invoer. De assistent bespreekt de aanpassingen met je — daarna kun je ze in het formulier laden.'
+      : 'Beschrijf welk recept je wilt, bijv. «een snelle pasta met citroen». De assistent bedenkt het recept met je — daarna kun je het in het formulier laden.'
+    : `Beschrijf wat je wilt veranderen aan «${recipe?.title ?? ''}». De assistent bespreekt de aanpassingen met je — daarna kun je ze toepassen.`;
+  const suggestions = isCreate ? CREATE_QUICK_SUGGESTIONS : QUICK_SUGGESTIONS;
+  const applyLabel = isCreate ? 'Inladen in formulier' : 'Ja doen, voeg toe';
+  const inputPlaceholder =
+    isCreate && !recipe
+      ? 'Bijv. een snel vegetarisch recept…'
+      : 'Bijv. meer knoflook, kortere bereidingstijd…';
 
   const sendWithText = useCallback(
     async (userText: string) => {
@@ -159,37 +207,54 @@ export function RecipeAdjustChat({
   }, [input, sendWithText]);
 
   const onApply = useCallback(async () => {
-    if (!recipe || applying) return;
+    if (busy) return;
     setApplying(true);
     setError(null);
 
-    const result = await applyAdjustmentFromChat(recipe, turns);
-
-    if (!result.ok) {
-      setApplying(false);
-      setError(result.message);
-      return;
-    }
-
     try {
-      const summaryParts = turns.filter((t) => t.role === 'user').map((t) => t.text);
-      const adjustmentNote = summaryParts.join(' — ');
-
-      await applyAiAdjustedRecipe(recipeId, result.payload, adjustmentNote);
-      setApplying(false);
-      setTurns([]);
-      setInput('');
-      onApplied();
-      onClose();
-      Alert.alert(
-        'Opgeslagen',
-        'Het recept is bijgewerkt. De vorige versie staat in de versiegeschiedenis.'
-      );
+      if (mode === 'adjust') {
+        if (!recipe || recipeId == null || !onApplied) return;
+        const result = await applyAdjustmentFromChat(recipe, turns);
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        const summaryParts = turns.filter((t) => t.role === 'user').map((t) => t.text);
+        const adjustmentNote = summaryParts.join(' — ');
+        await applyAiAdjustedRecipe(recipeId, result.payload, adjustmentNote);
+        setTurns([]);
+        setInput('');
+        onApplied();
+        onClose();
+        Alert.alert(
+          'Opgeslagen',
+          'Het recept is bijgewerkt. De vorige versie staat in de versiegeschiedenis.'
+        );
+      } else {
+        if (!onApplyPayload) return;
+        const result = recipe
+          ? await applyAdjustmentFromChat(recipe, turns)
+          : await applyRecipeFromChat(turns);
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        const applied = await onApplyPayload(result.payload);
+        if (!applied) return; // chat blijft open, gebruiker kan het voorstel bijsturen
+        setTurns([]);
+        setInput('');
+        onClose();
+        Alert.alert(
+          'Ingeladen in het formulier',
+          'Controleer de velden en sla op om het recept aan te maken.'
+        );
+      }
     } catch (e) {
+      setError(e instanceof Error ? e.message : 'Toepassen mislukt.');
+    } finally {
       setApplying(false);
-      setError(e instanceof Error ? e.message : 'Opslaan mislukt.');
     }
-  }, [recipe, recipeId, turns, applying, onApplied, onClose]);
+  }, [busy, mode, recipe, recipeId, turns, onApplied, onClose, onApplyPayload]);
 
   useEffect(() => {
     if (!visible) return;
@@ -210,7 +275,7 @@ export function RecipeAdjustChat({
         <ChatSheetKeyboardWrap style={[styles.sheet, { backgroundColor: theme.background }]}>
           <View style={styles.sheetInner}>
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Recept aanpassen</Text>
+              <Text style={styles.sheetTitle}>{sheetTitle}</Text>
               <Pressable onPress={handleClose} hitSlop={12} disabled={busy}>
                 <Text style={[styles.close, busy && { opacity: 0.4 }]}>Sluiten</Text>
               </Pressable>
@@ -235,13 +300,10 @@ export function RecipeAdjustChat({
               contentContainerStyle={styles.chatContent}
               keyboardShouldPersistTaps="always"
             >
-              <Text style={styles.intro}>
-                Beschrijf wat je wilt veranderen aan «{recipe.title}». De assistent bespreekt de
-                aanpassingen met je — daarna kun je ze toepassen.
-              </Text>
+              <Text style={styles.intro}>{introText}</Text>
 
               <View style={styles.quickRow}>
-                {QUICK_SUGGESTIONS.map((q) => (
+                {suggestions.map((q) => (
                   <Pressable
                     key={q}
                     style={[
@@ -292,7 +354,7 @@ export function RecipeAdjustChat({
             <View style={styles.inputRowTop}>
               <TextInput
                 style={styles.input}
-                placeholder="Bijv. meer knoflook, kortere bereidingstijd…"
+                placeholder={inputPlaceholder}
                 placeholderTextColor="#999"
                 value={input}
                 onChangeText={setInput}
@@ -316,7 +378,7 @@ export function RecipeAdjustChat({
             {hasAssistantReply && !busy ? (
               <View style={styles.applyRow}>
                 <Pressable style={styles.applyBtn} onPress={() => void onApply()}>
-                  <Text style={styles.applyBtnText}>Ja doen, voeg toe</Text>
+                  <Text style={styles.applyBtnText}>{applyLabel}</Text>
                 </Pressable>
               </View>
             ) : null}

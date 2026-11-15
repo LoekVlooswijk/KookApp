@@ -19,7 +19,10 @@ import {
 } from 'react-native';
 
 import { useAppTheme } from './ThemeContext';
+import { RecipeAdjustChat } from './RecipeAdjustChat';
+import { useConfirmDialog } from './ConfirmDialog';
 import { disposeImportSession, getImportSession } from '../lib/importDraft';
+import { draftPayloadToFullRecipe } from '../lib/recipeAdjustShape';
 import {
   isAppManagedCoverUri,
   persistPickedRecipeCover,
@@ -29,7 +32,7 @@ import { getCustomDiets } from '../lib/dietPrefs';
 import { addManagedCategory, listManagedCategories } from '../lib/categoriesRepo';
 import { addRecipeToList } from '../lib/listsRepo';
 import { timerSecondsToMinuteDraftStr } from '../lib/timerFormat';
-import type { RecipeSavePayload } from '../lib/types';
+import type { FullRecipe, RecipeSavePayload } from '../lib/types';
 import { checkHasInternet } from '../lib/internetCheck';
 import {
   assessProduceLocalityAndPesticides,
@@ -226,6 +229,12 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
   const [sections, setSections] = useState<DraftSection[]>(emptyDraft().sections);
   /** JSON snapshot of last loaded / initial form; used for unsaved-changes detection. */
   const [baselineJson, setBaselineJson] = useState<string | null>(null);
+
+  /** AI-chat op de nieuw-recept pagina: 'create' = nieuw recept, 'draft' = huidige invoer aanpassen. */
+  const [aiChatMode, setAiChatMode] = useState<'create' | 'draft' | null>(null);
+  const [aiDraft, setAiDraft] = useState<FullRecipe | null>(null);
+  const [aiAppliedNote, setAiAppliedNote] = useState<string | null>(null);
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const applySavePayload = useCallback((p: RecipeSavePayload) => {
     setTitle(p.title);
@@ -510,6 +519,67 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
     sections,
   ]);
 
+  const formHasContent = useCallback((): boolean => {
+    const p = buildCurrentPayload();
+    if (
+      p.title.trim() ||
+      p.description.trim() ||
+      p.notes.trim() ||
+      p.sourceUrl.trim() ||
+      p.imageUri ||
+      p.category.trim() ||
+      p.tagNames.length > 0
+    ) {
+      return true;
+    }
+    if (p.ingredientGroups.some((g) => g.ingredients.some((i) => i.name.trim()))) return true;
+    if (p.stepSections.some((s) => s.steps.some((st) => st.description.trim()))) return true;
+    return false;
+  }, [buildCurrentPayload]);
+
+  /** AI-payload uit de chat in het formulier laden; lege bron/foto/notities van de draft blijven behouden. */
+  const onAiApplyPayload = useCallback(
+    async (payload: RecipeSavePayload): Promise<boolean> => {
+      const current = buildCurrentPayload();
+      if (formHasContent()) {
+        const ok = await confirm({
+          title: 'Huidige invoer overschrijven?',
+          message:
+            'Het formulier bevat al tekst. De receptvelden (titel t/m bereiding) worden vervangen door het AI-voorstel; foto, notities, bron-URL en status blijven behouden.',
+          confirmText: 'Overschrijven',
+          cancelText: 'Annuleren',
+          destructive: true,
+        });
+        if (!ok) return false;
+      }
+      applySavePayload({
+        ...payload,
+        sourceUrl: current.sourceUrl.trim() || payload.sourceUrl,
+        notes: current.notes || payload.notes,
+        imageUri: current.imageUri || payload.imageUri,
+        isFavorite: current.isFavorite || payload.isFavorite,
+        wantToTry: current.wantToTry || payload.wantToTry,
+        bioScoreColor: current.bioScoreColor ?? payload.bioScoreColor ?? null,
+        bioScoreUpdatedAt: current.bioScoreUpdatedAt ?? payload.bioScoreUpdatedAt ?? null,
+        bioScoreItems: current.bioScoreItems ?? payload.bioScoreItems ?? null,
+      });
+      setAiAppliedNote(
+        'AI-voorstel ingevuld — controleer de velden en sla op om het recept aan te maken.'
+      );
+      return true;
+    },
+    [buildCurrentPayload, formHasContent, confirm, applySavePayload]
+  );
+
+  const openAiChat = useCallback(
+    (m: 'create' | 'draft') => {
+      setAiAppliedNote(null);
+      setAiDraft(m === 'draft' ? draftPayloadToFullRecipe(buildCurrentPayload()) : null);
+      setAiChatMode(m);
+    },
+    [buildCurrentPayload]
+  );
+
   const onComputeBioScore = useCallback(() => {
     if (bioBusy || saving || loading) return;
     setBioBusy(true);
@@ -776,11 +846,49 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
           </View>
         </Modal>
 
+        <ConfirmDialog />
+
+        {!recipeId ? (
+          <RecipeAdjustChat
+            visible={aiChatMode != null}
+            mode="create"
+            baseDraft={aiChatMode === 'draft' ? aiDraft : null}
+            onApplyPayload={onAiApplyPayload}
+            onClose={() => setAiChatMode(null)}
+          />
+        ) : null}
+
         {addToListId != null && addToListName ? (
           <View style={styles.listBanner}>
             <Text style={styles.listBannerText}>
               Na opslaan wordt dit recept toegevoegd aan de lijst «{addToListName}».
             </Text>
+          </View>
+        ) : null}
+
+        {!recipeId ? (
+          <View style={styles.aiRow}>
+            <Pressable
+              style={[styles.aiBtn, { borderColor: theme.accent }]}
+              onPress={() => openAiChat('create')}
+              accessibilityRole="button"
+              accessibilityLabel="Recept maken met AI"
+            >
+              <Text style={[styles.aiBtnText, { color: theme.accent }]}>Recept maken met AI</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.aiBtn, { borderColor: theme.accent }]}
+              onPress={() => openAiChat('draft')}
+              accessibilityRole="button"
+              accessibilityLabel="Aanpassen met AI"
+            >
+              <Text style={[styles.aiBtnText, { color: theme.accent }]}>Aanpassen met AI</Text>
+            </Pressable>
+          </View>
+        ) : null}
+        {aiAppliedNote ? (
+          <View style={styles.listBanner}>
+            <Text style={styles.listBannerText}>{aiAppliedNote}</Text>
           </View>
         ) : null}
 
@@ -1451,6 +1559,15 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  aiRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 },
+  aiBtn: {
+    borderWidth: 1.5,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: '#fff',
+  },
+  aiBtnText: { fontWeight: '700', fontSize: 14 },
   listBannerText: { fontSize: 14, color: '#2a4a7a', lineHeight: 20 },
   coverPreview: {
     width: '100%',

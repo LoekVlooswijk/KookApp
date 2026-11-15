@@ -668,6 +668,7 @@ export default function RecipeDetailScreen() {
       </Modal>
 
       <RecipeAdjustChat
+        mode="adjust"
         recipe={recipe}
         recipeId={recipeId}
         visible={adjustOpen}

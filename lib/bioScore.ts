@@ -1,3 +1,4 @@
+import type { AiLanguage } from './aiLanguage';
 import { callAiText } from './aiClient';
 import { hydrateBioScoreExcludePrefsFromDb, isBioScoreExcludedName } from './bioScoreExcludePrefs';
 import { normalizeBioScoreIngredientName } from './bioScoreNameMatch';
@@ -115,8 +116,10 @@ function uniqueNames(ingredients: string[], max: number): string[] {
 }
 
 export async function assessProduceLocalityAndPesticides(
-  ingredients: string[]
+  ingredients: string[],
+  lang: AiLanguage = 'nl'
 ): Promise<{ ok: true; items: BioAssessmentItem[] } | { ok: false; message: string }> {
+  void lang; // EN-variant: zie ai-taalfase
   await hydrateBioScoreExcludePrefsFromDb();
   const uniq = uniqueNames(ingredients, 40);
   if (uniq.length === 0) return { ok: true, items: [] };

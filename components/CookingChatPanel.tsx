@@ -56,7 +56,7 @@ type Props = {
 
 export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }: Props) {
   const theme = useAppTheme();
-  const { t } = useI18n();
+  const { t, languageId } = useI18n();
   const [open, setOpen] = useState(false);
   const [turns, setTurns] = useState<AiChatTurn[]>([]);
   const [input, setInput] = useState('');
@@ -75,8 +75,8 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
   }, []);
 
   const systemPrompt = useMemo(
-    () => buildCookingSystemPrompt(recipe, servings),
-    [recipe, servings]
+    () => buildCookingSystemPrompt(recipe, servings, languageId ?? 'nl'),
+    [recipe, servings, languageId]
   );
 
   useEffect(() => {

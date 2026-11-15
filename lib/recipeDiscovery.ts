@@ -1,5 +1,6 @@
 /** Recipe discovery using AI to find relevant recipes from user's database. */
 
+import type { AiLanguage } from './aiLanguage';
 import { callAiText } from './aiClient';
 import { listRecipes } from './recipesRepo';
 
@@ -48,7 +49,11 @@ function parseDiscoverResponse(text: string): number[] {
   return [];
 }
 
-export async function discoverRecipes(query: string): Promise<DiscoveredRecipe[]> {
+export async function discoverRecipes(
+  query: string,
+  lang: AiLanguage = 'nl'
+): Promise<DiscoveredRecipe[]> {
+  void lang; // EN-variant: zie ai-taalfase
   const allRecipes = await listRecipes();
 
   if (allRecipes.length === 0) {

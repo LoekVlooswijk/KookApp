@@ -1,3 +1,4 @@
+import type { AiLanguage } from './aiLanguage';
 import { formatAiCookProfileForPrompt } from './aiCookProfile';
 
 /** Cap repair-round previous output to limit tokens and accidental large pastes. */
@@ -69,7 +70,8 @@ export const WEEK_PLAN_OUTPUT_SCHEMA = `{
   ]
 }`;
 
-const AI_BASE_SYSTEM_PROMPT_NL = `Je bent een kook-assistent in een privacy-first app.
+const AI_BASE_SYSTEM_PROMPT: Record<AiLanguage, string> = {
+  nl: `Je bent een kook-assistent in een privacy-first app.
 Antwoord altijd in het Nederlands.
 
 Volg deze prioriteiten bij conflicts:
@@ -77,25 +79,41 @@ Volg deze prioriteiten bij conflicts:
 2) Dieetregels > voorkeuren
 3) Tijdschema/beschikbaarheid > variatie/creativiteit
 4) Gebruikersvoorkeuren (PREFER) > hergebruik ingrediënten
-5) Hergbruik ingrediënten > variatie`;
+5) Hergbruik ingrediënten > variatie`,
+  en: `You are a cooking assistant in a privacy-first app.
+Always answer in English.
+
+Follow these priorities in case of conflicts:
+1) MUST NOT (allergy/forbidden) > everything
+2) Diet rules > preferences
+3) Time schedule/availability > variation/creativity
+4) User preferences (PREFER) > ingredient reuse
+5) Ingredient reuse > variation`,
+};
+
+const JSON_ONLY_RULE: Record<AiLanguage, string> = {
+  nl: 'Output-regel: retourneer ALLEEN geldige JSON. Geen markdown, geen uitleg, geen tekst ervoor of erna.',
+  en: 'Output rule: return ONLY valid JSON. No markdown, no explanation, no text before or after it.',
+};
 
 type BuildSystemPromptParams = {
   purpose: AiPurpose;
   /** Set to true for structured outputs where we need strict JSON. */
   jsonOnly?: boolean;
+  /** AI volgt de app-taal; default Nederlands. */
+  lang?: AiLanguage;
   /** Extra purpose-specific instructions (Dutch). */
   instructionsNl?: string;
 };
 
 export function buildAiSystemPrompt(params: BuildSystemPromptParams): string {
+  const lang = params.lang ?? 'nl';
   const lines: string[] = [];
-  lines.push(AI_BASE_SYSTEM_PROMPT_NL.trim());
+  lines.push(AI_BASE_SYSTEM_PROMPT[lang].trim());
   lines.push('');
 
   if (params.jsonOnly) {
-    lines.push(
-      'Output-regel: retourneer ALLEEN geldige JSON. Geen markdown, geen uitleg, geen tekst ervoor of erna.'
-    );
+    lines.push(JSON_ONLY_RULE[lang]);
     lines.push('');
   }
 
@@ -130,6 +148,8 @@ export type BuildRepairPromptParams = {
   outputSchema: string;
   previousOutput: string;
   validationErrors: string[];
+  /** AI volgt de app-taal; default Nederlands. */
+  lang?: AiLanguage;
 };
 
 /**
@@ -137,13 +157,24 @@ export type BuildRepairPromptParams = {
  * Use this with the same system prompt (or a stricter "JSON only" system prompt) and call the model once more.
  */
 export function buildAiRepairUserPrompt(params: BuildRepairPromptParams): string {
+  const lang = params.lang ?? 'nl';
+  const intro =
+    lang === 'en'
+      ? 'Your previous answer was invalid or broke the rules. Fix it.'
+      : 'Je vorige antwoord was ongeldig of schond regels. Repareer het.';
+  const noDetails =
+    lang === 'en' ? '- (no details available)' : '- (geen details beschikbaar)';
+  const outro =
+    lang === 'en'
+      ? 'Return again ONLY JSON that exactly matches the schema.'
+      : 'Retourneer opnieuw ALLEEN JSON dat exact voldoet aan het schema.';
   const errs = (params.validationErrors ?? []).map((e) => e.trim()).filter(Boolean);
   const lines: string[] = [];
-  lines.push('Je vorige antwoord was ongeldig of schond regels. Repareer het.');
+  lines.push(intro);
   lines.push('');
   lines.push('VALIDATION_ERRORS:');
   if (errs.length === 0) {
-    lines.push('- (geen details beschikbaar)');
+    lines.push(noDetails);
   } else {
     for (const e of errs) lines.push(`- ${e}`);
   }
@@ -154,14 +185,15 @@ export function buildAiRepairUserPrompt(params: BuildRepairPromptParams): string
   lines.push('PREVIOUS_OUTPUT:');
   lines.push(truncateForAiRepairPreviousOutput(params.previousOutput));
   lines.push('');
-  lines.push('Retourneer opnieuw ALLEEN JSON dat exact voldoet aan het schema.');
+  lines.push(outro);
   return lines.join('\n').trim();
 }
 
-export function buildRecipeExtractSystemPrompt(): string {
+export function buildRecipeExtractSystemPrompt(lang: AiLanguage = 'nl'): string {
   return buildAiSystemPrompt({
     purpose: 'recipeExtract',
     jsonOnly: true,
+    lang,
     instructionsNl: `Je bent een recept-parser. Extraheer het recept uit de volgende HTML en retourneer ALLEEN één JSON-object (geen markdown, geen uitleg ervoor of erna) in exact dit schema:
 
 Schema:
@@ -209,10 +241,11 @@ Regels:
  * OCR/vision stap voor receptfoto’s: transcribeer tekst zo letterlijk mogelijk.
  * Output is plain text (geen JSON), zodat we daarna met een tweede (text-only) stap naar JSON kunnen.
  */
-export function buildRecipePhotoOcrSystemPrompt(): string {
+export function buildRecipePhotoOcrSystemPrompt(lang: AiLanguage = 'nl'): string {
   return buildAiSystemPrompt({
     purpose: 'recipeExtract',
     jsonOnly: false,
+    lang,
     instructionsNl: `Je helpt bij het importeren van een recept uit een foto (boek/print/screenshot).
 
 Taak:
@@ -231,10 +264,11 @@ Regels:
 /**
  * Tweede stap voor receptfoto’s: van (mogelijk rommelige) OCR-tekst naar strict JSON schema.
  */
-export function buildRecipeExtractFromOcrTextSystemPrompt(): string {
+export function buildRecipeExtractFromOcrTextSystemPrompt(lang: AiLanguage = 'nl'): string {
   return buildAiSystemPrompt({
     purpose: 'recipeExtract',
     jsonOnly: true,
+    lang,
     instructionsNl: `Je bent een recept-parser.
 Je krijgt OCR-tekst die uit één of meerdere foto’s is getranscribeerd.
 Extraheer het recept uit die tekst en retourneer ALLEEN één JSON-object (geen markdown, geen uitleg ervoor of erna) in exact dit schema:
@@ -279,10 +313,11 @@ Regels:
   });
 }
 
-export function buildRecipeAdjustSystemPrompt(): string {
+export function buildRecipeAdjustSystemPrompt(lang: AiLanguage = 'nl'): string {
   return buildAiSystemPrompt({
     purpose: 'adjustRecipe',
     jsonOnly: true,
+    lang,
     instructionsNl: `De gebruiker heeft een notitie geschreven over een recept.
 Pas het recept aan op basis van de notitie.
 Retourneer het VOLLEDIGE aangepaste recept in hetzelfde JSON-schema als hieronder.
@@ -297,10 +332,11 @@ ${RECIPE_JSON_SCHEMA}`,
   });
 }
 
-export function buildWeekPlanSystemPrompt(): string {
+export function buildWeekPlanSystemPrompt(lang: AiLanguage = 'nl'): string {
   return buildAiSystemPrompt({
     purpose: 'weekPlan',
     jsonOnly: true,
+    lang,
     instructionsNl: `Je helpt met weekplanning voor maaltijden (alleen diner).
 Je krijgt een lijst met dagen en een lijst met beschikbare recepten (met id's).
 Houd rekening met de wensen van de gebruiker en met het tijdschema / beschikbaarheid uit het kookprofiel.
@@ -336,10 +372,11 @@ Regels:
   });
 }
 
-export function buildBioScoreSystemPrompt(): string {
+export function buildBioScoreSystemPrompt(lang: AiLanguage = 'nl'): string {
   return buildAiSystemPrompt({
     purpose: 'bioScore',
     jsonOnly: true,
+    lang,
     instructionsNl: `Je beoordeelt ingrediënten voor een bio-score in een kookapp.
 Je krijgt een lijst met ingredient-namen (losse woorden/phrases).
 
@@ -392,7 +429,14 @@ export function buildWeekPlanUserPrompt(params: {
   recentlyUsedRecipeIds?: number[];
   /** When the prompt embeds a capped subset of the library, tell the model what happened. */
   selectionMeta?: { totalInLibrary: number; includedInPrompt: number };
+  /** AI volgt de app-taal; default Nederlands. */
+  lang?: AiLanguage;
 }): string {
+  const lang = params.lang ?? 'nl';
+  const taskLine =
+    lang === 'en'
+      ? 'Create a meal plan for the given days.'
+      : 'Maak een weekplanning voor de gegeven dagen.';
   const days = Array.isArray(params.days) ? params.days : [];
   const pairBlocks: { cook_day: string; leftover_day: string }[] = [];
   const soloDays: string[] = [];
@@ -478,7 +522,7 @@ export function buildWeekPlanUserPrompt(params: {
   return `PURPOSE: weekPlan
 
 TASK:
-Maak een weekplanning voor de gegeven dagen.
+${taskLine}
 
 INPUT_JSON:
 ${JSON.stringify(input)}

@@ -1,3 +1,4 @@
+import type { AiLanguage } from './aiLanguage';
 import { deleteAppMeta, getAppMeta, setAppMeta } from './appMeta';
 
 const META_AI_COOK_PROFILE = 'ai_cook_profile_v1';
@@ -141,7 +142,11 @@ export async function clearAiCookProfile(): Promise<void> {
 
 export type AiCookProfilePurpose = 'tipsChat' | 'adjustRecipe' | 'recipeSuggestions';
 
-export function formatAiCookProfileForPrompt(purpose: AiCookProfilePurpose): string {
+export function formatAiCookProfileForPrompt(
+  purpose: AiCookProfilePurpose,
+  lang: AiLanguage = 'nl'
+): string {
+  void lang; // EN-variant: zie ai-taalfase
   const p = getAiCookProfile();
   if (!p.appliesTo[purpose]) return '';
 

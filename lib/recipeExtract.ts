@@ -1,4 +1,5 @@
 import { callAiText } from './aiClient';
+import type { AiLanguage } from './aiLanguage';
 import {
   buildAiRepairUserPrompt,
   buildRecipeExtractSystemPrompt,
@@ -113,8 +114,10 @@ function asIntOrNull(x: unknown): number | null {
 
 export function parseExtractedRecipeJson(
   modelText: string,
-  sourceUrl: string
+  sourceUrl: string,
+  lang: AiLanguage = 'nl'
 ): { ok: true; payload: RecipeSavePayload } | { ok: false; reason: string } {
+  void lang; // EN-variant: zie ai-taalfase (validatiefoutmeldingen per taal)
   let root: unknown;
   try {
     root = JSON.parse(stripCodeFence(modelText));

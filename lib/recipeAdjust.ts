@@ -1,4 +1,5 @@
 import { callAiChat, callAiText, type AiChatTurn } from './aiClient';
+import type { AiLanguage } from './aiLanguage';
 import { formatAiCookProfileForPrompt } from './aiCookProfile';
 import {
   buildAiRepairUserPrompt,
@@ -61,7 +62,8 @@ function recipeToReadableText(recipe: FullRecipe): string {
   return lines.join('\n');
 }
 
-export function buildAdjustChatSystemPrompt(recipe: FullRecipe): string {
+export function buildAdjustChatSystemPrompt(recipe: FullRecipe, lang: AiLanguage = 'nl'): string {
+  void lang; // EN-variant: zie ai-taalfase
   const profile = formatAiCookProfileForPrompt('adjustRecipe');
   return `Je bent een ervaren kookassistent die helpt recepten te verbeteren.
 Je bekijkt samen met de thuiskok het volgende recept:
@@ -156,7 +158,11 @@ export async function requestRecipeAdjustment(
  * adjusted recipe by asking the AI to output structured JSON.
  */
 /** System prompt voor de laatste stap: chatgeschiedenis + huidig recept → JSON. */
-export function buildApplyAdjustmentFromChatSystemPrompt(recipe: FullRecipe): string {
+export function buildApplyAdjustmentFromChatSystemPrompt(
+  recipe: FullRecipe,
+  lang: AiLanguage = 'nl'
+): string {
+  void lang; // EN-variant: zie ai-taalfase
   const shape = fullRecipeToExtractShape(recipe);
   const profile = formatAiCookProfileForPrompt('adjustRecipe');
   return `Je bent een kookassistent. Je hebt zojuist aanpassingen aan een recept besproken met de gebruiker.

@@ -1,4 +1,5 @@
 import { callAiChat, callAiText, type AiChatTurn } from './aiClient';
+import type { AiLanguage } from './aiLanguage';
 import { formatAiCookProfileForPrompt } from './aiCookProfile';
 import { buildAiRepairUserPrompt, RECIPE_JSON_SCHEMA } from './aiPromptTemplates';
 import { parseExtractedRecipeJson } from './recipeExtract';
@@ -9,7 +10,8 @@ import type { RecipeSavePayload } from './types';
 const MAX_CREATE_CHAT_MESSAGES = 14;
 
 /** System prompt voor de chat waarin een NIEUW recept samen wordt bedacht. */
-export function buildCreateChatSystemPrompt(): string {
+export function buildCreateChatSystemPrompt(lang: AiLanguage = 'nl'): string {
+  void lang; // EN-variant: zie ai-taalfase
   const profile = formatAiCookProfileForPrompt('adjustRecipe');
   return `Je bent een ervaren kookassistent die samen met de thuiskok een NIEUW recept bedenkt.
 
@@ -24,7 +26,8 @@ ${profile ? `${profile}\n` : ''}`;
 }
 
 /** System prompt voor de laatste stap: chatgeschiedenis → volledig nieuw recept als JSON. */
-export function buildApplyCreateFromChatSystemPrompt(): string {
+export function buildApplyCreateFromChatSystemPrompt(lang: AiLanguage = 'nl'): string {
+  void lang; // EN-variant: zie ai-taalfase
   const profile = formatAiCookProfileForPrompt('adjustRecipe');
   return `Je bent een kookassistent. Je hebt zojuist samen met de gebruiker een nieuw recept bedacht.
 Geef nu het VOLLEDIGE recept terug als pure JSON, exact volgens het schema hieronder.

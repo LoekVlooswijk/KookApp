@@ -7,6 +7,7 @@ import type { TranslationKey } from './i18n';
  * tags vallen terug op de ruwe naam.
  */
 const SEED_TAG_NAME_KEYS: Record<string, TranslationKey> = {
+  'kruiden per keuken': 'kennis.tagNames.kruidenPerKeuken',
   technieken: 'kennis.tagNames.technieken',
   kooktijden: 'kennis.tagNames.kooktijden',
   "ratio's": 'kennis.tagNames.ratios',

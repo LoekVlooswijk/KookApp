@@ -11,6 +11,7 @@ function tEn(key: TranslationKey): string {
 
 describe('knowledgeTagNames', () => {
   it('translates known seed sheet names per language', () => {
+    expect(translateKnowledgeTagName('Kruiden per keuken', tEn)).toBe('Herbs per cuisine');
     expect(translateKnowledgeTagName('Temperaturen', tNl)).toBe('Temperaturen');
     expect(translateKnowledgeTagName('Temperaturen', tEn)).toBe('Temperatures');
     expect(translateKnowledgeTagName('Kooktijden', tEn)).toBe('Cooking times');

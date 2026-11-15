@@ -31,6 +31,7 @@ export const kennisNl = {
   },
   /** Weergavenamen van gezaaide sheets/tags (DB blijft NL; zie lib/knowledgeTagNames.ts). */
   tagNames: {
+    kruidenPerKeuken: 'Kruiden per keuken',
     technieken: 'Technieken',
     kooktijden: 'Kooktijden',
     ratios: "Ratio's",
@@ -91,6 +92,7 @@ export const kennisEn: Widen<typeof kennisNl> = {
   },
   /** Weergavenamen van gezaaide sheets/tags (DB blijft NL; zie lib/knowledgeTagNames.ts). */
   tagNames: {
+    kruidenPerKeuken: 'Herbs per cuisine',
     technieken: 'Techniques',
     kooktijden: 'Cooking times',
     ratios: "Ratio's",

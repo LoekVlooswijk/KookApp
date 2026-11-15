@@ -12,6 +12,7 @@
  */
 import { Platform } from 'react-native';
 
+import { safeErrorMessage } from './logSafe';
 import { getWebViewWorkerCount, requestRecipePageHtmlViaWebView } from './recipePageWebViewBridge';
 
 export function assertValidRecipeUrl(url: string): URL {
@@ -45,6 +46,7 @@ async function fetchRecipePageHtmlDirect(url: string): Promise<string> {
   }
 
   if (!res.ok) {
+    console.error(`[fetchRecipePage] direct fetch ${url} -> HTTP ${res.status}`);
     throw new Error(`Pagina kon niet worden geladen (HTTP ${res.status}).`);
   }
 
@@ -58,9 +60,10 @@ export async function fetchRecipePageHtml(url: string): Promise<string> {
   if (useWebView) {
     try {
       return await requestRecipePageHtmlViaWebView(url.trim());
-    } catch {
-      // Webview-route faalde (blokkade/netwerk): probeer daarna de gewone fetch,
-      // die voor niet-bot-blokkerende sites vaak genoeg is.
+    } catch (e) {
+      // Webview-route faalde (blokkade/netwerk): log de echte oorzaak en probeer
+      // daarna de gewone fetch, die voor niet-bot-blokkerende sites vaak genoeg is.
+      console.error('[fetchRecipePage] webview-route mislukt:', safeErrorMessage(e));
     }
   }
 

@@ -29,7 +29,12 @@ import { ChatSheetKeyboardWrap } from './ChatSheetKeyboardWrap';
 import { FormattedText } from './FormattedText';
 import { useAppTheme } from './ThemeContext';
 
-const QUICK_SUGGESTIONS = ['Maak het sneller klaar', 'Maak het gezonder', 'Meer smaak / kruiden'];
+const QUICK_SUGGESTIONS = [
+  'Maak het sneller klaar',
+  'Maak het gezonder',
+  'Meer smaak / kruiden',
+  'Maak het vegetarisch',
+];
 const CREATE_QUICK_SUGGESTIONS = [
   'Een snel vegetarisch gerecht voor doordeweeks',
   'Comfort food met pasta',

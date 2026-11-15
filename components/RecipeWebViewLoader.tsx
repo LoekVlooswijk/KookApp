@@ -11,7 +11,7 @@ import {
   type WebViewPageData,
 } from '../lib/recipePageWebViewBridge';
 
-const PAGE_LOAD_TIMEOUT_MS = 45_000;
+const PAGE_LOAD_TIMEOUT_MS = 30_000;
 
 /**
  * Verborgen laadwerker: laadt één receptpagina per keer in een echte WebView
@@ -164,8 +164,10 @@ function HiddenPageWorker() {
         position: 'absolute',
         top: 0,
         left: 0,
-        width: 1,
-        height: 1,
+        // Normale viewport-maat: bot-bescherming (Akamai) detecteert een
+        // 1x1-webview aan window.innerWidth/innerHeight en blokkeert de pagina.
+        width: 390,
+        height: 844,
         opacity: 0,
         overflow: 'hidden',
       }}
@@ -187,43 +189,64 @@ function HiddenPageWorker() {
 }
 
 /**
- * Injectiescript dat na het laden van de pagina (met een korte vertraging voor
- * client-side JS) de JSON-LD-blokken en zichtbare tekst terugpost naar de app.
+ * Injectiescript dat na het laden van de pagina de JSON-LD-blokken en zichtbare
+ * tekst terugpost naar de app. Pollert kort: bot-bescherming (Akamai) lost een
+ * challenge-pagina vaak pas na enkele seconden op; bij een herladen start dit
+ * script vanzelf opnieuw in het nieuwe document.
  */
 function buildExtractScript(jobId: number): string {
   return `(function(){
-  setTimeout(function(){
+  function read(){
+    var jsonLd = [];
+    var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (var i = 0; i < scripts.length && jsonLd.length < 6; i++) {
+      var t = (scripts[i] ? scripts[i].textContent : '') || '';
+      t = t.trim();
+      if (t.length > 0) jsonLd.push(t.slice(0, 60000));
+    }
+    var title = document.title || '';
+    var desc = '';
+    var md = document.querySelector('meta[name="description"], meta[property="og:description"]');
+    if (md) desc = md.getAttribute('content') || '';
+    var root = document.querySelector('main') || document.querySelector('article') || document.body;
+    var visible = root ? (root.innerText || '') : '';
+    visible = visible.replace(/\\s+/g, ' ').trim().slice(0, 24000);
+    return { title: title, metaDescription: desc, jsonLd: jsonLd, visibleText: visible };
+  }
+  var attempts = 0;
+  var maxAttempts = 8; // 8 x 1500ms = 12s, ruim binnen de load-timeout van 30s
+  var timer = setInterval(function(){
+    attempts++;
+    var d;
     try {
-      var jsonLd = [];
-      var scripts = document.querySelectorAll('script[type="application/ld+json"]');
-      for (var i = 0; i < scripts.length && jsonLd.length < 6; i++) {
-        var t = (scripts[i] ? scripts[i].textContent : '') || '';
-        t = t.trim();
-        if (t.length > 0) jsonLd.push(t.slice(0, 60000));
+      d = read();
+    } catch (e) {
+      if (attempts >= maxAttempts) {
+        clearInterval(timer);
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          kind: 'recipe-webview-error',
+          jobId: ${JSON.stringify(jobId)},
+          message: String((e && e.message) ? e.message : e)
+        }));
       }
-      var title = document.title || '';
-      var desc = '';
-      var md = document.querySelector('meta[name="description"], meta[property="og:description"]');
-      if (md) desc = md.getAttribute('content') || '';
-      var root = document.querySelector('main') || document.querySelector('article') || document.body;
-      var visible = root ? (root.innerText || '') : '';
-      visible = visible.replace(/\\s+/g, ' ').trim().slice(0, 24000);
+      return;
+    }
+    var good = d.jsonLd.length > 0 || d.visibleText.length >= 400;
+    // Duidelijke blockpagina (Access Denied) direct melden; een Akamai-challenge
+    // die zichzelf oplost herlaadt de pagina en start dit script opnieuw.
+    var blocked = /access denied|toegang geweigerd/i.test(d.title);
+    if (blocked || good || attempts >= maxAttempts) {
+      clearInterval(timer);
       window.ReactNativeWebView.postMessage(JSON.stringify({
         kind: 'recipe-webview-page',
         jobId: ${JSON.stringify(jobId)},
-        title: title,
-        metaDescription: desc,
-        jsonLd: jsonLd,
-        visibleText: visible
-      }));
-    } catch (e) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({
-        kind: 'recipe-webview-error',
-        jobId: ${JSON.stringify(jobId)},
-        message: String((e && e.message) ? e.message : e)
+        title: d.title,
+        metaDescription: d.metaDescription,
+        jsonLd: d.jsonLd,
+        visibleText: d.visibleText
       }));
     }
-  }, 1200);
+  }, 1500);
 })();true;`;
 }
 
@@ -235,7 +258,18 @@ function buildExtractScript(jobId: number): string {
 export default function RecipeWebViewLoader() {
   if (Platform.OS === 'web') return null;
   return (
-    <View pointerEvents="none" style={{ width: 0, height: 0 }}>
+    <View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: 390,
+        height: 844,
+        opacity: 0,
+        overflow: 'hidden',
+      }}
+    >
       <HiddenPageWorker key="webview-worker-1" />
       <HiddenPageWorker key="webview-worker-2" />
     </View>

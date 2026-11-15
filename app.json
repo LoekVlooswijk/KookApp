@@ -62,7 +62,9 @@
       "expo-file-system",
       "expo-audio",
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "extra": {
       "router": {

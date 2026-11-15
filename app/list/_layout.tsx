@@ -1,4 +1,5 @@
 import { Stack } from 'expo-router';
+import { useI18n } from '../../components/I18nContext';
 import { useAppTheme } from '../../components/ThemeContext';
 
 function darkenColor(hex: string, factor: number): string {
@@ -11,6 +12,7 @@ function darkenColor(hex: string, factor: number): string {
 
 export default function ListStackLayout() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   return (
     <Stack
       screenOptions={{
@@ -18,7 +20,7 @@ export default function ListStackLayout() {
         headerStyle: { backgroundColor: darkenColor(theme.background, 0.97) },
       }}
     >
-      <Stack.Screen name="[id]" options={{ title: 'Lijst' }} />
+      <Stack.Screen name="[id]" options={{ title: t('shopping.list.title') }} />
     </Stack>
   );
 }

@@ -15,6 +15,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { CookingChatPanel } from './CookingChatPanel';
 import { PortionScaler } from './PortionScaler';
 import { useAppTheme } from './ThemeContext';
+import { useI18n } from './I18nContext';
 
 import { effectiveBaseServings, formatScaledIngredientLine, servingFactor } from '../lib/scaling';
 import type { FullRecipe } from '../lib/types';
@@ -45,6 +46,7 @@ function remainingSecondsFromEnd(endMs: number): number {
 export function CookingView({ recipeId }: Props) {
   useKeepAwake('cooking');
   const theme = useAppTheme();
+  const { t } = useI18n();
 
   const [recipe, setRecipe] = useState<FullRecipe | null>(null);
   const [checks, setChecks] = useState<CheckState>({ ing: [], step: [] });
@@ -216,7 +218,7 @@ export function CookingView({ recipeId }: Props) {
   if (!recipe) {
     return (
       <View style={styles.center}>
-        <Text style={styles.muted}>Recept niet gevonden.</Text>
+        <Text style={styles.muted}>{t('cook.view.notFound')}</Text>
       </View>
     );
   }
@@ -237,7 +239,7 @@ export function CookingView({ recipeId }: Props) {
             source={{ uri: recipe.imageUri }}
             style={styles.coverImage}
             resizeMode="cover"
-            accessibilityLabel="Receptfoto"
+            accessibilityLabel={t('cook.view.recipePhoto')}
           />
         ) : null}
         <Text style={styles.title}>{recipe.title}</Text>
@@ -245,7 +247,9 @@ export function CookingView({ recipeId }: Props) {
 
         <PortionScaler baseServings={recipe.baseServings} value={servings} onChange={setServings} />
 
-        <Text style={[styles.section, { color: theme.accent }]}>Ingrediënten</Text>
+        <Text style={[styles.section, { color: theme.accent }]}>
+          {t('cook.view.ingredientsTitle')}
+        </Text>
         {recipe.ingredientGroups.map((g) => (
           <View key={g.id} style={styles.block}>
             {g.title ? <Text style={styles.subHeader}>{g.title}</Text> : null}
@@ -267,7 +271,7 @@ export function CookingView({ recipeId }: Props) {
           </View>
         ))}
 
-        <Text style={[styles.section, { color: theme.accent }]}>Stappen</Text>
+        <Text style={[styles.section, { color: theme.accent }]}>{t('cook.view.stepsTitle')}</Text>
         {recipe.stepSections.map((s) => (
           <View key={s.id} style={styles.block}>
             {s.title ? <Text style={styles.subHeader}>{s.title}</Text> : null}
@@ -313,7 +317,9 @@ export function CookingView({ recipeId }: Props) {
                               hitSlop={6}
                               accessibilityRole="button"
                               accessibilityLabel={
-                                timer.status === 'running' ? 'Pauzeer timer' : 'Hervat timer'
+                                timer.status === 'running'
+                                  ? t('cook.view.pauseTimer')
+                                  : t('cook.view.resumeTimer')
                               }
                               style={styles.timerIconBtn}
                             >
@@ -327,7 +333,7 @@ export function CookingView({ recipeId }: Props) {
                               onPress={() => resetTimer(st.id)}
                               hitSlop={6}
                               accessibilityRole="button"
-                              accessibilityLabel="Reset timer"
+                              accessibilityLabel={t('cook.view.resetTimer')}
                               style={styles.timerIconBtn}
                             >
                               <MaterialIcons
@@ -344,7 +350,9 @@ export function CookingView({ recipeId }: Props) {
                           onPress={() => startTimer(st.id, st.timerSeconds!)}
                         >
                           <Text style={styles.timerBtnText}>
-                            Start timer ({formatStepTimerNl(st.timerSeconds)})
+                            {t('cook.view.startTimer', {
+                              duration: formatStepTimerNl(st.timerSeconds),
+                            })}
                           </Text>
                         </Pressable>
                       )}

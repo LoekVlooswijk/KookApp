@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
+import { useI18n } from '../../components/I18nContext';
 import { useAppTheme } from '../../components/ThemeContext';
 import { ensureDatabaseAsync } from '../../lib/db';
 import { safeErrorMessage } from '../../lib/logSafe';
@@ -80,6 +81,7 @@ function parseManualShoppingInput(text: string): {
 
 export default function ShoppingScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const tabBarHeight = useBottomTabBarHeight();
   const insets = useSafeAreaInsets();
@@ -144,17 +146,17 @@ export default function ShoppingScreen() {
     const mijnLijstje = items.filter((i) => i.category !== SHOPPING_INTERNAL_CATEGORY_WEEK);
     const vanWeekmenu = items.filter((i) => i.category === SHOPPING_INTERNAL_CATEGORY_WEEK);
     return [
-      { key: 'mijn', title: 'Mijn lijstje', data: mijnLijstje },
-      { key: 'week', title: 'Van weekmenu', data: vanWeekmenu },
+      { key: 'mijn', title: t('shopping.tab.sectionMine'), data: mijnLijstje },
+      { key: 'week', title: t('shopping.tab.sectionWeek'), data: vanWeekmenu },
     ] as const;
-  }, [items]);
+  }, [items, t]);
 
   const organicSet = useMemo(() => organicAlways, [organicAlways]);
 
   const onAdd = useCallback(() => {
-    const t = newText.trim();
-    if (!t) return;
-    const parsed = parseManualShoppingInput(t);
+    const text = newText.trim();
+    if (!text) return;
+    const parsed = parseManualShoppingInput(text);
     const name = parsed.name.trim();
     if (!name) return;
     void (async () => {
@@ -205,10 +207,9 @@ export default function ShoppingScreen() {
       void (async () => {
         const ok = await confirm({
           title: row.name,
-          message:
-            'Het item verdwijnt van je boodschappenlijst en staat voortaan op je lijst “altijd op voorraad” in instellingen (net als olie en kruiden).',
-          confirmText: 'Zet item op standaard voorraad',
-          cancelText: 'Annuleren',
+          message: t('shopping.tab.moveToStaples.message'),
+          confirmText: t('shopping.tab.moveToStaples.confirm'),
+          cancelText: t('shopping.tab.cancel'),
         });
         if (!ok) return;
         setItems((prev) => prev.filter((it) => it.id !== row.id));
@@ -222,7 +223,7 @@ export default function ShoppingScreen() {
         }
       })();
     },
-    [confirm, reload]
+    [confirm, reload, t]
   );
 
   const renderRightActions = useCallback(
@@ -231,13 +232,13 @@ export default function ShoppingScreen() {
         <Pressable
           style={styles.swipeAction}
           onPress={() => onDelete(row)}
-          accessibilityLabel="Verwijderen"
+          accessibilityLabel={t('shopping.tab.delete')}
         >
-          <Text style={styles.swipeActionText}>Verwijderen</Text>
+          <Text style={styles.swipeActionText}>{t('shopping.tab.delete')}</Text>
         </Pressable>
       </View>
     ),
-    [onDelete]
+    [onDelete, t]
   );
 
   const onClearWeekSection = useCallback(() => {
@@ -245,10 +246,10 @@ export default function ShoppingScreen() {
     if (weekCount === 0) return;
     void (async () => {
       const ok = await confirm({
-        title: 'Weekmenu-items wissen?',
-        message: 'Alle regels onder “Van weekmenu” worden verwijderd. “Mijn lijstje” blijft staan.',
-        confirmText: 'Wissen',
-        cancelText: 'Annuleren',
+        title: t('shopping.tab.clearWeek.title'),
+        message: t('shopping.tab.clearWeek.message'),
+        confirmText: t('shopping.tab.clear'),
+        cancelText: t('shopping.tab.cancel'),
         destructive: true,
       });
       if (!ok) return;
@@ -261,7 +262,7 @@ export default function ShoppingScreen() {
         reload();
       }
     })();
-  }, [confirm, items, reload]);
+  }, [confirm, items, reload, t]);
 
   const Root = Platform.OS === 'ios' ? KeyboardAvoidingView : View;
   const rootProps =
@@ -288,7 +289,7 @@ export default function ShoppingScreen() {
         <View style={styles.addRow}>
           <TextInput
             style={styles.input}
-            placeholder="Voeg item toe…"
+            placeholder={t('shopping.tab.inputPlaceholder')}
             placeholderTextColor="#999"
             value={newText}
             onChangeText={setNewText}
@@ -305,7 +306,7 @@ export default function ShoppingScreen() {
             onPress={onAdd}
             disabled={!newText.trim()}
           >
-            <Text style={styles.addBtnText}>Toevoegen</Text>
+            <Text style={styles.addBtnText}>{t('shopping.tab.add')}</Text>
           </Pressable>
         </View>
       </View>
@@ -337,7 +338,7 @@ export default function ShoppingScreen() {
                   onPress={onClearWeekSection}
                   disabled={weekEmpty}
                   style={[styles.sectionClearBtn, weekEmpty && styles.sectionClearBtnOff]}
-                  accessibilityLabel="Van weekmenu wissen"
+                  accessibilityLabel={t('shopping.tab.clearWeek.accessibility')}
                   accessibilityState={{ disabled: weekEmpty }}
                 >
                   <Text
@@ -347,7 +348,7 @@ export default function ShoppingScreen() {
                       weekEmpty && styles.sectionClearBtnTextOff,
                     ]}
                   >
-                    Wissen
+                    {t('shopping.tab.clear')}
                   </Text>
                 </Pressable>
               ) : null}
@@ -356,8 +357,8 @@ export default function ShoppingScreen() {
         }}
         ListEmptyComponent={
           <View style={styles.emptyBlock}>
-            <Text style={styles.emptyHead}>Lekker leeg.</Text>
-            <Text style={styles.emptySub}>Voeg iets toe of vul vanaf de weekplanner.</Text>
+            <Text style={styles.emptyHead}>{t('shopping.tab.emptyTitle')}</Text>
+            <Text style={styles.emptySub}>{t('shopping.tab.emptySubtitle')}</Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -410,7 +411,7 @@ export default function ShoppingScreen() {
                         name="leaf"
                         size={16}
                         color="#2e7d32"
-                        accessibilityLabel="Altijd biologisch"
+                        accessibilityLabel={t('shopping.tab.organicAlways')}
                       />
                     ) : null}
                   </View>

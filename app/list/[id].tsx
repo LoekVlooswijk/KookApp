@@ -9,6 +9,7 @@ import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
+import { useI18n } from '../../components/I18nContext';
 import { RecipeListThumb } from '../../components/RecipeListThumb';
 import { useAppTheme } from '../../components/ThemeContext';
 import {
@@ -24,6 +25,7 @@ import type { RecipeListItem } from '../../lib/types';
 
 export default function ListDetailScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const { id: idParam } = useLocalSearchParams<{ id: string }>();
   const listId = Number.parseInt(idParam ?? '', 10);
@@ -132,22 +134,22 @@ export default function ListDetailScreen() {
     if (!Number.isFinite(listId)) return;
     void (async () => {
       const ok = await confirm({
-        title: 'Lijst verwijderen',
-        message: 'Alle koppelingen met recepten gaan verloren. Doorgaan?',
-        confirmText: 'Verwijderen',
-        cancelText: 'Annuleren',
+        title: t('shopping.list.deleteList.title'),
+        message: t('shopping.list.deleteList.message'),
+        confirmText: t('shopping.list.deleteList.confirm'),
+        cancelText: t('shopping.list.deleteList.cancel'),
         destructive: true,
       });
       if (!ok) return;
       await deleteList(listId);
       router.back();
     })();
-  }, [confirm, listId, router]);
+  }, [confirm, listId, router, t]);
 
   if (!Number.isFinite(listId)) {
     return (
       <View style={styles.center}>
-        <Text>Ongeldige lijst.</Text>
+        <Text>{t('shopping.list.invalid')}</Text>
       </View>
     );
   }
@@ -155,7 +157,7 @@ export default function ListDetailScreen() {
   if (!meta) {
     return (
       <View style={styles.center}>
-        <Text>Lijst niet gevonden.</Text>
+        <Text>{t('shopping.list.notFound')}</Text>
       </View>
     );
   }
@@ -167,24 +169,22 @@ export default function ListDetailScreen() {
 
       <View style={styles.toolbar}>
         <Pressable style={[styles.primaryBtn, { backgroundColor: theme.accent }]} onPress={openAdd}>
-          <Text style={styles.primaryBtnText}>+ Recept toevoegen</Text>
+          <Text style={styles.primaryBtnText}>{t('shopping.list.addRecipe')}</Text>
         </Pressable>
         <Pressable onPress={onDeleteList}>
-          <Text style={styles.danger}>Lijst verwijderen</Text>
+          <Text style={styles.danger}>{t('shopping.list.deleteList.title')}</Text>
         </Pressable>
       </View>
 
       {items.length > 0 ? (
-        <Text style={styles.listHint}>
-          Lang indrukken op een recept om het uit deze lijst te halen.
-        </Text>
+        <Text style={styles.listHint}>{t('shopping.list.longPressHint')}</Text>
       ) : null}
 
       <FlatList
         data={items}
         keyExtractor={(r) => String(r.id)}
         contentContainerStyle={items.length === 0 ? styles.emptyList : undefined}
-        ListEmptyComponent={<Text style={styles.empty}>Nog geen recepten in deze lijst.</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>{t('shopping.list.empty')}</Text>}
         renderItem={({ item }) => (
           <Pressable
             style={styles.card}
@@ -192,10 +192,10 @@ export default function ListDetailScreen() {
             onLongPress={() => {
               void (async () => {
                 const ok = await confirm({
-                  title: 'Uit lijst halen?',
+                  title: t('shopping.list.remove.title'),
                   message: item.title,
-                  confirmText: 'Verwijderen',
-                  cancelText: 'Annuleren',
+                  confirmText: t('shopping.list.remove.confirm'),
+                  cancelText: t('shopping.list.remove.cancel'),
                   destructive: true,
                 });
                 if (!ok) return;
@@ -223,7 +223,7 @@ export default function ListDetailScreen() {
             style={[styles.modalCard, { backgroundColor: theme.background }]}
             onPress={(e) => e.stopPropagation()}
           >
-            <Text style={styles.modalTitle}>Recept toevoegen</Text>
+            <Text style={styles.modalTitle}>{t('shopping.list.addModal.title')}</Text>
             <Pressable
               style={[styles.modalNewRecipe, { backgroundColor: theme.accent }]}
               onPress={() => {
@@ -231,22 +231,24 @@ export default function ListDetailScreen() {
                 router.push(`/recipe/new?listId=${listId}`);
               }}
             >
-              <Text style={styles.modalNewRecipeText}>+ Nieuw recept maken</Text>
+              <Text style={styles.modalNewRecipeText}>
+                {t('shopping.list.addModal.newRecipeText')}
+              </Text>
               <Text style={styles.modalNewRecipeSub}>
-                Wordt na opslaan aan deze lijst toegevoegd
+                {t('shopping.list.addModal.newRecipeSub')}
               </Text>
             </Pressable>
             <TextInput
               style={styles.input}
-              placeholder="Zoeken bestaand recept…"
+              placeholder={t('shopping.list.addModal.searchPlaceholder')}
               value={filter}
               onChangeText={setFilter}
             />
             <View style={styles.bulkToolbar}>
               <Text style={styles.bulkHint}>
                 {selectedCount === 0
-                  ? 'Selecteer één of meer recepten.'
-                  : `${selectedCount} geselecteerd`}
+                  ? t('shopping.list.addModal.selectHint')
+                  : t('shopping.list.addModal.selectedCount', { count: selectedCount })}
               </Text>
               <View style={styles.bulkActions}>
                 <Pressable
@@ -254,7 +256,7 @@ export default function ListDetailScreen() {
                   disabled={adding}
                   onPress={selectAllFiltered}
                 >
-                  <Text style={styles.bulkBtnText}>Alles</Text>
+                  <Text style={styles.bulkBtnText}>{t('shopping.list.addModal.all')}</Text>
                 </Pressable>
                 <Pressable
                   style={[
@@ -264,7 +266,7 @@ export default function ListDetailScreen() {
                   disabled={selectedCount === 0 || adding}
                   onPress={clearSelection}
                 >
-                  <Text style={styles.bulkBtnText}>Leeg</Text>
+                  <Text style={styles.bulkBtnText}>{t('shopping.list.addModal.none')}</Text>
                 </Pressable>
                 <Pressable
                   style={[
@@ -276,7 +278,9 @@ export default function ListDetailScreen() {
                   onPress={confirmAddSelected}
                 >
                   <Text style={styles.bulkPrimaryBtnText}>
-                    {adding ? 'Toevoegen…' : `Voeg toe (${selectedCount})`}
+                    {adding
+                      ? t('shopping.list.addModal.adding')
+                      : t('shopping.list.addModal.addCount', { count: selectedCount })}
                   </Text>
                 </Pressable>
               </View>
@@ -286,9 +290,7 @@ export default function ListDetailScreen() {
               keyExtractor={(r) => String(r.id)}
               style={styles.modalList}
               ListEmptyComponent={
-                <Text style={styles.muted}>
-                  Geen andere recepten om toe te voegen. Gebruik «Nieuw recept maken» hierboven.
-                </Text>
+                <Text style={styles.muted}>{t('shopping.list.addModal.empty')}</Text>
               }
               renderItem={({ item }) => (
                 <Pressable
@@ -324,7 +326,7 @@ export default function ListDetailScreen() {
               )}
             />
             <Pressable style={styles.modalClose} onPress={closeAdd}>
-              <Text style={styles.modalCloseText}>Sluiten</Text>
+              <Text style={styles.modalCloseText}>{t('shopping.list.addModal.close')}</Text>
             </Pressable>
           </Pressable>
         </Pressable>

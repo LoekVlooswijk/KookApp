@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAppTheme } from './ThemeContext';
+import { useI18n } from './I18nContext';
 import { MAX_SERVINGS, MIN_SERVINGS, effectiveBaseServings } from '../lib/scaling';
 
 type Props = {
@@ -13,6 +14,7 @@ type Props = {
 
 export function PortionScaler({ baseServings, value, onChange, compact }: Props) {
   const theme = useAppTheme();
+  const { t } = useI18n();
   if (compact) {
     return (
       <View style={styles.wrapCompact}>
@@ -30,7 +32,7 @@ export function PortionScaler({ baseServings, value, onChange, compact }: Props)
           </Pressable>
           <View style={styles.valueColCompact}>
             <Text style={styles.valueCompact}>{value}</Text>
-            <Text style={styles.suffixBelow}>pers.</Text>
+            <Text style={styles.suffixBelow}>{t('cook.scaler.compactSuffix')}</Text>
           </View>
           <Pressable
             style={[
@@ -52,9 +54,9 @@ export function PortionScaler({ baseServings, value, onChange, compact }: Props)
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>Porties</Text>
+      <Text style={styles.title}>{t('cook.scaler.title')}</Text>
       <Text style={styles.sub}>
-        Recept is voor {base} persoon{base === 1 ? '' : 'en'}. Pas aan wat je nu kookt.
+        {t(base === 1 ? 'cook.scaler.subOne' : 'cook.scaler.subMany', { base })}
       </Text>
       <View style={styles.row}>
         <Pressable
@@ -80,7 +82,7 @@ export function PortionScaler({ baseServings, value, onChange, compact }: Props)
         >
           <Text style={styles.btnText}>+</Text>
         </Pressable>
-        <Text style={styles.suffix}>personen</Text>
+        <Text style={styles.suffix}>{t('cook.scaler.suffix')}</Text>
       </View>
     </View>
   );

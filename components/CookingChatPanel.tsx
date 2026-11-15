@@ -26,8 +26,10 @@ import {
   type ChatSession,
 } from '../lib/chatSessionRepo';
 import type { FullRecipe } from '../lib/types';
+import type { TranslationKey } from '../lib/i18n';
 import { ChatSheetKeyboardWrap } from './ChatSheetKeyboardWrap';
 import { FormattedText } from './FormattedText';
+import { useI18n } from './I18nContext';
 import { useAppTheme } from './ThemeContext';
 
 const ADJUST_TAG = '<<AANPASSING>>';
@@ -38,10 +40,11 @@ function stripAdjustTag(text: string): { clean: string; isAdjustment: boolean } 
   return { clean: text.slice(0, idx).trimEnd(), isAdjustment: true };
 }
 
-const QUICK_TIPS = [
-  'Kan ik dit een dag van tevoren voorbereiden?',
-  'Wat kan ik gebruiken als ik een ingrediënt mis?',
-  'Hoe weet ik of het goed gaar is?',
+/** Keys van vaste snelvragen; de tekst zelf komt via `t()` op de render-plek. */
+const QUICK_TIP_KEYS: readonly TranslationKey[] = [
+  'cook.chat.tips.prepAhead',
+  'cook.chat.tips.substitute',
+  'cook.chat.tips.doneness',
 ];
 
 type Props = {
@@ -53,6 +56,7 @@ type Props = {
 
 export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }: Props) {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [turns, setTurns] = useState<AiChatTurn[]>([]);
   const [input, setInput] = useState('');
@@ -213,15 +217,12 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
       setApplying(false);
       setAdjustSuggested(false);
       onRecipeUpdated?.();
-      Alert.alert(
-        'Recept aangepast',
-        'De wijziging is opgeslagen. De vorige versie staat in de versiegeschiedenis.'
-      );
+      Alert.alert(t('cook.chat.adjustedTitle'), t('cook.chat.adjustedMessage'));
     } catch (e) {
       setApplying(false);
-      setError(e instanceof Error ? e.message : 'Opslaan mislukt.');
+      setError(e instanceof Error ? e.message : t('cook.chat.saveFailed'));
     }
-  }, [applying, recipe, recipeId, turns, onRecipeUpdated]);
+  }, [applying, recipe, recipeId, turns, onRecipeUpdated, t]);
 
   const onSend = useCallback(() => {
     void sendWithText(input);
@@ -240,7 +241,7 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
         onPress={() => setOpen(true)}
         accessibilityRole="button"
       >
-        <Text style={styles.fabText}>Tips & vraag</Text>
+        <Text style={styles.fabText}>{t('cook.chat.fab')}</Text>
       </Pressable>
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={closePanel}>
@@ -249,31 +250,29 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
           <ChatSheetKeyboardWrap style={[styles.sheet, { backgroundColor: theme.background }]}>
             <View style={styles.sheetInner}>
               <View style={styles.sheetHeader}>
-                <Text style={styles.sheetTitle}>Kookhulp</Text>
+                <Text style={styles.sheetTitle}>{t('cook.chat.title')}</Text>
                 <View style={styles.headerActions}>
                   <Pressable
                     style={styles.micBtn}
                     disabled
-                    accessibilityLabel="Stem invoer (later beschikbaar)"
+                    accessibilityLabel={t('cook.chat.voiceInputLabel')}
                     accessibilityState={{ disabled: true }}
                   >
                     <Text style={styles.micIcon}>🎤</Text>
                   </Pressable>
                   <Pressable onPress={closePanel} hitSlop={12}>
-                    <Text style={styles.close}>Sluiten</Text>
+                    <Text style={styles.close}>{t('cook.chat.close')}</Text>
                   </Pressable>
                 </View>
               </View>
-              <Text style={styles.micHint}>Stem: later (Whisper)</Text>
+              <Text style={styles.micHint}>{t('cook.chat.voiceHint')}</Text>
 
               {!hasKey ? (
                 <View style={styles.warnBox}>
-                  <Text style={styles.warnText}>
-                    Zet een API-sleutel in Instellingen om tips te kunnen vragen.
-                  </Text>
+                  <Text style={styles.warnText}>{t('cook.chat.noKey')}</Text>
                   <Link href="/settings" asChild>
                     <Pressable style={styles.linkBtn}>
-                      <Text style={styles.linkBtnText}>Naar instellingen</Text>
+                      <Text style={styles.linkBtnText}>{t('cook.chat.toSettings')}</Text>
                     </Pressable>
                   </Link>
                 </View>
@@ -286,8 +285,7 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
                 keyboardShouldPersistTaps="always"
               >
                 <Text style={styles.intro}>
-                  Stel een korte vraag over dit recept (je kookt voor {servings} persoon
-                  {servings === 1 ? '' : 'en'}).
+                  {t(servings === 1 ? 'cook.chat.introOne' : 'cook.chat.introMany', { servings })}
                 </Text>
                 {turns.map((m, i) => (
                   <View
@@ -297,28 +295,28 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
                       m.role === 'user' ? styles.bubbleUser : styles.bubbleAsst,
                     ]}
                   >
-                    <Text style={styles.bubbleRole}>{m.role === 'user' ? 'Jij' : 'Kok'}</Text>
+                    <Text style={styles.bubbleRole}>
+                      {m.role === 'user' ? t('cook.chat.roleYou') : t('cook.chat.roleChef')}
+                    </Text>
                     <FormattedText text={m.text} style={styles.bubbleText} />
                   </View>
                 ))}
                 {loading ? (
                   <View style={styles.loadingRow}>
                     <ActivityIndicator color={theme.accent} />
-                    <Text style={styles.loadingText}>Even geduld…</Text>
+                    <Text style={styles.loadingText}>{t('cook.chat.thinking')}</Text>
                   </View>
                 ) : null}
                 {applying ? (
                   <View style={styles.loadingRow}>
                     <ActivityIndicator color="#2a6cb6" />
-                    <Text style={styles.loadingText}>Recept aanpassen…</Text>
+                    <Text style={styles.loadingText}>{t('cook.chat.adjusting')}</Text>
                   </View>
                 ) : null}
                 {error ? (
                   <View style={styles.errorBox}>
                     <Text style={styles.errorText}>{error}</Text>
-                    <Text style={styles.errorHint}>
-                      Verstuur je vraag nogmaals of probeer het later.
-                    </Text>
+                    <Text style={styles.errorHint}>{t('cook.chat.errorHint')}</Text>
                   </View>
                 ) : null}
               </ScrollView>
@@ -326,27 +324,27 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
               {adjustSuggested && !busy ? (
                 <View style={styles.adjustRow}>
                   <Pressable style={styles.adjustBtn} onPress={() => void onApplyAdjustment()}>
-                    <Text style={styles.adjustBtnText}>Recept aanpassen</Text>
+                    <Text style={styles.adjustBtnText}>{t('cook.chat.adjust')}</Text>
                   </Pressable>
                 </View>
               ) : null}
 
               <View style={styles.quickRow}>
-                {QUICK_TIPS.map((q) => (
+                {QUICK_TIP_KEYS.map((q) => (
                   <Pressable
                     key={q}
                     style={[
                       styles.quickChip,
                       { backgroundColor: theme.accentSoft, borderColor: theme.accentBorderMuted },
                     ]}
-                    onPress={() => void sendWithText(q)}
+                    onPress={() => void sendWithText(t(q))}
                     disabled={busy || !hasKey}
                   >
                     <Text
                       style={[styles.quickChipText, { color: theme.accentSoftText }]}
                       numberOfLines={2}
                     >
-                      {q}
+                      {t(q)}
                     </Text>
                   </Pressable>
                 ))}
@@ -355,7 +353,7 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
               <View style={styles.inputRow}>
                 <TextInput
                   style={styles.input}
-                  placeholder="Je vraag…"
+                  placeholder={t('cook.chat.inputPlaceholder')}
                   placeholderTextColor="#999"
                   value={input}
                   onChangeText={setInput}
@@ -372,7 +370,7 @@ export function CookingChatPanel({ recipe, recipeId, servings, onRecipeUpdated }
                   onPress={onSend}
                   disabled={!input.trim() || busy || !hasKey}
                 >
-                  <Text style={styles.sendBtnText}>Verstuur</Text>
+                  <Text style={styles.sendBtnText}>{t('cook.chat.send')}</Text>
                 </Pressable>
               </View>
             </View>

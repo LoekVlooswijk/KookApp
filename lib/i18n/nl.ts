@@ -5,6 +5,8 @@
  * vertalingen vallen direct op in `npm run typecheck`.
  */
 import { settingsNl } from './keys/settings';
+import { shoppingNl } from './keys/shopping';
+import { cookNl } from './keys/cook';
 
 export const nl = {
   boot: {
@@ -35,6 +37,8 @@ export const nl = {
     data: 'Databeheer',
   },
   settings: settingsNl,
+  shopping: shoppingNl,
+  cook: cookNl,
 } as const;
 
 type WidenT<T> = {

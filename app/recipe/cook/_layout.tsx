@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 import { useAppTheme } from '../../../components/ThemeContext';
+import { useI18n } from '../../../components/I18nContext';
 
 function darkenColor(hex: string, factor: number): string {
   const num = parseInt(hex.replace('#', ''), 16);
@@ -11,16 +12,17 @@ function darkenColor(hex: string, factor: number): string {
 
 export default function RecipeCookStackLayout() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   return (
     <Stack
       screenOptions={{
-        title: 'Kookmodus',
+        title: t('cook.screen.title'),
         headerShown: true,
         headerTintColor: theme.accent,
         headerStyle: { backgroundColor: darkenColor(theme.background, 0.97) },
       }}
     >
-      <Stack.Screen name="[id]" options={{ title: 'Kookmodus' }} />
+      <Stack.Screen name="[id]" options={{ title: t('cook.screen.title') }} />
     </Stack>
   );
 }

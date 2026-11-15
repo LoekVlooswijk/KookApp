@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { useAppTheme } from './ThemeContext';
+import { useI18n } from './I18nContext';
 import type { FullRecipe } from '../lib/types';
 import { effectiveBaseServings, scaledIngredientDisplayParts, servingFactor } from '../lib/scaling';
 
@@ -12,19 +13,24 @@ type Props = {
 
 export function ScaledIngredientsList({ recipe, targetServings, headerRight }: Props) {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const factor = servingFactor(targetServings, recipe.baseServings);
   const base = effectiveBaseServings(recipe.baseServings);
 
   return (
     <View style={styles.wrap}>
       <View style={styles.headingRow}>
-        <Text style={[styles.heading, { color: theme.accent }]}>Ingrediënten</Text>
+        <Text style={[styles.heading, { color: theme.accent }]}>
+          {t('cook.scaledList.heading')}
+        </Text>
         {headerRight}
       </View>
       {targetServings !== base ? (
         <Text style={styles.hint}>
-          Geschaald voor {targetServings} persoon{targetServings === 1 ? '' : 'en'} (×
-          {trimFactor(factor)})
+          {t(targetServings === 1 ? 'cook.scaledList.hintOne' : 'cook.scaledList.hintMany', {
+            target: targetServings,
+            factor: trimFactor(factor),
+          })}
         </Text>
       ) : null}
       {recipe.ingredientGroups.map((g) => (

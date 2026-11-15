@@ -15,11 +15,13 @@ import {
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
 import { addCustomDiet, getCustomDiets, removeCustomDiet } from '../../lib/dietPrefs';
 import { ensureDatabaseAsync } from '../../lib/db';
 
 export default function DietsSettingsScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const headerHeight = useHeaderHeight();
 
@@ -48,19 +50,22 @@ export default function DietsSettingsScreen() {
         setCustomDietsState(next.map((d) => d.name));
         setNewDietInput('');
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Toevoegen mislukt.');
+        Alert.alert(
+          t('settings.shared.errorTitle'),
+          e instanceof Error ? e.message : t('settings.shared.addFailed')
+        );
       }
     })();
-  }, [newDietInput]);
+  }, [newDietInput, t]);
 
   const onRemoveDiet = useCallback(
     (name: string) => {
       void (async () => {
         const ok = await confirm({
-          title: 'Dieet verwijderen?',
-          message: `«${name}» verwijderen uit de lijst? Recepten die dit dieet nog als tag hebben blijven bestaan; je kunt daarna opschonen.`,
-          confirmText: 'Verwijderen',
-          cancelText: 'Annuleren',
+          title: t('settings.dietsPage.deleteTitle'),
+          message: t('settings.dietsPage.deleteMessage', { name }),
+          confirmText: t('settings.shared.delete'),
+          cancelText: t('common.confirm.cancel'),
           destructive: true,
         });
         if (!ok) return;
@@ -68,7 +73,7 @@ export default function DietsSettingsScreen() {
         setCustomDietsState(next.map((d) => d.name));
       })();
     },
-    [confirm]
+    [confirm, t]
   );
 
   return (
@@ -79,16 +84,13 @@ export default function DietsSettingsScreen() {
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ConfirmDialog />
-        <Text style={styles.section}>Dieten</Text>
-        <Text style={styles.hint}>
-          Dit zijn extra dieetlabels naast de ingebouwde opties (Vega/Vegan/Keto). Ze worden
-          opgeslagen als speciale tags (`diet:...`) zodat gewone tags voor thema/techniek blijven.
-        </Text>
+        <Text style={styles.section}>{t('settings.dietsPage.title')}</Text>
+        <Text style={styles.hint}>{t('settings.dietsPage.hint')}</Text>
 
         <View style={styles.row}>
           <TextInput
             style={[styles.input, styles.flex1]}
-            placeholder="Bijv. glutenvrij"
+            placeholder={t('settings.dietsPage.placeholder')}
             value={newDietInput}
             onChangeText={setNewDietInput}
             autoCapitalize="none"
@@ -99,7 +101,7 @@ export default function DietsSettingsScreen() {
             onPress={onAddDiet}
             disabled={!newDietInput.trim()}
           >
-            <Text style={styles.btnPrimaryText}>Toevoegen</Text>
+            <Text style={styles.btnPrimaryText}>{t('settings.shared.add')}</Text>
           </Pressable>
         </View>
 
@@ -112,7 +114,7 @@ export default function DietsSettingsScreen() {
             ))}
           </View>
         ) : (
-          <Text style={styles.statusMuted}>Nog geen extra diëten toegevoegd.</Text>
+          <Text style={styles.statusMuted}>{t('settings.dietsPage.empty')}</Text>
         )}
       </ScrollView>
     </KeyboardAvoidingView>

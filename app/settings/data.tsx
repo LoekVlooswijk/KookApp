@@ -13,6 +13,7 @@ import {
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
 import {
   shareLocalFileAsync,
   exportSerializedBackupFileAsync,
@@ -25,6 +26,7 @@ import { ensureDatabaseAsync } from '../../lib/db';
 
 export default function DataSettingsScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const web = Platform.OS === 'web';
 
@@ -53,20 +55,22 @@ export default function DataSettingsScreen() {
         const f = await exportSerializedBackupFileAsync();
         await shareLocalFileAsync(f.uri, {
           mimeType: 'application/x-sqlite3',
-          dialogTitle: 'Kookapp Database Backup',
+          dialogTitle: t('settings.dataPage.backupShareTitle'),
         });
         Alert.alert(
-          'Backup klaar',
-          `Database opgeslagen in je Files-app als kook-backup-…\n\n` +
-            `Je kunt het bestand delen of verplaatsen naar Nextcloud.`
+          t('settings.dataPage.backupReadyTitle'),
+          t('settings.dataPage.backupReadyMessage')
         );
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Exporteren mislukt.');
+        Alert.alert(
+          t('settings.shared.errorTitle'),
+          e instanceof Error ? e.message : t('settings.dataPage.exportFailed')
+        );
       } finally {
         setDataBusy(false);
       }
     })();
-  }, [web]);
+  }, [t, web]);
 
   const onExportJson = useCallback(() => {
     if (web) return;
@@ -76,20 +80,19 @@ export default function DataSettingsScreen() {
         const f = await exportAllDataAsJsonFileAsync();
         await shareLocalFileAsync(f.uri, {
           mimeType: 'application/json',
-          dialogTitle: 'Kookapp JSON Export',
+          dialogTitle: t('settings.dataPage.jsonShareTitle'),
         });
-        Alert.alert(
-          'JSON-export klaar',
-          `Alle gegevens opgeslagen in je Files-app als kook-export-…\n\n` +
-            `Let op: AI-sleutels staan in beveiligde opslag en zitten niet in deze export.`
-        );
+        Alert.alert(t('settings.dataPage.jsonReadyTitle'), t('settings.dataPage.jsonReadyMessage'));
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Exporteren mislukt.');
+        Alert.alert(
+          t('settings.shared.errorTitle'),
+          e instanceof Error ? e.message : t('settings.dataPage.exportFailed')
+        );
       } finally {
         setDataBusy(false);
       }
     })();
-  }, [web]);
+  }, [t, web]);
 
   const runImportAfterConfirm = useCallback(() => {
     void (async () => {
@@ -99,46 +102,41 @@ export default function DataSettingsScreen() {
         reloadAfterImportOrWipe();
         // Give a moment for the database to be ready
         await new Promise((resolve) => setTimeout(resolve, 200));
-        Alert.alert(
-          'Klaar',
-          'De backup is ingelezen. Als ergens nog oude gegevens staan, sluit die schermen of herstart de app.'
-        );
+        Alert.alert(t('settings.dataPage.doneTitle'), t('settings.dataPage.doneMessage'));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : 'Importeren mislukt.';
+        const msg = e instanceof Error ? e.message : t('settings.dataPage.importFailed');
         if (msg !== 'Geen bestand gekozen.') {
-          Alert.alert('Fout', msg);
+          Alert.alert(t('settings.shared.errorTitle'), msg);
         }
       } finally {
         setDataBusy(false);
       }
     })();
-  }, [reloadAfterImportOrWipe]);
+  }, [reloadAfterImportOrWipe, t]);
 
   const onImportBackup = useCallback(() => {
     if (web) return;
     void (async () => {
       const ok = await confirm({
-        title: 'Backup importeren?',
-        message:
-          'Alle huidige gegevens in de app-database (recepten, lijsten, weekmenu, voorkeuren in de database) worden vervangen. Dit kun je niet ongedaan maken.',
-        confirmText: 'Importeren',
-        cancelText: 'Annuleren',
+        title: t('settings.dataPage.importTitle'),
+        message: t('settings.dataPage.importMessage'),
+        confirmText: t('settings.dataPage.importAction'),
+        cancelText: t('common.confirm.cancel'),
         destructive: true,
       });
       if (!ok) return;
       runImportAfterConfirm();
     })();
-  }, [confirm, runImportAfterConfirm, web]);
+  }, [confirm, runImportAfterConfirm, t, web]);
 
   const onWipeAllData = useCallback(() => {
     if (web) return;
     void (async () => {
       const ok = await confirm({
-        title: 'Alles wissen?',
-        message:
-          'Alle recepten, lijsten, weekmenu, boodschappen en kookvoortgang worden verwijderd. Voorkeuren die in de database staan (zoals model en eenheden) gaan terug naar de standaard. Je AI-sleutels blijven in de beveiligde opslag staan, tenzij je ze apart verwijdert.',
-        confirmText: 'Alles wissen',
-        cancelText: 'Annuleren',
+        title: t('settings.dataPage.wipeTitle'),
+        message: t('settings.dataPage.wipeMessage'),
+        confirmText: t('settings.dataPage.wipeAction'),
+        cancelText: t('common.confirm.cancel'),
         destructive: true,
       });
       if (!ok) return;
@@ -146,14 +144,17 @@ export default function DataSettingsScreen() {
       try {
         await wipeAllLocalDatabaseDataAsync();
         reloadAfterImportOrWipe();
-        Alert.alert('Gewist', 'Alle lokale databasegegevens zijn verwijderd.');
+        Alert.alert(t('settings.dataPage.wipedTitle'), t('settings.dataPage.wipedMessage'));
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Wissen mislukt.');
+        Alert.alert(
+          t('settings.shared.errorTitle'),
+          e instanceof Error ? e.message : t('settings.dataPage.wipeFailed')
+        );
       } finally {
         setDataBusy(false);
       }
     })();
-  }, [confirm, reloadAfterImportOrWipe, web]);
+  }, [confirm, reloadAfterImportOrWipe, t, web]);
 
   return (
     <ScrollView
@@ -162,21 +163,15 @@ export default function DataSettingsScreen() {
       keyboardShouldPersistTaps="handled"
     >
       <ConfirmDialog />
-      <Text style={styles.section}>Databeheer</Text>
+      <Text style={styles.section}>{t('settings.dataPage.title')}</Text>
 
       {web ? (
         <View style={styles.notice}>
-          <Text style={styles.noticeText}>
-            Backup en importeren werken alleen in de iOS- of Android-app, niet in de webversie.
-          </Text>
+          <Text style={styles.noticeText}>{t('settings.dataPage.webNotice')}</Text>
         </View>
       ) : (
         <>
-          <Text style={styles.hint}>
-            Recepten en lijsten staan in een lokaal databasebestand. Gebruik een backup vóór grote
-            wijzigingen of als je van telefoon wisselt. Importeren vervangt alles in de database; je
-            AI-sleutels blijven in de beveiligde opslag staan tenzij je ze apart wist.
-          </Text>
+          <Text style={styles.hint}>{t('settings.dataPage.lead')}</Text>
 
           <Pressable
             style={[
@@ -187,7 +182,7 @@ export default function DataSettingsScreen() {
             onPress={onExportBackup}
             disabled={dataBusy}
           >
-            <Text style={styles.btnPrimaryText}>Backup maken en delen</Text>
+            <Text style={styles.btnPrimaryText}>{t('settings.dataPage.exportBackup')}</Text>
           </Pressable>
           <Pressable
             style={[
@@ -199,7 +194,7 @@ export default function DataSettingsScreen() {
             disabled={dataBusy}
           >
             <Text style={[styles.btnOutlineText, { color: theme.accent }]}>
-              Exporteer alles als JSON
+              {t('settings.dataPage.exportJson')}
             </Text>
           </Pressable>
           <Pressable
@@ -212,7 +207,7 @@ export default function DataSettingsScreen() {
             disabled={dataBusy}
           >
             <Text style={[styles.btnOutlineText, { color: theme.accent }]}>
-              Importeer van backupbestand
+              {t('settings.dataPage.importBackup')}
             </Text>
           </Pressable>
 
@@ -221,13 +216,13 @@ export default function DataSettingsScreen() {
             onPress={onWipeAllData}
             disabled={dataBusy}
           >
-            <Text style={styles.btnDangerSolidText}>Alle lokale data wissen</Text>
+            <Text style={styles.btnDangerSolidText}>{t('settings.dataPage.wipeAll')}</Text>
           </Pressable>
 
           {dataBusy ? (
             <View style={styles.busyRow}>
               <ActivityIndicator size="small" color={theme.accent} />
-              <Text style={styles.busyHint}>Even geduld…</Text>
+              <Text style={styles.busyHint}>{t('settings.shared.busy')}</Text>
             </View>
           ) : null}
         </>

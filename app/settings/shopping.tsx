@@ -14,6 +14,7 @@ import {
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
 import { ensureDatabaseAsync } from '../../lib/db';
 import {
   getShoppingOrganicAlwaysList,
@@ -32,6 +33,7 @@ import {
 
 export default function ShoppingSettingsScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const web = Platform.OS === 'web';
   const headerHeight = useHeaderHeight();
@@ -83,33 +85,33 @@ export default function ShoppingSettingsScreen() {
     if (web) return;
     void (async () => {
       const ok = await confirm({
-        title: 'Resetten?',
-        message: 'Dit zet de lijst terug naar een paar standaard pantry-items.',
-        confirmText: 'Reset',
-        cancelText: 'Annuleren',
+        title: t('settings.shoppingPage.resetTitle'),
+        message: t('settings.shoppingPage.resetMessage'),
+        confirmText: t('settings.shoppingPage.reset'),
+        cancelText: t('common.confirm.cancel'),
         destructive: true,
       });
       if (!ok) return;
       await setShoppingStaplesExcludeList(['zout', 'peper', 'olie', 'water']);
       reload();
     })();
-  }, [confirm, reload, web]);
+  }, [confirm, reload, t, web]);
 
   const onClearOrganic = useCallback(() => {
     if (web) return;
     void (async () => {
       const ok = await confirm({
-        title: 'Biologisch-lijst leegmaken?',
-        message: 'Dit wist alle regels in “Altijd biologisch”.',
-        confirmText: 'Leegmaken',
-        cancelText: 'Annuleren',
+        title: t('settings.shoppingPage.clearTitle'),
+        message: t('settings.shoppingPage.clearMessage'),
+        confirmText: t('settings.shared.clearList'),
+        cancelText: t('common.confirm.cancel'),
         destructive: true,
       });
       if (!ok) return;
       await setShoppingOrganicAlwaysList([]);
       reload();
     })();
-  }, [confirm, reload, web]);
+  }, [confirm, reload, t, web]);
 
   return (
     <KeyboardAvoidingView
@@ -120,30 +122,26 @@ export default function ShoppingSettingsScreen() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ConfirmDialog />
         <Text style={styles.lead}>
-          Items in deze lijst worden <Text style={styles.bold}>niet</Text> automatisch toegevoegd
-          aan je boodschappenlijst als ze in een gepland recept staan (handig voor zout, olie,
-          water, enz.). Eén per regel.
+          {t('settings.shoppingPage.staplesLeadStart')}
+          <Text style={styles.bold}>{t('settings.shoppingPage.staplesNotBold')}</Text>
+          {t('settings.shoppingPage.staplesLeadEnd')}
         </Text>
         {!web ? (
-          <Text style={styles.autoSaveHint}>
-            Wijzigingen worden automatisch opgeslagen wanneer je teruggaat naar de vorige pagina.
-          </Text>
+          <Text style={styles.autoSaveHint}>{t('settings.shoppingPage.autoSaveHint')}</Text>
         ) : null}
 
         {web ? (
           <View style={styles.notice}>
-            <Text style={styles.noticeText}>
-              Op web worden instellingen alleen weergegeven. Gebruik iOS of Android om op te slaan.
-            </Text>
+            <Text style={styles.noticeText}>{t('settings.shared.webNotice')}</Text>
           </View>
         ) : null}
 
-        <Text style={styles.section}>Altijd op voorraad (uitsluiten)</Text>
+        <Text style={styles.section}>{t('settings.shoppingPage.staplesTitle')}</Text>
         <TextInput
           style={[styles.input, styles.multiline]}
           value={text}
           onChangeText={setText}
-          placeholder={'Bijv.\n- zout\n- peper\n- olijfolie\n- water'}
+          placeholder={t('settings.shoppingPage.staplesPlaceholder')}
           placeholderTextColor="#999"
           multiline
           editable={!web}
@@ -155,20 +153,25 @@ export default function ShoppingSettingsScreen() {
             onPress={onReset}
             disabled={web}
           >
-            <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>Reset</Text>
+            <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>
+              {t('settings.shoppingPage.reset')}
+            </Text>
           </Pressable>
         </View>
 
-        <Text style={[styles.section, { marginTop: 18 }]}>Altijd biologisch</Text>
+        <Text style={[styles.section, { marginTop: 18 }]}>
+          {t('settings.shoppingPage.organicTitle')}
+        </Text>
         <Text style={styles.lead}>
-          Items in deze lijst krijgen een <Text style={styles.bold}>groen blaadje</Text> op je
-          boodschappenlijst (ook als ze via de weekplanner komen). Eén per regel.
+          {t('settings.shoppingPage.organicLeadStart')}
+          <Text style={styles.bold}>{t('settings.shoppingPage.organicLeafBold')}</Text>
+          {t('settings.shoppingPage.organicLeadEnd')}
         </Text>
         <TextInput
           style={[styles.input, styles.multiline]}
           value={organicText}
           onChangeText={setOrganicText}
-          placeholder={'Bijv.\n- paprika\n- aardbeien\n- druiven'}
+          placeholder={t('settings.shoppingPage.organicPlaceholder')}
           placeholderTextColor="#999"
           multiline
           editable={!web}
@@ -179,7 +182,9 @@ export default function ShoppingSettingsScreen() {
             onPress={onClearOrganic}
             disabled={web}
           >
-            <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>Leegmaken</Text>
+            <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>
+              {t('settings.shared.clearList')}
+            </Text>
           </Pressable>
         </View>
       </ScrollView>

@@ -9,6 +9,7 @@ import { shoppingNl } from './keys/shopping';
 import { cookNl } from './keys/cook';
 import { kennisNl } from './keys/kennis';
 import { plannerNl } from './keys/planner';
+import { commonNl } from './keys/common';
 
 export const nl = {
   boot: {
@@ -43,6 +44,7 @@ export const nl = {
   cook: cookNl,
   kennis: kennisNl,
   planner: plannerNl,
+  common: commonNl,
 } as const;
 
 type WidenT<T> = {

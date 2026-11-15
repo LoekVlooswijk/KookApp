@@ -18,6 +18,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
 import { computeMissingBioScores } from '../../lib/bioScoreBulk';
 import {
   hydrateBioScoreEnabledFromDb,
@@ -51,6 +52,7 @@ function parsePositiveInt(s: string): number | null {
 
 export default function BioScoreSettingsScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const router = useRouter();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const web = Platform.OS === 'web';
@@ -74,9 +76,9 @@ export default function BioScoreSettingsScreen() {
       await hydrateBioScoreExcludePrefsFromDb();
       await hydrateBioScoreEnabledFromDb();
       setEnabled(isBioScoreEnabled());
-      const t = getBioScoreThresholds();
-      setOrangeText(String(t.orangeMin));
-      setRedText(String(t.redMin));
+      const thresholds = getBioScoreThresholds();
+      setOrangeText(String(thresholds.orangeMin));
+      setRedText(String(thresholds.redMin));
       setExcludeText(bioScoreExcludeListToText(getBioScoreExcludeList()));
       setLoaded(true);
     })();
@@ -131,58 +133,60 @@ export default function BioScoreSettingsScreen() {
     if (web) return;
     void (async () => {
       const ok = await confirm({
-        title: 'Standaard drempels?',
-        message: 'Oranje vanaf 3 punten, rood vanaf 4 punten.',
-        confirmText: 'Herstellen',
-        cancelText: 'Annuleren',
+        title: t('settings.bioScorePage.resetTitle'),
+        message: t('settings.bioScorePage.resetMessage'),
+        confirmText: t('settings.bioScorePage.resetAction'),
+        cancelText: t('common.confirm.cancel'),
       });
       if (!ok) return;
       await resetBioScoreThresholdsToDefaults();
       reload();
     })();
-  }, [confirm, reload, web]);
+  }, [confirm, reload, t, web]);
 
   const onClearExclude = useCallback(() => {
     if (web) return;
     void (async () => {
       const ok = await confirm({
-        title: 'Uitsluitlijst leegmaken?',
-        message: 'Alle regels worden verwijderd.',
-        confirmText: 'Leegmaken',
-        cancelText: 'Annuleren',
+        title: t('settings.bioScorePage.clearTitle'),
+        message: t('settings.bioScorePage.clearMessage'),
+        confirmText: t('settings.shared.clearList'),
+        cancelText: t('common.confirm.cancel'),
         destructive: true,
       });
       if (!ok) return;
       await setBioScoreExcludeList([]);
       reload();
     })();
-  }, [confirm, reload, web]);
+  }, [confirm, reload, t, web]);
 
   const onComputeMissing = useCallback(() => {
     if (web) return;
     void (async () => {
       const ok = await confirm({
-        title: 'Bio scores berekenen?',
-        message:
-          'Dit berekent voor recepten zonder bio score een nieuwe score. Dit kan even duren.',
-        confirmText: 'Berekenen',
-        cancelText: 'Annuleren',
+        title: t('settings.bioScorePage.computeTitle'),
+        message: t('settings.bioScorePage.computeMessage'),
+        confirmText: t('settings.bioScorePage.computeAction'),
+        cancelText: t('common.confirm.cancel'),
       });
       if (!ok) return;
       setBusy(true);
       try {
         const res = await computeMissingBioScores();
         Alert.alert(
-          'Klaar',
-          `${res.updated} recept${res.updated === 1 ? '' : 'en'} bijgewerkt. ${res.failed} mislukt.`
+          t('settings.bioScorePage.doneTitle'),
+          t('settings.bioScorePage.doneMessage', { updated: res.updated, failed: res.failed })
         );
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Bio scores berekenen mislukt.');
+        Alert.alert(
+          t('settings.shared.errorTitle'),
+          e instanceof Error ? e.message : t('settings.bioScorePage.computeFailed')
+        );
       } finally {
         setBusy(false);
       }
     })();
-  }, [confirm, web]);
+  }, [confirm, t, web]);
 
   const chipOutline = { borderColor: theme.accentBorderMuted };
 
@@ -197,40 +201,38 @@ export default function BioScoreSettingsScreen() {
 
         <View style={styles.toggleRow}>
           <View style={styles.toggleRowMain}>
-            <Text style={styles.toggleTitle}>Bio-score aan</Text>
-            <Text style={styles.toggleSubtitle}>
-              Toont groene/rode blaadjes en bio-score knoppen in de app. Bestaande scores blijven
-              bewaard als je dit uitzet.
-            </Text>
+            <Text style={styles.toggleTitle}>{t('settings.bioScorePage.enabledLabel')}</Text>
+            <Text style={styles.toggleSubtitle}>{t('settings.bioScorePage.enabledHint')}</Text>
           </View>
           <Switch
             value={enabled}
             onValueChange={onToggleEnabled}
             disabled={web || !loaded}
-            accessibilityLabel="Bio-score aan"
+            accessibilityLabel={t('settings.bioScorePage.enabledLabel')}
           />
         </View>
 
         <Text style={styles.lead}>
-          Per recept wordt een totaalscore opgebouwd uit geassayeerd groente en fruit:{' '}
-          <Text style={styles.bold}>oranje herkomst (rest van Europa)</Text> of{' '}
-          <Text style={styles.bold}>middel pesticide</Text> telt 1 punt;{' '}
-          <Text style={styles.bold}>wereldherkomst</Text> of{' '}
-          <Text style={styles.bold}>hoog pesticide</Text> telt 2 punten (per ingredient, herkomst en
-          pesticide worden bij elkaar opgeteld).
+          {t('settings.bioScorePage.scoreIntro')}
+          <Text style={styles.bold}>{t('settings.bioScorePage.scoreOriginOrange')}</Text>
+          {t('settings.bioScorePage.scoreOr')}
+          <Text style={styles.bold}>{t('settings.bioScorePage.scorePesticideMedium')}</Text>
+          {t('settings.bioScorePage.scoreCountsOne')}
+          <Text style={styles.bold}>{t('settings.bioScorePage.scoreOriginWorld')}</Text>
+          {t('settings.bioScorePage.scoreOr')}
+          <Text style={styles.bold}>{t('settings.bioScorePage.scorePesticideHigh')}</Text>
+          {t('settings.bioScorePage.scoreCountsTwo')}
         </Text>
 
         {web ? (
           <View style={styles.notice}>
-            <Text style={styles.noticeText}>
-              Op web worden instellingen alleen weergegeven. Gebruik iOS of Android om op te slaan.
-            </Text>
+            <Text style={styles.noticeText}>{t('settings.shared.webNotice')}</Text>
           </View>
         ) : null}
 
         <View style={!enabled && styles.disabledSection} pointerEvents={enabled ? 'auto' : 'none'}>
-          <Text style={styles.section}>Drempels</Text>
-          <Text style={styles.label}>Oranje vanaf totaalscore (inclusief)</Text>
+          <Text style={styles.section}>{t('settings.bioScorePage.thresholdsTitle')}</Text>
+          <Text style={styles.label}>{t('settings.bioScorePage.orangeLabel')}</Text>
           <TextInput
             style={[styles.input, web && styles.inputDisabled]}
             value={orangeText}
@@ -241,7 +243,7 @@ export default function BioScoreSettingsScreen() {
             placeholderTextColor="#999"
           />
 
-          <Text style={styles.label}>Rood vanaf totaalscore (inclusief)</Text>
+          <Text style={styles.label}>{t('settings.bioScorePage.redLabel')}</Text>
           <TextInput
             style={[styles.input, web && styles.inputDisabled]}
             value={redText}
@@ -251,10 +253,7 @@ export default function BioScoreSettingsScreen() {
             placeholder="4"
             placeholderTextColor="#999"
           />
-          <Text style={styles.lead}>
-            Wijzigingen worden opgeslagen wanneer je teruggaat. Ongeldige combinaties (rood lager
-            dan oranje) worden genegeerd.
-          </Text>
+          <Text style={styles.lead}>{t('settings.bioScorePage.thresholdsHint')}</Text>
 
           <View style={styles.row}>
             <Pressable
@@ -262,20 +261,19 @@ export default function BioScoreSettingsScreen() {
               onPress={onResetDefaults}
               disabled={web || !loaded || !enabled}
             >
-              <Text style={[styles.btnOutlineText, { color: theme.accent }]}>Standaard</Text>
+              <Text style={[styles.btnOutlineText, { color: theme.accent }]}>
+                {t('settings.bioScorePage.resetDefaults')}
+              </Text>
             </Pressable>
           </View>
 
-          <Text style={styles.section}>Niet meenemen in berekening</Text>
-          <Text style={styles.lead}>
-            Ingrediënten in deze lijst worden overgeslagen bij bio-score (bijv. citroensap). Eén per
-            regel. Wijzigingen worden opgeslagen wanneer je teruggaat.
-          </Text>
+          <Text style={styles.section}>{t('settings.bioScorePage.excludeTitle')}</Text>
+          <Text style={styles.lead}>{t('settings.bioScorePage.excludeHint')}</Text>
           <TextInput
             style={[styles.input, styles.multiline, web && styles.inputDisabled]}
             value={excludeText}
             onChangeText={setExcludeText}
-            placeholder={'Bijv.\n- citroensap\n- limoen sap'}
+            placeholder={t('settings.bioScorePage.excludePlaceholder')}
             placeholderTextColor="#999"
             multiline
             editable={!web && loaded && enabled}
@@ -286,41 +284,42 @@ export default function BioScoreSettingsScreen() {
               onPress={onClearExclude}
               disabled={web || !loaded || !enabled}
             >
-              <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>Leegmaken</Text>
+              <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>
+                {t('settings.shared.clearList')}
+              </Text>
             </Pressable>
           </View>
 
-          <Text style={styles.section}>Vaste productscores</Text>
-          <Text style={styles.lead}>
-            Stel per product een vaste herkomst- en pesticidescore in (bijv. zoete aardappel uit NL
-            → groen / laag).
-          </Text>
+          <Text style={styles.section}>{t('settings.bioScorePage.overridesTitle')}</Text>
+          <Text style={styles.lead}>{t('settings.bioScorePage.overridesHint')}</Text>
           <Pressable
             style={[styles.navRow, chipOutline]}
             onPress={() => router.push('/settings/bio-score-overrides' as never)}
           >
             <MaterialIcons name="tune" size={22} color={theme.accent} />
             <View style={styles.navRowMain}>
-              <Text style={styles.navRowTitle}>Productscores beheren</Text>
-              <Text style={styles.navRowSubtitle}>Eigen scores voor specifieke producten</Text>
+              <Text style={styles.navRowTitle}>{t('settings.bioScorePage.overridesNavTitle')}</Text>
+              <Text style={styles.navRowSubtitle}>
+                {t('settings.bioScorePage.overridesNavSubtitle')}
+              </Text>
             </View>
             <Text style={[styles.navRowHint, { color: theme.accent }]}>›</Text>
           </Pressable>
 
-          <Text style={styles.section}>Bulkactie</Text>
+          <Text style={styles.section}>{t('settings.bioScorePage.bulkTitle')}</Text>
           <Pressable
             style={[styles.btnOutline, chipOutline, (web || busy) && styles.btnDisabled]}
             onPress={onComputeMissing}
             disabled={web || busy || !loaded || !enabled}
           >
             <Text style={[styles.btnOutlineText, { color: theme.accent }]}>
-              Bio scores berekenen
+              {t('settings.bioScorePage.computeButton')}
             </Text>
           </Pressable>
           {busy ? (
             <View style={styles.busyRow}>
               <ActivityIndicator size="small" color={theme.accent} />
-              <Text style={styles.busyHint}>Even geduld…</Text>
+              <Text style={styles.busyHint}>{t('settings.shared.busy')}</Text>
             </View>
           ) : null}
         </View>

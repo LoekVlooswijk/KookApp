@@ -13,6 +13,8 @@ import {
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
+import { type TranslationKey } from '../../lib/i18n';
 import { hydrateBioScoreEnabledFromDb, isBioScoreEnabled } from '../../lib/bioScoreEnabledPrefs';
 import type { BioScoreOverride } from '../../lib/bioScoreOverridesPrefs';
 import {
@@ -23,20 +25,21 @@ import {
 } from '../../lib/bioScoreOverridesPrefs';
 import { ensureDatabaseAsync } from '../../lib/db';
 
-const LOCALITY_OPTIONS: { id: BioScoreOverride['l']; label: string }[] = [
-  { id: 'G', label: 'NL/BE/DE' },
-  { id: 'O', label: 'Europa' },
-  { id: 'R', label: 'Wereld' },
+const LOCALITY_OPTIONS: { id: BioScoreOverride['l']; labelKey: TranslationKey }[] = [
+  { id: 'G', labelKey: 'settings.bioScoreOverridesPage.localityNlBeDe' },
+  { id: 'O', labelKey: 'settings.bioScoreOverridesPage.localityEurope' },
+  { id: 'R', labelKey: 'settings.bioScoreOverridesPage.localityWorld' },
 ];
 
-const PESTICIDE_OPTIONS: { id: BioScoreOverride['p']; label: string }[] = [
-  { id: 'L', label: 'Laag' },
-  { id: 'M', label: 'Middel' },
-  { id: 'H', label: 'Hoog' },
+const PESTICIDE_OPTIONS: { id: BioScoreOverride['p']; labelKey: TranslationKey }[] = [
+  { id: 'L', labelKey: 'settings.bioScoreOverridesPage.pesticideLow' },
+  { id: 'M', labelKey: 'settings.bioScoreOverridesPage.pesticideMedium' },
+  { id: 'H', labelKey: 'settings.bioScoreOverridesPage.pesticideHigh' },
 ];
 
 export default function BioScoreOverridesSettingsScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const web = Platform.OS === 'web';
 
@@ -66,7 +69,10 @@ export default function BioScoreOverridesSettingsScreen() {
     if (web) return;
     const n = nameInput.trim();
     if (!n) {
-      Alert.alert('Naam ontbreekt', 'Vul een productnaam in.');
+      Alert.alert(
+        t('settings.bioScoreOverridesPage.nameMissingTitle'),
+        t('settings.bioScoreOverridesPage.nameMissingMessage')
+      );
       return;
     }
     void (async () => {
@@ -74,17 +80,17 @@ export default function BioScoreOverridesSettingsScreen() {
       setNameInput('');
       reload();
     })();
-  }, [locality, nameInput, pesticide, reload, web]);
+  }, [locality, nameInput, pesticide, reload, t, web]);
 
   const onRemove = useCallback(
     (name: string) => {
       if (web) return;
       void (async () => {
         const ok = await confirm({
-          title: 'Productscore verwijderen?',
-          message: `"${name}" gebruikt weer de AI-score bij herberekenen.`,
-          confirmText: 'Verwijderen',
-          cancelText: 'Annuleren',
+          title: t('settings.bioScoreOverridesPage.deleteTitle'),
+          message: t('settings.bioScoreOverridesPage.deleteMessage', { name }),
+          confirmText: t('settings.shared.delete'),
+          cancelText: t('common.confirm.cancel'),
           destructive: true,
         });
         if (!ok) return;
@@ -92,7 +98,7 @@ export default function BioScoreOverridesSettingsScreen() {
         reload();
       })();
     },
-    [confirm, reload, web]
+    [confirm, reload, t, web]
   );
 
   const chipOn = { backgroundColor: theme.accentSoft, borderColor: theme.accent };
@@ -108,38 +114,30 @@ export default function BioScoreOverridesSettingsScreen() {
 
       {!enabled ? (
         <View style={styles.offNotice}>
-          <Text style={styles.offNoticeText}>
-            Bio-score staat uit. Zet hem bovenaan in de bio-score-instellingen aan om blaadjes en
-            scores weer te gebruiken. Bestaande scores blijven bewaard.
-          </Text>
+          <Text style={styles.offNoticeText}>{t('settings.bioScoreOverridesPage.offNotice')}</Text>
         </View>
       ) : null}
 
       <View style={!enabled && styles.disabledSection} pointerEvents={enabled ? 'auto' : 'none'}>
-        <Text style={styles.lead}>
-          Vaste scores gelden bij elke herberekening. Herkomst: G = NL/BE/DE, O = rest Europa, R =
-          wereld. Pesticide: L/M/H.
-        </Text>
+        <Text style={styles.lead}>{t('settings.bioScoreOverridesPage.lead')}</Text>
 
         {web ? (
           <View style={styles.notice}>
-            <Text style={styles.noticeText}>
-              Op web worden instellingen alleen weergegeven. Gebruik iOS of Android om op te slaan.
-            </Text>
+            <Text style={styles.noticeText}>{t('settings.shared.webNotice')}</Text>
           </View>
         ) : null}
 
-        <Text style={styles.label}>Productnaam</Text>
+        <Text style={styles.label}>{t('settings.bioScoreOverridesPage.nameLabel')}</Text>
         <TextInput
           style={[styles.input, web && styles.inputDisabled]}
           value={nameInput}
           onChangeText={setNameInput}
-          placeholder="Bijv. zoete aardappel"
+          placeholder={t('settings.bioScoreOverridesPage.namePlaceholder')}
           placeholderTextColor="#999"
           editable={!web && enabled}
         />
 
-        <Text style={styles.subLabel}>Herkomst</Text>
+        <Text style={styles.subLabel}>{t('settings.bioScoreOverridesPage.localityLabel')}</Text>
         <View style={styles.chipRow}>
           {LOCALITY_OPTIONS.map((opt) => {
             const on = locality === opt.id;
@@ -151,14 +149,14 @@ export default function BioScoreOverridesSettingsScreen() {
                 disabled={web || !enabled}
               >
                 <Text style={[styles.chipText, on && chipTextOn]}>
-                  {opt.id} · {opt.label}
+                  {opt.id} · {t(opt.labelKey)}
                 </Text>
               </Pressable>
             );
           })}
         </View>
 
-        <Text style={styles.subLabel}>Pesticide</Text>
+        <Text style={styles.subLabel}>{t('settings.bioScoreOverridesPage.pesticideLabel')}</Text>
         <View style={styles.chipRow}>
           {PESTICIDE_OPTIONS.map((opt) => {
             const on = pesticide === opt.id;
@@ -170,7 +168,7 @@ export default function BioScoreOverridesSettingsScreen() {
                 disabled={web || !enabled}
               >
                 <Text style={[styles.chipText, on && chipTextOn]}>
-                  {opt.id} · {opt.label}
+                  {opt.id} · {t(opt.labelKey)}
                 </Text>
               </Pressable>
             );
@@ -182,19 +180,19 @@ export default function BioScoreOverridesSettingsScreen() {
           onPress={onAdd}
           disabled={web || !enabled}
         >
-          <Text style={styles.btnPrimaryText}>Toevoegen of bijwerken</Text>
+          <Text style={styles.btnPrimaryText}>{t('settings.bioScoreOverridesPage.upsert')}</Text>
         </Pressable>
 
-        <Text style={styles.section}>Opgeslagen productscores</Text>
+        <Text style={styles.section}>{t('settings.bioScoreOverridesPage.savedTitle')}</Text>
         {overrides.length === 0 ? (
-          <Text style={styles.empty}>Nog geen vaste scores.</Text>
+          <Text style={styles.empty}>{t('settings.bioScoreOverridesPage.empty')}</Text>
         ) : (
           overrides.map((ov) => (
             <View key={ov.n} style={[styles.overrideRow, { borderColor: theme.accentBorderMuted }]}>
               <View style={styles.overrideMain}>
                 <Text style={styles.overrideName}>{ov.n}</Text>
                 <Text style={styles.overrideMeta}>
-                  herkomst {ov.l} · pesticide {ov.p}
+                  {t('settings.bioScoreOverridesPage.metaLine', { l: ov.l, p: ov.p })}
                 </Text>
               </View>
               <Pressable
@@ -202,9 +200,13 @@ export default function BioScoreOverridesSettingsScreen() {
                 onPress={() => onRemove(ov.n)}
                 disabled={web || !enabled}
                 accessibilityRole="button"
-                accessibilityLabel={`${ov.n} verwijderen`}
+                accessibilityLabel={t('settings.bioScoreOverridesPage.deleteAccessible', {
+                  name: ov.n,
+                })}
               >
-                <Text style={styles.removeBtnText}>Verwijder</Text>
+                <Text style={styles.removeBtnText}>
+                  {t('settings.bioScoreOverridesPage.deleteShort')}
+                </Text>
               </Pressable>
             </View>
           ))

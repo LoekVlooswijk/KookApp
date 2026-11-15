@@ -17,6 +17,8 @@ import Slider from '@react-native-community/slider';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
+import { type TranslationKey } from '../../lib/i18n';
 import {
   addAiApiKey,
   deleteAiApiKey,
@@ -61,23 +63,24 @@ const NEW_API_KEY_PROVIDER_ORDER: readonly AiProviderId[] = [
   'openai',
 ];
 
-const AI_TASK_UI: Record<AiModelTask, { title: string; hint: string }> = {
+const AI_TASK_UI: Record<AiModelTask, { titleKey: TranslationKey; hintKey: TranslationKey }> = {
   import: {
-    title: 'Importeren',
-    hint: 'URL-import, foto-import en HTML-extractie.',
+    titleKey: 'settings.aiPage.tasks.import.title',
+    hintKey: 'settings.aiPage.tasks.import.hint',
   },
   adjust: {
-    title: 'Aanpassen & chat',
-    hint: 'Recept aanpassen en kook-chat tijdens het koken.',
+    titleKey: 'settings.aiPage.tasks.adjust.title',
+    hintKey: 'settings.aiPage.tasks.adjust.hint',
   },
   weekplan: {
-    title: 'Weekmenu',
-    hint: 'AI-voorstellen voor je weekplanning.',
+    titleKey: 'settings.aiPage.tasks.weekplan.title',
+    hintKey: 'settings.aiPage.tasks.weekplan.hint',
   },
 };
 
 export default function AiSettingsScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const web = Platform.OS === 'web';
   const headerHeight = useHeaderHeight();
@@ -127,8 +130,8 @@ export default function AiSettingsScreen() {
           adjust: '',
           weekplan: '',
         };
-        for (const t of AI_MODEL_TASKS) {
-          nextTaskP[t] = getAiModelTaskPresetKey(t, provider);
+        for (const task of AI_MODEL_TASKS) {
+          nextTaskP[task] = getAiModelTaskPresetKey(task, provider);
         }
         setTaskPresets(nextTaskP);
       } else {
@@ -166,11 +169,14 @@ export default function AiSettingsScreen() {
       }
       setNewLabel('');
       setNewKeyInput('');
-      Alert.alert('Opgeslagen', 'Je API-sleutel is veilig opgeslagen op dit apparaat.');
+      Alert.alert(t('settings.aiPage.savedTitle'), t('settings.aiPage.savedMessage'));
     } catch (e) {
-      Alert.alert('Fout', e instanceof Error ? e.message : 'Opslaan mislukt.');
+      Alert.alert(
+        t('settings.shared.errorTitle'),
+        e instanceof Error ? e.message : t('settings.aiPage.saveFailed')
+      );
     }
-  }, [activeKeyId, newKeyInput, newLabel, newProvider]);
+  }, [activeKeyId, newKeyInput, newLabel, newProvider, t]);
 
   const onSelectKey = useCallback(
     (id: string) => {
@@ -186,8 +192,8 @@ export default function AiSettingsScreen() {
             adjust: '',
             weekplan: '',
           };
-          for (const t of AI_MODEL_TASKS) {
-            nextTaskP[t] = getAiModelTaskPresetKey(t, provider);
+          for (const task of AI_MODEL_TASKS) {
+            nextTaskP[task] = getAiModelTaskPresetKey(task, provider);
           }
           setTaskPresets(nextTaskP);
         } else {
@@ -202,13 +208,13 @@ export default function AiSettingsScreen() {
   const onDeleteKey = useCallback(
     (id: string) => {
       const entry = keys.find((k) => k.id === id);
-      const label = entry?.label?.trim() || 'deze sleutel';
+      const label = entry?.label?.trim() || t('settings.aiPage.deleteConfirmLabelDefault');
       void (async () => {
         const ok = await confirm({
-          title: 'API-sleutel verwijderen?',
-          message: `Weet je zeker dat je ${label} wilt verwijderen? Je kunt daarna AI-functies niet gebruiken met deze sleutel.`,
-          confirmText: 'Verwijderen',
-          cancelText: 'Annuleren',
+          title: t('settings.aiPage.deleteConfirmTitle'),
+          message: t('settings.aiPage.deleteConfirmMessage', { label }),
+          confirmText: t('settings.shared.delete'),
+          cancelText: t('common.confirm.cancel'),
           destructive: true,
         });
         if (!ok) return;
@@ -222,7 +228,7 @@ export default function AiSettingsScreen() {
         }
       })();
     },
-    [activeKeyId, confirm, keys]
+    [activeKeyId, confirm, keys, t]
   );
 
   const pickModelPreset = useCallback((provider: AiProviderId, presetKey: string) => {
@@ -298,28 +304,24 @@ export default function AiSettingsScreen() {
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ConfirmDialog />
-        <Text style={styles.lead}>
-          AI wordt gebruikt voor URL-import en andere slimme functies. API-sleutels verlaten je
-          apparaat alleen bij een API-aanroep die jij start.
-        </Text>
+        <Text style={styles.lead}>{t('settings.aiPage.lead')}</Text>
 
         {web ? (
           <View style={styles.notice}>
-            <Text style={styles.noticeText}>
-              Op web wordt de API-sleutel niet opgeslagen. Gebruik iOS of Android om een sleutel
-              vast te leggen.
-            </Text>
+            <Text style={styles.noticeText}>{t('settings.aiPage.webNotice')}</Text>
           </View>
         ) : null}
 
-        <Text style={styles.section}>AI-sleutels</Text>
+        <Text style={styles.section}>{t('settings.aiPage.sections.keys')}</Text>
         {keys.length > 0 ? (
           <Text style={styles.statusOk}>
-            {keys.length} sleutel{keys.length === 1 ? '' : 's'} opgeslagen. Tik op een sleutel om
-            die actief te maken.
+            {t('settings.aiPage.keysStatus', {
+              count: keys.length,
+              plural: keys.length === 1 ? '' : 's',
+            })}
           </Text>
         ) : (
-          <Text style={styles.statusMuted}>Nog geen sleutels ingesteld.</Text>
+          <Text style={styles.statusMuted}>{t('settings.aiPage.keysEmpty')}</Text>
         )}
 
         {keys.length > 0 ? (
@@ -339,16 +341,16 @@ export default function AiSettingsScreen() {
                 <View key={k.id} style={[styles.keyRow, selected ? styles.keyRowSelected : null]}>
                   <Pressable style={styles.keyMain} onPress={() => onSelectKey(k.id)}>
                     <Text style={styles.keyTitle} numberOfLines={1}>
-                      {k.label.trim() || 'API-sleutel'}
+                      {k.label.trim() || t('settings.aiPage.apiKeyDefault')}
                     </Text>
                     <Text style={styles.keyMeta} numberOfLines={1}>
                       {providerLabel}
-                      {selected ? ' · Actief' : ''}
+                      {selected ? t('settings.aiPage.activeSuffix') : ''}
                     </Text>
                   </Pressable>
                   {!web ? (
                     <Pressable style={styles.keyDeleteBtn} onPress={() => onDeleteKey(k.id)}>
-                      <Text style={styles.keyDeleteText}>Verwijderen</Text>
+                      <Text style={styles.keyDeleteText}>{t('settings.shared.delete')}</Text>
                     </Pressable>
                   ) : null}
                 </View>
@@ -357,7 +359,7 @@ export default function AiSettingsScreen() {
           </View>
         ) : null}
 
-        <Text style={styles.subLabel}>Nieuwe sleutel toevoegen</Text>
+        <Text style={styles.subLabel}>{t('settings.aiPage.newKeyLabel')}</Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -386,7 +388,7 @@ export default function AiSettingsScreen() {
         </ScrollView>
         <TextInput
           style={styles.input}
-          placeholder="Naam (bijv. Persoonlijk, Werk, Test)…"
+          placeholder={t('settings.aiPage.namePlaceholder')}
           placeholderTextColor="#999"
           value={newLabel}
           onChangeText={setNewLabel}
@@ -394,7 +396,7 @@ export default function AiSettingsScreen() {
         />
         <TextInput
           style={styles.input}
-          placeholder="API-sleutel plakken…"
+          placeholder={t('settings.aiPage.keyPlaceholder')}
           placeholderTextColor="#999"
           value={newKeyInput}
           onChangeText={setNewKeyInput}
@@ -415,32 +417,27 @@ export default function AiSettingsScreen() {
             }}
             disabled={web || !newKeyInput.trim()}
           >
-            <Text style={styles.btnPrimaryText}>Opslaan</Text>
+            <Text style={styles.btnPrimaryText}>{t('settings.aiPage.save')}</Text>
           </Pressable>
         </View>
 
-        <Text style={styles.section}>Model</Text>
+        <Text style={styles.section}>{t('settings.aiPage.sections.model')}</Text>
         {activeProvider ? (
           <>
             <Text style={styles.hint}>
-              Actieve provider: {providerInfo?.label ?? activeProvider}. Kies een preset hieronder.
+              {t('settings.aiPage.activeProviderHint', {
+                provider: providerInfo?.label ?? activeProvider,
+              })}
             </Text>
             {!providerInfo?.enabled ? (
               <View style={styles.notice}>
-                <Text style={styles.noticeText}>
-                  Deze provider is momenteel uitgeschakeld in de app.
-                </Text>
+                <Text style={styles.noticeText}>{t('settings.aiPage.providerDisabledNotice')}</Text>
               </View>
             ) : null}
             <View style={styles.switchRow}>
               <View style={styles.switchTextCol}>
-                <Text style={styles.switchLabel}>Altijd nieuwste model-alias</Text>
-                <Text style={styles.hint}>
-                  Staat aan: waar de app een vaste snapshot kent (zoals Haiku), wordt de korte
-                  provider-alias gebruikt die naar de actuele release wijst — je hoeft zelf geen
-                  versienummers bij te houden. Uit: alleen de snapshot uit deze app (stabieler tot
-                  je update).
-                </Text>
+                <Text style={styles.switchLabel}>{t('settings.aiPage.preferLatestLabel')}</Text>
+                <Text style={styles.hint}>{t('settings.aiPage.preferLatestHint')}</Text>
               </View>
               <Switch
                 value={preferLatestAlias && !web}
@@ -469,25 +466,20 @@ export default function AiSettingsScreen() {
             </View>
           </>
         ) : (
-          <Text style={styles.statusMuted}>
-            Kies eerst een actieve API-sleutel om een model te selecteren.
-          </Text>
+          <Text style={styles.statusMuted}>{t('settings.aiPage.pickKeyFirstModel')}</Text>
         )}
 
-        <Text style={styles.section}>Model per functie</Text>
+        <Text style={styles.section}>{t('settings.aiPage.sections.taskModels')}</Text>
         {activeProvider && providerInfo?.enabled ? (
           <>
-            <Text style={styles.hint}>
-              Optioneel: ander preset dan hierboven per functie. Laat &apos;Zelfde als
-              hierboven&apos; staan voor het standaardmodel (inclusief nieuwste-alias schakelaar).
-            </Text>
+            <Text style={styles.hint}>{t('settings.aiPage.taskModelsHint')}</Text>
             {AI_MODEL_TASKS.map((task) => {
               const ui = AI_TASK_UI[task];
               const inherit = !taskPresets[task]?.trim();
               return (
                 <View key={task} style={styles.taskModelBlock}>
-                  <Text style={styles.taskModelTitle}>{ui.title}</Text>
-                  <Text style={styles.hint}>{ui.hint}</Text>
+                  <Text style={styles.taskModelTitle}>{t(ui.titleKey)}</Text>
+                  <Text style={styles.hint}>{t(ui.hintKey)}</Text>
                   <View style={styles.chipRow}>
                     <Pressable
                       style={[styles.chip, inherit ? chipOnStyle : null]}
@@ -497,7 +489,7 @@ export default function AiSettingsScreen() {
                       disabled={web}
                     >
                       <Text style={[styles.chipText, inherit ? chipTextOnStyle : null]}>
-                        Zelfde als hierboven
+                        {t('settings.aiPage.inheritLabel')}
                       </Text>
                     </Pressable>
                     {modelPresets.map((p) => (
@@ -525,24 +517,16 @@ export default function AiSettingsScreen() {
             })}
           </>
         ) : activeProvider && !providerInfo?.enabled ? (
-          <Text style={styles.statusMuted}>
-            Deze provider kan nog geen API-aanroepen doen; model per functie volgt later.
-          </Text>
+          <Text style={styles.statusMuted}>{t('settings.aiPage.providerNoCalls')}</Text>
         ) : (
-          <Text style={styles.statusMuted}>
-            Kies eerst een actieve API-sleutel om modellen per functie in te stellen.
-          </Text>
+          <Text style={styles.statusMuted}>{t('settings.aiPage.pickKeyFirstTaskModels')}</Text>
         )}
 
-        <Text style={styles.section}>Foto-import</Text>
+        <Text style={styles.section}>{t('settings.aiPage.sections.photoImport')}</Text>
         <View style={styles.switchRow}>
           <View style={styles.switchTextCol}>
-            <Text style={styles.switchLabel}>AH/Allerhande site-zoekfunctie gebruiken</Text>
-            <Text style={styles.hint}>
-              Probeert eerst via ah.nl recepten-zoeken de juiste recept-URL te vinden op basis van
-              titel/zoekhint. Dit is sneller en gebruikt geen AI web_search tokens. Als dit uit
-              staat, gebruikt de app alleen AI om URL’s te raden/zoeken.
-            </Text>
+            <Text style={styles.switchLabel}>{t('settings.aiPage.ahSearchLabel')}</Text>
+            <Text style={styles.hint}>{t('settings.aiPage.ahSearchHint')}</Text>
           </View>
           <Switch
             value={importAhSearch && !web}
@@ -556,14 +540,10 @@ export default function AiSettingsScreen() {
         </View>
         <View style={styles.switchRow}>
           <View style={styles.switchTextCol}>
-            <Text style={styles.switchLabel}>Web search ook bij eerste resolve</Text>
-            <Text style={styles.hint}>
-              Zonder zichtbare URL in de foto zoekt de app aan het eind automatisch met web search,
-              met het import-model (zie Model per functie). Met deze optie aan gebeurt dat ook
-              meteen bij de eerste resolve — vaak sneller, wel meer API-kosten.
-            </Text>
+            <Text style={styles.switchLabel}>{t('settings.aiPage.webSearchLabel')}</Text>
+            <Text style={styles.hint}>{t('settings.aiPage.webSearchHint')}</Text>
             {activeProvider && activeProvider !== 'anthropic' ? (
-              <Text style={styles.hint}>Let op: web search werkt alleen met Anthropic.</Text>
+              <Text style={styles.hint}>{t('settings.aiPage.webSearchAnthropicOnly')}</Text>
             ) : null}
           </View>
           <Switch
@@ -580,13 +560,11 @@ export default function AiSettingsScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.switchLabel}>Parallel importeren (snelheid)</Text>
-          <Text style={styles.hint}>
-            Hoeveel recepten tegelijk opgehaald + geëxtraheerd worden bij foto-import. Hoger is
-            sneller, maar kan bij sommige keys ook eerder request-rate limits geven. Aanbevolen:
-            4–8.
+          <Text style={styles.switchLabel}>{t('settings.aiPage.concurrencyLabel')}</Text>
+          <Text style={styles.hint}>{t('settings.aiPage.concurrencyHint')}</Text>
+          <Text style={styles.statusMuted}>
+            {t('settings.aiPage.concurrencyCurrent', { count: importConcurrency })}
           </Text>
-          <Text style={styles.statusMuted}>Huidig: {importConcurrency} tegelijk</Text>
           <Slider
             minimumValue={1}
             maximumValue={10}

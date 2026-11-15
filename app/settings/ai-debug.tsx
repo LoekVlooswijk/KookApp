@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
 import { listAiApiKeys } from '../../lib/aiKeyring';
 import { getActiveAiKeyId, hydrateAiPrefsFromDb, setActiveAiKeyId } from '../../lib/aiPrefs';
 import { getAiRequestLogEnabled, setAiRequestLogEnabled } from '../../lib/aiRequestLogPrefs';
@@ -26,6 +27,7 @@ import {
 
 export default function AiDebugLogScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const web = Platform.OS === 'web';
   const [logs, setLogs] = useState<AiRequestLogEntry[]>([]);
   const [requestLog, setRequestLogState] = useState(false);
@@ -61,49 +63,57 @@ export default function AiDebugLogScreen() {
     }, [reload])
   );
 
-  const onToggleRequestLog = useCallback((on: boolean) => {
-    void (async () => {
-      try {
-        await setAiRequestLogEnabled(on);
-        setRequestLogState(on);
-      } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Opslaan mislukt.');
-      }
-    })();
-  }, []);
+  const onToggleRequestLog = useCallback(
+    (on: boolean) => {
+      void (async () => {
+        try {
+          await setAiRequestLogEnabled(on);
+          setRequestLogState(on);
+        } catch (e) {
+          Alert.alert(
+            t('settings.shared.errorTitle'),
+            e instanceof Error ? e.message : t('settings.aiDebugPage.saveFailed')
+          );
+        }
+      })();
+    },
+    [t]
+  );
 
   const onShare = useCallback(async () => {
     const body = logs.map((e) => formatAiRequestLogEntry(e)).join('\n\n---\n\n');
     if (!body.trim()) {
-      Alert.alert('Leeg', 'Er zijn nog geen logregels.');
+      Alert.alert(t('settings.aiDebugPage.emptyTitle'), t('settings.aiDebugPage.emptyMessage'));
       return;
     }
-    Alert.alert(
-      'Log delen?',
-      'Bevat modelnamen, groottes en eventuele foutteksten. Geen API-sleutels. Alleen delen als je dit bewust wilt.',
-      [
-        { text: 'Annuleren', style: 'cancel' },
-        {
-          text: 'Delen',
-          onPress: () => {
-            void (async () => {
-              try {
-                await Share.share({ message: body, title: 'Kookapp AI-debuglog' });
-              } catch {
-                Alert.alert('Delen mislukt', 'Kon de log niet delen.');
-              }
-            })();
-          },
+    Alert.alert(t('settings.aiDebugPage.shareTitle'), t('settings.aiDebugPage.shareMessage'), [
+      { text: t('common.confirm.cancel'), style: 'cancel' },
+      {
+        text: t('settings.aiDebugPage.share'),
+        onPress: () => {
+          void (async () => {
+            try {
+              await Share.share({
+                message: body,
+                title: t('settings.aiDebugPage.shareSheetTitle'),
+              });
+            } catch {
+              Alert.alert(
+                t('settings.aiDebugPage.shareFailedTitle'),
+                t('settings.aiDebugPage.shareFailedMessage')
+              );
+            }
+          })();
         },
-      ]
-    );
-  }, [logs]);
+      },
+    ]);
+  }, [logs, t]);
 
   const onClear = useCallback(() => {
-    Alert.alert('Log wissen?', 'Dit verwijdert alleen de lokale debuglog op dit apparaat.', [
-      { text: 'Annuleren', style: 'cancel' },
+    Alert.alert(t('settings.aiDebugPage.clearTitle'), t('settings.aiDebugPage.clearMessage'), [
+      { text: t('common.confirm.cancel'), style: 'cancel' },
       {
-        text: 'Wissen',
+        text: t('settings.aiDebugPage.clear'),
         style: 'destructive',
         onPress: () => {
           clearAiRequestLogs();
@@ -111,26 +121,19 @@ export default function AiDebugLogScreen() {
         },
       },
     ]);
-  }, [reload]);
+  }, [reload, t]);
 
   return (
     <ScrollView
       style={[styles.scroll, { backgroundColor: theme.background }]}
       contentContainerStyle={styles.content}
     >
-      <Text style={styles.lead}>
-        Dit scherm toont de meest recente AI API-aanroepen (lokaal, in het geheugen). API-sleutels
-        worden niet gelogd; base64-afbeeldingen worden alleen als lengte geteld. Alleen Anthropic en
-        Mistral aanroepen worden gelogd.
-      </Text>
+      <Text style={styles.lead}>{t('settings.aiDebugPage.lead')}</Text>
 
       <View style={styles.switchRow}>
         <View style={styles.switchTextCol}>
-          <Text style={styles.switchLabel}>AI-request logging</Text>
-          <Text style={styles.hint}>
-            Model, HTTP-status, geschatte payload-groottes en eventuele usage-tokens. Alleen bij
-            Anthropic- en Mistral-aanroepen.
-          </Text>
+          <Text style={styles.switchLabel}>{t('settings.aiDebugPage.loggingLabel')}</Text>
+          <Text style={styles.hint}>{t('settings.aiDebugPage.loggingHint')}</Text>
         </View>
         <Switch
           value={requestLog && !web && activeKeyIsLoggedProvider}
@@ -143,10 +146,7 @@ export default function AiDebugLogScreen() {
         />
       </View>
       {!web && !activeKeyIsLoggedProvider ? (
-        <Text style={styles.notice}>
-          Kies een actieve Anthropic of Mistral API-sleutel bij Instellingen → AI om logging te
-          kunnen inschakelen.
-        </Text>
+        <Text style={styles.notice}>{t('settings.aiDebugPage.pickProviderNotice')}</Text>
       ) : null}
 
       <View style={styles.row}>
@@ -154,20 +154,22 @@ export default function AiDebugLogScreen() {
           style={[styles.btn, { backgroundColor: theme.accent }]}
           onPress={() => void onShare()}
         >
-          <Text style={styles.btnText}>Delen</Text>
+          <Text style={styles.btnText}>{t('settings.aiDebugPage.share')}</Text>
         </Pressable>
         <Pressable style={[styles.btnOutline, { borderColor: theme.accent }]} onPress={onClear}>
-          <Text style={[styles.btnOutlineText, { color: theme.accent }]}>Wissen</Text>
+          <Text style={[styles.btnOutlineText, { color: theme.accent }]}>
+            {t('settings.aiDebugPage.clear')}
+          </Text>
         </Pressable>
         <Pressable style={[styles.btnOutline, { borderColor: theme.accent }]} onPress={reload}>
-          <Text style={[styles.btnOutlineText, { color: theme.accent }]}>Vernieuwen</Text>
+          <Text style={[styles.btnOutlineText, { color: theme.accent }]}>
+            {t('settings.aiDebugPage.refresh')}
+          </Text>
         </Pressable>
       </View>
 
       {logs.length === 0 ? (
-        <Text style={styles.muted}>
-          Nog geen logregels. Voer een AI-actie uit of zet logging aan.
-        </Text>
+        <Text style={styles.muted}>{t('settings.aiDebugPage.logsEmpty')}</Text>
       ) : (
         logs.map((e) => (
           <View key={e.id} style={styles.card}>

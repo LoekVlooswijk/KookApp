@@ -15,6 +15,7 @@ import {
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
 import {
   addManagedTag,
   deleteManagedTagEverywhere,
@@ -25,6 +26,7 @@ import { ensureDatabaseAsync } from '../../lib/db';
 
 export default function TagsSettingsScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const headerHeight = useHeaderHeight();
 
@@ -53,10 +55,13 @@ export default function TagsSettingsScreen() {
         setManagedTags(next);
         setNewTagInput('');
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Toevoegen mislukt.');
+        Alert.alert(
+          t('settings.shared.errorTitle'),
+          e instanceof Error ? e.message : t('settings.shared.addFailed')
+        );
       }
     })();
-  }, [newTagInput]);
+  }, [newTagInput, t]);
 
   const onRemoveTag = useCallback(
     (name: string) => {
@@ -65,13 +70,13 @@ export default function TagsSettingsScreen() {
           const usage = await getManagedTagUsageCount(name);
           const usageLine =
             usage > 0
-              ? `Deze tag wordt nu gebruikt bij ${usage} recept${usage === 1 ? '' : 'en'}. Verwijderen haalt hem weg bij al die recepten.`
-              : 'Deze tag wordt nu niet gebruikt in recepten.';
+              ? t('settings.tagsPage.deleteUsed', { count: usage })
+              : t('settings.tagsPage.deleteUnused');
           const ok = await confirm({
-            title: 'Tag verwijderen?',
-            message: `${usageLine}\n\n«${name}» verwijderen?`,
-            confirmText: 'Verwijderen',
-            cancelText: 'Annuleren',
+            title: t('settings.tagsPage.deleteTitle'),
+            message: `${usageLine}\n\n${t('settings.shared.deleteNameQuestion', { name })}`,
+            confirmText: t('settings.shared.delete'),
+            cancelText: t('common.confirm.cancel'),
             destructive: true,
           });
           if (!ok) return;
@@ -79,14 +84,20 @@ export default function TagsSettingsScreen() {
             await deleteManagedTagEverywhere(name);
             setManagedTags(await listManagedTags());
           } catch (e) {
-            Alert.alert('Fout', e instanceof Error ? e.message : 'Verwijderen mislukt.');
+            Alert.alert(
+              t('settings.shared.errorTitle'),
+              e instanceof Error ? e.message : t('settings.shared.deleteFailed')
+            );
           }
         } catch (e) {
-          Alert.alert('Fout', e instanceof Error ? e.message : 'Verwijderen mislukt.');
+          Alert.alert(
+            t('settings.shared.errorTitle'),
+            e instanceof Error ? e.message : t('settings.shared.deleteFailed')
+          );
         }
       })();
     },
-    [confirm]
+    [confirm, t]
   );
 
   return (
@@ -97,16 +108,13 @@ export default function TagsSettingsScreen() {
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ConfirmDialog />
-        <Text style={styles.section}>Tags beheren</Text>
-        <Text style={styles.hint}>
-          Voeg hier tags toe voor thema/keuken/techniek (bijv. “italiaans”, “airfryer”). Verwijderen
-          haalt de tag ook weg bij recepten die hem gebruiken.
-        </Text>
+        <Text style={styles.section}>{t('settings.tagsPage.title')}</Text>
+        <Text style={styles.hint}>{t('settings.tagsPage.hint')}</Text>
 
         <View style={styles.row}>
           <TextInput
             style={[styles.input, styles.flex1]}
-            placeholder="Bijv. italiaans"
+            placeholder={t('settings.tagsPage.placeholder')}
             value={newTagInput}
             onChangeText={setNewTagInput}
             autoCapitalize="none"
@@ -117,20 +125,20 @@ export default function TagsSettingsScreen() {
             onPress={onAddTag}
             disabled={!newTagInput.trim()}
           >
-            <Text style={styles.btnPrimaryText}>Toevoegen</Text>
+            <Text style={styles.btnPrimaryText}>{t('settings.shared.add')}</Text>
           </Pressable>
         </View>
 
         {managedTags.length > 0 ? (
           <View style={styles.chipRow}>
-            {managedTags.map((t) => (
-              <Pressable key={t} style={styles.chip} onPress={() => onRemoveTag(t)}>
-                <Text style={styles.chipText}>{t} ×</Text>
+            {managedTags.map((tag) => (
+              <Pressable key={tag} style={styles.chip} onPress={() => onRemoveTag(tag)}>
+                <Text style={styles.chipText}>{tag} ×</Text>
               </Pressable>
             ))}
           </View>
         ) : (
-          <Text style={styles.statusMuted}>Nog geen tags om te beheren.</Text>
+          <Text style={styles.statusMuted}>{t('settings.tagsPage.empty')}</Text>
         )}
       </ScrollView>
     </KeyboardAvoidingView>

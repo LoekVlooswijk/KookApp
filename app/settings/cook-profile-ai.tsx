@@ -16,6 +16,7 @@ import {
 import { AiPromptsCatalogModal } from '../../components/AiPromptsCatalogModal';
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
 import {
   aiCookProfileLinesToText,
   aiCookProfileTextToLines,
@@ -29,6 +30,7 @@ import { ensureDatabaseAsync } from '../../lib/db';
 
 export default function AiCookProfileSettingsScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const web = Platform.OS === 'web';
   const headerHeight = useHeaderHeight();
@@ -177,17 +179,17 @@ export default function AiCookProfileSettingsScreen() {
     if (web) return;
     void (async () => {
       const ok = await confirm({
-        title: 'Kookprofiel wissen?',
-        message: 'Dit verwijdert alle voorkeuren (allergieën, dislikes en instructies) voor AI.',
-        confirmText: 'Wissen',
-        cancelText: 'Annuleren',
+        title: t('settings.cookPage.clearConfirmTitle'),
+        message: t('settings.cookPage.clearConfirmMessage'),
+        confirmText: t('settings.cookPage.clear'),
+        cancelText: t('common.confirm.cancel'),
         destructive: true,
       });
       if (!ok) return;
       await clearAiCookProfile();
       reload();
     })();
-  }, [confirm, reload, web]);
+  }, [confirm, reload, t, web]);
 
   return (
     <KeyboardAvoidingView
@@ -197,30 +199,20 @@ export default function AiCookProfileSettingsScreen() {
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ConfirmDialog />
-        <Text style={styles.lead}>
-          Stel hier je vaste voorkeuren in. De app voegt dit automatisch toe aan AI-prompts (bijv.
-          kooktips en recept aanpassen), zodat de antwoorden beter bij jou passen.
-        </Text>
+        <Text style={styles.lead}>{t('settings.cookPage.lead')}</Text>
         {!web ? (
-          <Text style={styles.autoSaveHint}>
-            Wijzigingen worden automatisch opgeslagen wanneer je teruggaat naar de vorige pagina
-            (los van de knop Opslaan).
-          </Text>
+          <Text style={styles.autoSaveHint}>{t('settings.cookPage.autoSaveHint')}</Text>
         ) : null}
 
         {web ? (
           <View style={styles.notice}>
-            <Text style={styles.noticeText}>
-              Op web worden instellingen alleen weergegeven. Gebruik iOS of Android om op te slaan.
-            </Text>
+            <Text style={styles.noticeText}>{t('settings.shared.webNotice')}</Text>
           </View>
         ) : null}
 
         <View style={styles.card}>
-          <Text style={styles.h2}>Standaard porties</Text>
-          <Text style={styles.p}>
-            Dit getal gebruikt de app als standaard bij AI weekmenu’s en suggesties.
-          </Text>
+          <Text style={styles.h2}>{t('settings.cookPage.servingsTitle')}</Text>
+          <Text style={styles.p}>{t('settings.cookPage.servingsHint')}</Text>
           <View style={styles.stepperRow}>
             <Pressable
               style={[styles.stepBtn, defaultServings <= 1 && styles.stepBtnOff]}
@@ -241,13 +233,11 @@ export default function AiCookProfileSettingsScreen() {
           </View>
         </View>
 
-        <Text style={styles.section}>Waar toepassen?</Text>
+        <Text style={styles.section}>{t('settings.cookPage.applyTitle')}</Text>
         <View style={styles.switchRow}>
           <View style={styles.switchTextCol}>
-            <Text style={styles.switchLabel}>Tips & chat tijdens het koken</Text>
-            <Text style={styles.hint}>
-              Bij vragen zoals vervangingen, timing, techniek en smaakbalans.
-            </Text>
+            <Text style={styles.switchLabel}>{t('settings.cookPage.applyTipsLabel')}</Text>
+            <Text style={styles.hint}>{t('settings.cookPage.applyTipsHint')}</Text>
           </View>
           <Switch
             value={applyTips && !web}
@@ -262,10 +252,8 @@ export default function AiCookProfileSettingsScreen() {
 
         <View style={styles.switchRow}>
           <View style={styles.switchTextCol}>
-            <Text style={styles.switchLabel}>Recept aanpassen</Text>
-            <Text style={styles.hint}>
-              Als je een recept laat wijzigen op basis van je notitie of chat.
-            </Text>
+            <Text style={styles.switchLabel}>{t('settings.cookPage.applyAdjustLabel')}</Text>
+            <Text style={styles.hint}>{t('settings.cookPage.applyAdjustHint')}</Text>
           </View>
           <Switch
             value={applyAdjust && !web}
@@ -280,8 +268,8 @@ export default function AiCookProfileSettingsScreen() {
 
         <View style={styles.switchRow}>
           <View style={styles.switchTextCol}>
-            <Text style={styles.switchLabel}>Receptsuggesties (later)</Text>
-            <Text style={styles.hint}>Voor weekplanning of “wat zal ik eten?”-suggesties.</Text>
+            <Text style={styles.switchLabel}>{t('settings.cookPage.applySuggestLabel')}</Text>
+            <Text style={styles.hint}>{t('settings.cookPage.applySuggestHint')}</Text>
           </View>
           <Switch
             value={applySuggest && !web}
@@ -294,14 +282,11 @@ export default function AiCookProfileSettingsScreen() {
           />
         </View>
 
-        <Text style={styles.section}>Weekplanning — tijdschema (optioneel)</Text>
-        <Text style={styles.hint}>
-          Vrij tekstveld. Bijvoorbeeld welke dagen je meestal weinig of juist veel tijd hebt om te
-          koken. Dit wordt alleen gebruikt bij weekplanning/suggesties.
-        </Text>
+        <Text style={styles.section}>{t('settings.cookPage.timeNotesTitle')}</Text>
+        <Text style={styles.hint}>{t('settings.cookPage.timeNotesHint')}</Text>
         <TextInput
           style={[styles.input, styles.multiline]}
-          placeholder={'Bijv.\n- ma/di: weinig tijd (max 20–30 min)\n- do/za: uitgebreid koken kan'}
+          placeholder={t('settings.cookPage.timeNotesPlaceholder')}
           placeholderTextColor="#999"
           value={weekPlanningTimeNotes}
           onChangeText={setWeekPlanningTimeNotes}
@@ -309,15 +294,12 @@ export default function AiCookProfileSettingsScreen() {
           multiline
         />
 
-        <Text style={styles.section}>Winkels in de buurt (optioneel)</Text>
-        <Text style={styles.hint}>
-          Kies waar je meestal boodschappen doet. De AI kan dan rekening houden met wat daar
-          verkrijgbaar is.
-        </Text>
+        <Text style={styles.section}>{t('settings.cookPage.shopsTitle')}</Text>
+        <Text style={styles.hint}>{t('settings.cookPage.shopsHint')}</Text>
         <View style={styles.addRow}>
           <TextInput
             style={[styles.input, styles.addInput]}
-            placeholder="Voeg een winkel toe…"
+            placeholder={t('settings.cookPage.shopPlaceholder')}
             placeholderTextColor="#999"
             value={newShopText}
             onChangeText={setNewShopText}
@@ -334,7 +316,7 @@ export default function AiCookProfileSettingsScreen() {
             onPress={addShopOption}
             disabled={web || !newShopText.trim()}
           >
-            <Text style={styles.addBtnText}>Toevoegen</Text>
+            <Text style={styles.addBtnText}>{t('settings.shared.add')}</Text>
           </Pressable>
         </View>
         <View style={styles.chipWrap}>
@@ -360,14 +342,11 @@ export default function AiCookProfileSettingsScreen() {
           })}
         </View>
 
-        <Text style={styles.section}>Harde grenzen</Text>
-        <Text style={styles.hint}>
-          Zet hier allergieën of ingrediënten die je nooit wil. Eén per regel. Voorbeeld: “paprika
-          (allergie)”.
-        </Text>
+        <Text style={styles.section}>{t('settings.cookPage.mustNotTitle')}</Text>
+        <Text style={styles.hint}>{t('settings.cookPage.mustNotHint')}</Text>
         <TextInput
           style={[styles.input, styles.multiline]}
-          placeholder={'Bijv.\n- paprika (allergie)\n- schaaldieren'}
+          placeholder={t('settings.cookPage.mustNotPlaceholder')}
           placeholderTextColor="#999"
           value={mustNotText}
           onChangeText={setMustNotText}
@@ -375,13 +354,11 @@ export default function AiCookProfileSettingsScreen() {
           multiline
         />
 
-        <Text style={styles.section}>Liever vermijden</Text>
-        <Text style={styles.hint}>
-          Dislikes die meestal vermeden moeten worden. Eén per regel. Voorbeeld: “zuurkool”.
-        </Text>
+        <Text style={styles.section}>{t('settings.cookPage.avoidTitle')}</Text>
+        <Text style={styles.hint}>{t('settings.cookPage.avoidHint')}</Text>
         <TextInput
           style={[styles.input, styles.multiline]}
-          placeholder={'Bijv.\n- zuurkool\n- lever'}
+          placeholder={t('settings.cookPage.avoidPlaceholder')}
           placeholderTextColor="#999"
           value={avoidText}
           onChangeText={setAvoidText}
@@ -389,14 +366,11 @@ export default function AiCookProfileSettingsScreen() {
           multiline
         />
 
-        <Text style={styles.section}>Voorkeuren</Text>
-        <Text style={styles.hint}>
-          Zachte voorkeuren (“meestal vega”, “pittig”, “liefst 30 min”). Eén per regel. Voorbeeld:
-          “meestal vegetarisch, ongeveer 1× per week vlees”.
-        </Text>
+        <Text style={styles.section}>{t('settings.cookPage.preferTitle')}</Text>
+        <Text style={styles.hint}>{t('settings.cookPage.preferHint')}</Text>
         <TextInput
           style={[styles.input, styles.multiline]}
-          placeholder={'Bijv.\n- meestal vegetarisch (1× per week vlees)\n- hou van pittig'}
+          placeholder={t('settings.cookPage.preferPlaceholder')}
           placeholderTextColor="#999"
           value={preferText}
           onChangeText={setPreferText}
@@ -404,13 +378,11 @@ export default function AiCookProfileSettingsScreen() {
           multiline
         />
 
-        <Text style={styles.section}>Extra instructie (optioneel)</Text>
-        <Text style={styles.hint}>
-          Vrij tekstveld voor nuance. Houd het kort; het wordt bij elke AI-aanroep meegestuurd.
-        </Text>
+        <Text style={styles.section}>{t('settings.cookPage.freeTitle')}</Text>
+        <Text style={styles.hint}>{t('settings.cookPage.freeHint')}</Text>
         <TextInput
           style={[styles.input, styles.multiline]}
-          placeholder="Bijv. graag simpele stappen en zo min mogelijk pannen."
+          placeholder={t('settings.cookPage.freePlaceholder')}
           placeholderTextColor="#999"
           value={freeText}
           onChangeText={setFreeText}
@@ -424,7 +396,9 @@ export default function AiCookProfileSettingsScreen() {
             onPress={onClear}
             disabled={web || !loaded}
           >
-            <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>Wissen</Text>
+            <Text style={[styles.btnOutlineText, { color: '#b00020' }]}>
+              {t('settings.cookPage.clear')}
+            </Text>
           </Pressable>
         </View>
 
@@ -433,7 +407,9 @@ export default function AiCookProfileSettingsScreen() {
           onPress={() => setPromptsModalOpen(true)}
           accessibilityRole="button"
         >
-          <Text style={[styles.btnPromptsText, { color: theme.accent }]}>Bekijk AI-prompts</Text>
+          <Text style={[styles.btnPromptsText, { color: theme.accent }]}>
+            {t('settings.cookPage.viewPrompts')}
+          </Text>
         </Pressable>
 
         <AiPromptsCatalogModal

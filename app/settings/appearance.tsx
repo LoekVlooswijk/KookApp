@@ -3,23 +3,47 @@ import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
+import { type TranslationKey } from '../../lib/i18n';
 import {
-  ACCENT_PRESET_LABELS,
-  BACKGROUND_TONE_LABELS,
   listAccentPresetIds,
   resolveAppTheme,
+  type AccentPresetId,
+  type BackgroundToneId,
 } from '../../lib/appearancePrefs';
 import { ensureDatabaseAsync } from '../../lib/db';
 import {
   getStartTabId,
   persistStartTabId,
-  START_TAB_LABELS,
   START_TAB_ORDER,
   type StartTabId,
 } from '../../lib/startTabPrefs';
 
+const ACCENT_LABEL_KEYS: Record<AccentPresetId, TranslationKey> = {
+  terracotta: 'settings.appearancePage.accents.terracotta',
+  sage: 'settings.appearancePage.accents.sage',
+  ocean: 'settings.appearancePage.accents.ocean',
+  plum: 'settings.appearancePage.accents.plum',
+  amber: 'settings.appearancePage.accents.amber',
+};
+
+const BACKGROUND_LABEL_KEYS: Record<BackgroundToneId, TranslationKey> = {
+  warm: 'settings.appearancePage.backgrounds.warm',
+  cool: 'settings.appearancePage.backgrounds.cool',
+  paper: 'settings.appearancePage.backgrounds.paper',
+};
+
+const START_TAB_LABEL_KEYS: Record<StartTabId, TranslationKey> = {
+  recipes: 'settings.appearancePage.startTabs.recipes',
+  planner: 'settings.appearancePage.startTabs.planner',
+  shopping: 'settings.appearancePage.startTabs.shopping',
+  kennis: 'settings.appearancePage.startTabs.kennis',
+  settings: 'settings.appearancePage.startTabs.settings',
+};
+
 export default function AppearanceSettingsScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const { width: windowWidth } = useWindowDimensions();
   const [startTabId, setStartTabId] = useState<StartTabId>('shopping');
 
@@ -59,13 +83,10 @@ export default function AppearanceSettingsScreen() {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.section}>Uiterlijk</Text>
-      <Text style={styles.hint}>
-        Accentkleur voor knoppen, filters en gemarkeerde elementen. Achtergrond bepaalt de
-        basiskleur van schermen en de tabbalk.
-      </Text>
+      <Text style={styles.section}>{t('settings.appearancePage.title')}</Text>
+      <Text style={styles.hint}>{t('settings.appearancePage.hint')}</Text>
 
-      <Text style={styles.subLabel}>Accentkleur</Text>
+      <Text style={styles.subLabel}>{t('settings.appearancePage.accentLabel')}</Text>
       <View style={styles.accentRow}>
         {accentIds.map((id) => {
           const sw = resolveAppTheme(id, 'warm');
@@ -74,7 +95,7 @@ export default function AppearanceSettingsScreen() {
             <Pressable
               key={id}
               accessibilityRole="button"
-              accessibilityLabel={ACCENT_PRESET_LABELS[id]}
+              accessibilityLabel={t(ACCENT_LABEL_KEYS[id])}
               onPress={() => {
                 void theme.setAccentPreset(id);
               }}
@@ -101,14 +122,14 @@ export default function AppearanceSettingsScreen() {
                 numberOfLines={1}
                 ellipsizeMode="tail"
               >
-                {ACCENT_PRESET_LABELS[id]}
+                {t(ACCENT_LABEL_KEYS[id])}
               </Text>
             </Pressable>
           );
         })}
       </View>
 
-      <Text style={styles.subLabel}>Achtergrond</Text>
+      <Text style={styles.subLabel}>{t('settings.appearancePage.backgroundLabel')}</Text>
       <View style={styles.chipRow}>
         {(['warm', 'cool', 'paper'] as const).map((id) => (
           <Pressable
@@ -119,16 +140,16 @@ export default function AppearanceSettingsScreen() {
             }}
           >
             <Text style={[styles.chipText, theme.backgroundId === id ? chipTextOnStyle : null]}>
-              {BACKGROUND_TONE_LABELS[id]}
+              {t(BACKGROUND_LABEL_KEYS[id])}
             </Text>
           </Pressable>
         ))}
       </View>
 
-      <Text style={[styles.subLabel, styles.startPageLabel]}>Startpagina</Text>
-      <Text style={styles.hintSmall}>
-        Welk tabblad opent als je de app start (na een volledige herstart).
+      <Text style={[styles.subLabel, styles.startPageLabel]}>
+        {t('settings.appearancePage.startPageLabel')}
       </Text>
+      <Text style={styles.hintSmall}>{t('settings.appearancePage.startPageHint')}</Text>
       <View style={[styles.chipRow, styles.startTabChipRow]}>
         {START_TAB_ORDER.map((id) => (
           <Pressable
@@ -143,7 +164,7 @@ export default function AppearanceSettingsScreen() {
             }}
           >
             <Text style={[styles.chipText, startTabId === id ? chipTextOnStyle : null]}>
-              {START_TAB_LABELS[id]}
+              {t(START_TAB_LABEL_KEYS[id])}
             </Text>
           </Pressable>
         ))}

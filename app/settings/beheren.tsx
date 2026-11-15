@@ -16,6 +16,7 @@ import {
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
 import {
   addManagedCategory,
   deleteManagedCategoryEverywhere,
@@ -34,6 +35,7 @@ import {
 
 export default function ManageMetadataSettingsScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const web = Platform.OS === 'web';
   const headerHeight = useHeaderHeight();
@@ -51,13 +53,13 @@ export default function ManageMetadataSettingsScreen() {
   const reload = useCallback(() => {
     void (async () => {
       await ensureDatabaseAsync();
-      const [cat, t, d] = await Promise.all([
+      const [cat, tagList, d] = await Promise.all([
         listManagedCategories(),
         listManagedTags(),
         getCustomDiets(),
       ]);
       setCategories(cat);
-      setTags(t);
+      setTags(tagList);
       setDiets(d.map((x) => x.name));
     })();
   }, []);
@@ -78,28 +80,33 @@ export default function ManageMetadataSettingsScreen() {
   const onCleanupRecipes = useCallback(() => {
     void (async () => {
       const ok = await confirm({
-        title: 'Recepten opschonen?',
-        message:
-          'Dit zet info op de juiste plek: dieet-tags → dieetvelden, categorie-tags → categorie, categorie-veld → tag als het geen bekende categorie is, ruis-tags en tags die hetzelfde zijn als een ingrediënt (bijv. venkel) worden verwijderd. Dit kan even duren.',
-        confirmText: 'Opschonen',
-        cancelText: 'Annuleren',
+        title: t('settings.beherenPage.cleanupConfirmTitle'),
+        message: t('settings.beherenPage.cleanupConfirmMessage'),
+        confirmText: t('settings.beherenPage.cleanupAction'),
+        cancelText: t('common.confirm.cancel'),
       });
       if (!ok) return;
       setBusy(true);
       try {
         const res = await cleanupAllRecipeMetadata();
         Alert.alert(
-          'Klaar',
-          `${res.updatedRecipes} recept${res.updatedRecipes === 1 ? '' : 'en'} bijgewerkt. ${res.removedTagLinks} tag-koppeling${res.removedTagLinks === 1 ? '' : 'en'} opgeschoond.`
+          t('settings.beherenPage.doneTitle'),
+          t('settings.beherenPage.doneMessage', {
+            updated: res.updatedRecipes,
+            removed: res.removedTagLinks,
+          })
         );
         reload();
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Opschonen mislukt.');
+        Alert.alert(
+          t('settings.shared.errorTitle'),
+          e instanceof Error ? e.message : t('settings.beherenPage.cleanupFailed')
+        );
       } finally {
         setBusy(false);
       }
     })();
-  }, [confirm, reload]);
+  }, [confirm, reload, t]);
 
   const onAddCategory = useCallback(() => {
     const n = newCategoryInput.trim();
@@ -110,10 +117,13 @@ export default function ManageMetadataSettingsScreen() {
         setCategories(next);
         setNewCategoryInput('');
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Toevoegen mislukt.');
+        Alert.alert(
+          t('settings.shared.errorTitle'),
+          e instanceof Error ? e.message : t('settings.shared.addFailed')
+        );
       }
     })();
-  }, [newCategoryInput]);
+  }, [newCategoryInput, t]);
 
   const onRemoveCategory = useCallback(
     (name: string) => {
@@ -122,13 +132,13 @@ export default function ManageMetadataSettingsScreen() {
           const usage = await getManagedCategoryUsageCount(name);
           const usageLine =
             usage > 0
-              ? `Deze categorie staat nu bij ${usage} recept${usage === 1 ? '' : 'en'}. Verwijderen maakt de categorie leeg bij die recepten.`
-              : 'Deze categorie wordt nu niet gebruikt in recepten.';
+              ? t('settings.beherenPage.deleteCategoryUsed', { count: usage })
+              : t('settings.beherenPage.deleteCategoryUnused');
           const ok = await confirm({
-            title: 'Categorie verwijderen?',
-            message: `${usageLine}\n\n«${name}» verwijderen?`,
-            confirmText: 'Verwijderen',
-            cancelText: 'Annuleren',
+            title: t('settings.beherenPage.deleteCategoryTitle'),
+            message: `${usageLine}\n\n${t('settings.shared.deleteNameQuestion', { name })}`,
+            confirmText: t('settings.shared.delete'),
+            cancelText: t('common.confirm.cancel'),
             destructive: true,
           });
           if (!ok) return;
@@ -136,14 +146,20 @@ export default function ManageMetadataSettingsScreen() {
             await deleteManagedCategoryEverywhere(name);
             setCategories(await listManagedCategories());
           } catch (e) {
-            Alert.alert('Fout', e instanceof Error ? e.message : 'Verwijderen mislukt.');
+            Alert.alert(
+              t('settings.shared.errorTitle'),
+              e instanceof Error ? e.message : t('settings.shared.deleteFailed')
+            );
           }
         } catch (e) {
-          Alert.alert('Fout', e instanceof Error ? e.message : 'Verwijderen mislukt.');
+          Alert.alert(
+            t('settings.shared.errorTitle'),
+            e instanceof Error ? e.message : t('settings.shared.deleteFailed')
+          );
         }
       })();
     },
-    [confirm]
+    [confirm, t]
   );
 
   const onAddTag = useCallback(() => {
@@ -155,10 +171,13 @@ export default function ManageMetadataSettingsScreen() {
         setTags(next);
         setNewTagInput('');
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Toevoegen mislukt.');
+        Alert.alert(
+          t('settings.shared.errorTitle'),
+          e instanceof Error ? e.message : t('settings.shared.addFailed')
+        );
       }
     })();
-  }, [newTagInput]);
+  }, [newTagInput, t]);
 
   const onRemoveTag = useCallback(
     (name: string) => {
@@ -167,13 +186,13 @@ export default function ManageMetadataSettingsScreen() {
           const usage = await getManagedTagUsageCount(name);
           const usageLine =
             usage > 0
-              ? `Deze tag wordt nu gebruikt bij ${usage} recept${usage === 1 ? '' : 'en'}. Verwijderen haalt hem weg bij al die recepten.`
-              : 'Deze tag wordt nu niet gebruikt in recepten.';
+              ? t('settings.tagsPage.deleteUsed', { count: usage })
+              : t('settings.tagsPage.deleteUnused');
           const ok = await confirm({
-            title: 'Tag verwijderen?',
-            message: `${usageLine}\n\n«${name}» verwijderen?`,
-            confirmText: 'Verwijderen',
-            cancelText: 'Annuleren',
+            title: t('settings.tagsPage.deleteTitle'),
+            message: `${usageLine}\n\n${t('settings.shared.deleteNameQuestion', { name })}`,
+            confirmText: t('settings.shared.delete'),
+            cancelText: t('common.confirm.cancel'),
             destructive: true,
           });
           if (!ok) return;
@@ -181,14 +200,20 @@ export default function ManageMetadataSettingsScreen() {
             await deleteManagedTagEverywhere(name);
             setTags(await listManagedTags());
           } catch (e) {
-            Alert.alert('Fout', e instanceof Error ? e.message : 'Verwijderen mislukt.');
+            Alert.alert(
+              t('settings.shared.errorTitle'),
+              e instanceof Error ? e.message : t('settings.shared.deleteFailed')
+            );
           }
         } catch (e) {
-          Alert.alert('Fout', e instanceof Error ? e.message : 'Verwijderen mislukt.');
+          Alert.alert(
+            t('settings.shared.errorTitle'),
+            e instanceof Error ? e.message : t('settings.shared.deleteFailed')
+          );
         }
       })();
     },
-    [confirm]
+    [confirm, t]
   );
 
   const onAddDiet = useCallback(() => {
@@ -200,19 +225,22 @@ export default function ManageMetadataSettingsScreen() {
         setDiets(next.map((d) => d.name));
         setNewDietInput('');
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Toevoegen mislukt.');
+        Alert.alert(
+          t('settings.shared.errorTitle'),
+          e instanceof Error ? e.message : t('settings.shared.addFailed')
+        );
       }
     })();
-  }, [newDietInput]);
+  }, [newDietInput, t]);
 
   const onRemoveDiet = useCallback(
     (name: string) => {
       void (async () => {
         const ok = await confirm({
-          title: 'Dieet verwijderen?',
-          message: `«${name}» verwijderen uit de lijst? Recepten die dit dieet nog als tag hebben blijven bestaan; je kunt daarna opschonen.`,
-          confirmText: 'Verwijderen',
-          cancelText: 'Annuleren',
+          title: t('settings.dietsPage.deleteTitle'),
+          message: t('settings.dietsPage.deleteMessage', { name }),
+          confirmText: t('settings.shared.delete'),
+          cancelText: t('common.confirm.cancel'),
           destructive: true,
         });
         if (!ok) return;
@@ -220,7 +248,7 @@ export default function ManageMetadataSettingsScreen() {
         setDiets(next.map((d) => d.name));
       })();
     },
-    [confirm]
+    [confirm, t]
   );
 
   return (
@@ -231,22 +259,18 @@ export default function ManageMetadataSettingsScreen() {
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ConfirmDialog />
-        <Text style={styles.section}>Beheren</Text>
+        <Text style={styles.section}>{t('settings.beherenPage.title')}</Text>
         <Text style={styles.hint}>
-          Hier beheer je categorieën, tags en extra diëten. Met “Recepten opschonen” worden
-          bestaande recepten aangepast zodat informatie op de juiste plek staat.
-          {web ? ' (Werkt ook op web.)' : ''}
+          {t('settings.beherenPage.hint')}
+          {web ? t('settings.beherenPage.hintWebSuffix') : ''}
         </Text>
 
-        <Text style={styles.subSection}>Categorieën</Text>
-        <Text style={styles.hint}>
-          Categorie is één veld per recept (bijv. “hoofdgerecht”). Als een recept nu een categorie
-          heeft die niet in deze lijst staat, kan opschonen die verplaatsen naar een tag.
-        </Text>
+        <Text style={styles.subSection}>{t('settings.beherenPage.categoriesTitle')}</Text>
+        <Text style={styles.hint}>{t('settings.beherenPage.categoriesHint')}</Text>
         <View style={styles.row}>
           <TextInput
             style={[styles.input, styles.flex1]}
-            placeholder="Bijv. soep"
+            placeholder={t('settings.beherenPage.categoryPlaceholder')}
             value={newCategoryInput}
             onChangeText={setNewCategoryInput}
             autoCapitalize="none"
@@ -257,7 +281,7 @@ export default function ManageMetadataSettingsScreen() {
             onPress={onAddCategory}
             disabled={!newCategoryInput.trim()}
           >
-            <Text style={styles.btnPrimaryText}>Toevoegen</Text>
+            <Text style={styles.btnPrimaryText}>{t('settings.shared.add')}</Text>
           </Pressable>
         </View>
         {sortedCategories.length > 0 ? (
@@ -269,18 +293,15 @@ export default function ManageMetadataSettingsScreen() {
             ))}
           </View>
         ) : (
-          <Text style={styles.statusMuted}>Nog geen categorieën.</Text>
+          <Text style={styles.statusMuted}>{t('settings.beherenPage.categoriesEmpty')}</Text>
         )}
 
-        <Text style={styles.subSection}>Tags</Text>
-        <Text style={styles.hint}>
-          Tags zijn vrije labels voor thema/keuken/techniek (bijv. “italiaans”, “airfryer”).
-          Verwijderen haalt de tag ook weg bij recepten die hem gebruiken.
-        </Text>
+        <Text style={styles.subSection}>{t('settings.beherenPage.tagsTitle')}</Text>
+        <Text style={styles.hint}>{t('settings.beherenPage.tagsHint')}</Text>
         <View style={styles.row}>
           <TextInput
             style={[styles.input, styles.flex1]}
-            placeholder="Bijv. italiaans"
+            placeholder={t('settings.tagsPage.placeholder')}
             value={newTagInput}
             onChangeText={setNewTagInput}
             autoCapitalize="none"
@@ -291,30 +312,27 @@ export default function ManageMetadataSettingsScreen() {
             onPress={onAddTag}
             disabled={!newTagInput.trim()}
           >
-            <Text style={styles.btnPrimaryText}>Toevoegen</Text>
+            <Text style={styles.btnPrimaryText}>{t('settings.shared.add')}</Text>
           </Pressable>
         </View>
         {sortedTags.length > 0 ? (
           <View style={styles.chipRow}>
-            {sortedTags.map((t) => (
-              <Pressable key={t} style={styles.chip} onPress={() => onRemoveTag(t)}>
-                <Text style={styles.chipText}>{t} ×</Text>
+            {sortedTags.map((tag) => (
+              <Pressable key={tag} style={styles.chip} onPress={() => onRemoveTag(tag)}>
+                <Text style={styles.chipText}>{tag} ×</Text>
               </Pressable>
             ))}
           </View>
         ) : (
-          <Text style={styles.statusMuted}>Nog geen tags om te beheren.</Text>
+          <Text style={styles.statusMuted}>{t('settings.tagsPage.empty')}</Text>
         )}
 
-        <Text style={styles.subSection}>Diëten</Text>
-        <Text style={styles.hint}>
-          Dit zijn extra dieetlabels naast de ingebouwde opties (Vega/Vegan/Keto). Ze worden
-          opgeslagen als speciale tags (`diet:...`) zodat gewone tags voor thema/techniek blijven.
-        </Text>
+        <Text style={styles.subSection}>{t('settings.beherenPage.dietsTitle')}</Text>
+        <Text style={styles.hint}>{t('settings.dietsPage.hint')}</Text>
         <View style={styles.row}>
           <TextInput
             style={[styles.input, styles.flex1]}
-            placeholder="Bijv. glutenvrij"
+            placeholder={t('settings.dietsPage.placeholder')}
             value={newDietInput}
             onChangeText={setNewDietInput}
             autoCapitalize="none"
@@ -325,7 +343,7 @@ export default function ManageMetadataSettingsScreen() {
             onPress={onAddDiet}
             disabled={!newDietInput.trim()}
           >
-            <Text style={styles.btnPrimaryText}>Toevoegen</Text>
+            <Text style={styles.btnPrimaryText}>{t('settings.shared.add')}</Text>
           </Pressable>
         </View>
         {sortedDiets.length > 0 ? (
@@ -337,7 +355,7 @@ export default function ManageMetadataSettingsScreen() {
             ))}
           </View>
         ) : (
-          <Text style={styles.statusMuted}>Nog geen extra diëten toegevoegd.</Text>
+          <Text style={styles.statusMuted}>{t('settings.dietsPage.empty')}</Text>
         )}
 
         <View style={styles.divider} />
@@ -347,13 +365,15 @@ export default function ManageMetadataSettingsScreen() {
           onPress={onCleanupRecipes}
           disabled={busy}
         >
-          <Text style={[styles.btnOutlineText, { color: theme.accent }]}>Recepten opschonen</Text>
+          <Text style={[styles.btnOutlineText, { color: theme.accent }]}>
+            {t('settings.beherenPage.cleanupButton')}
+          </Text>
         </Pressable>
 
         {busy ? (
           <View style={styles.busyRow}>
             <ActivityIndicator size="small" color={theme.accent} />
-            <Text style={styles.busyHint}>Even geduld…</Text>
+            <Text style={styles.busyHint}>{t('settings.shared.busy')}</Text>
           </View>
         ) : null}
       </ScrollView>

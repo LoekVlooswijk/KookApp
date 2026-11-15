@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactElement } from 're
 import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAppTheme } from './ThemeContext';
+import { useI18n } from './I18nContext';
 import { useAnimatedValue } from './useAnimatedValue';
 
 export type ConfirmDialogOptions = {
@@ -27,6 +28,7 @@ export function useConfirmDialog(): {
   busy: boolean;
 } {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const [state, setState] = useState<InternalState | null>(null);
   const [closing, setClosing] = useState(false);
 
@@ -66,20 +68,23 @@ export function useConfirmDialog(): {
     [anim, closing]
   );
 
-  const confirm = useCallback((opts: ConfirmDialogOptions) => {
-    return new Promise<boolean>((resolve) => {
-      setState({
-        opts: {
-          title: opts.title,
-          message: opts.message,
-          destructive: opts.destructive,
-          confirmText: opts.confirmText ?? 'OK',
-          cancelText: opts.cancelText ?? 'Annuleren',
-        },
-        resolve,
+  const confirm = useCallback(
+    (opts: ConfirmDialogOptions) => {
+      return new Promise<boolean>((resolve) => {
+        setState({
+          opts: {
+            title: opts.title,
+            message: opts.message,
+            destructive: opts.destructive,
+            confirmText: opts.confirmText ?? t('common.confirm.ok'),
+            cancelText: opts.cancelText ?? t('common.confirm.cancel'),
+          },
+          resolve,
+        });
       });
-    });
-  }, []);
+    },
+    [t]
+  );
 
   const onCancel = useCallback(() => closeWithResult(false), [closeWithResult]);
 

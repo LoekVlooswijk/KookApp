@@ -5,6 +5,7 @@ import { cookEn } from './keys/cook';
 import { kennisEn } from './keys/kennis';
 import { plannerEn } from './keys/planner';
 import { commonEn } from './keys/common';
+import { recipesEn } from './keys/recipes';
 
 /** English UI texts — must stay in sync with `nl.ts` (enforced bij typecheck). */
 export const en: Translations = {
@@ -40,4 +41,5 @@ export const en: Translations = {
   kennis: kennisEn,
   planner: plannerEn,
   common: commonEn,
+  recipes: recipesEn,
 };

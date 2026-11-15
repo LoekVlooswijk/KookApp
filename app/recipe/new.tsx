@@ -1,10 +1,12 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 
+import { useI18n } from '../../components/I18nContext';
 import { RecipeForm } from '../../components/RecipeForm';
 import { getListMeta } from '../../lib/listsRepo';
 
 export default function NewRecipeScreen() {
+  const { t } = useI18n();
   const params = useLocalSearchParams<{
     listId?: string | string[];
     importSid?: string | string[];
@@ -27,19 +29,19 @@ export default function NewRecipeScreen() {
     void (async () => {
       const m = await getListMeta(addToListId);
       if (!cancelled) {
-        setAddToListName(m?.name ?? 'deze lijst');
+        setAddToListName(m?.name ?? t('recipes.new.thisList'));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [addToListId]);
+  }, [addToListId, t]);
 
   return (
     <RecipeForm
       importSessionId={importSessionId}
       addToListId={addToListId}
-      addToListName={addToListName ?? (addToListId != null ? 'deze lijst' : undefined)}
+      addToListName={addToListName ?? (addToListId != null ? t('recipes.new.thisList') : undefined)}
     />
   );
 }

@@ -19,6 +19,7 @@ import { PortionScaler } from '../../../components/PortionScaler';
 import { RecipeAdjustChat } from '../../../components/RecipeAdjustChat';
 import { ScaledIngredientsList } from '../../../components/ScaledIngredientsList';
 import { useAppTheme } from '../../../components/ThemeContext';
+import { useI18n } from '../../../components/I18nContext';
 import {
   assessProduceLocalityAndPesticides,
   finalizeBioScoreFromAssessment,
@@ -50,6 +51,7 @@ import type { FullRecipe } from '../../../lib/types';
 
 export default function RecipeDetailScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const { confirm, ConfirmDialog } = useConfirmDialog();
   const { id: idParam, openLists } = useLocalSearchParams<{ id: string; openLists?: string }>();
   const router = useRouter();
@@ -143,17 +145,21 @@ export default function RecipeDetailScreen() {
     if (!recipe) return;
     const lines: string[] = [];
     lines.push(recipe.title);
-    if (recipe.category) lines.push(`Categorie: ${recipe.category}`);
-    if (recipe.totalTimeMin != null) lines.push(`Tijd: ${recipe.totalTimeMin} min`);
-    if (recipe.baseServings != null) lines.push(`Basisporties: ${recipe.baseServings}`);
-    if (recipe.tags.length) lines.push(`Tags: ${recipe.tags.join(', ')}`);
-    if (recipe.sourceUrl) lines.push(`Bron: ${recipe.sourceUrl}`);
+    if (recipe.category)
+      lines.push(t('recipes.detail.share.category', { category: recipe.category }));
+    if (recipe.totalTimeMin != null)
+      lines.push(t('recipes.detail.share.time', { minutes: recipe.totalTimeMin }));
+    if (recipe.baseServings != null)
+      lines.push(t('recipes.detail.share.baseServings', { servings: recipe.baseServings }));
+    if (recipe.tags.length)
+      lines.push(t('recipes.detail.share.tags', { tags: recipe.tags.join(', ') }));
+    if (recipe.sourceUrl) lines.push(t('recipes.detail.share.source', { url: recipe.sourceUrl }));
     lines.push('');
     if (recipe.description) {
       lines.push(recipe.description);
       lines.push('');
     }
-    lines.push('Ingrediënten');
+    lines.push(t('recipes.detail.share.ingredients'));
     for (const g of recipe.ingredientGroups) {
       if (g.title) lines.push(g.title);
       for (const ing of g.ingredients) {
@@ -167,13 +173,13 @@ export default function RecipeDetailScreen() {
       }
     }
     lines.push('');
-    lines.push('Stappen');
+    lines.push(t('recipes.detail.share.steps'));
     let stepNo = 1;
     for (const sec of recipe.stepSections) {
       if (sec.title) lines.push(sec.title);
       for (const st of sec.steps) {
-        const t = st.timerSeconds != null ? ` (${formatStepTimerNl(st.timerSeconds)})` : '';
-        lines.push(`${stepNo}. ${st.description}${t}`);
+        const tx = st.timerSeconds != null ? ` (${formatStepTimerNl(st.timerSeconds)})` : '';
+        lines.push(`${stepNo}. ${st.description}${tx}`);
         stepNo += 1;
       }
       lines.push('');
@@ -183,25 +189,28 @@ export default function RecipeDetailScreen() {
       try {
         await Share.share({ title: recipe.title, message: lines.join('\n') });
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Delen mislukt.');
+        Alert.alert(
+          t('recipes.common.error'),
+          e instanceof Error ? e.message : t('recipes.detail.share.failed')
+        );
       }
     })();
-  }, [recipe]);
+  }, [recipe, t]);
 
   const onDelete = useCallback(() => {
     void (async () => {
       const ok = await confirm({
-        title: 'Recept verwijderen',
-        message: 'Weet je zeker dat je dit recept wilt verwijderen?',
-        confirmText: 'Verwijderen',
-        cancelText: 'Annuleren',
+        title: t('recipes.detail.delete.title'),
+        message: t('recipes.detail.delete.message'),
+        confirmText: t('recipes.detail.delete.confirm'),
+        cancelText: t('recipes.common.cancel'),
         destructive: true,
       });
       if (!ok) return;
       await deleteRecipe(recipeId);
       router.replace('/(tabs)/recipes');
     })();
-  }, [confirm, recipeId, router]);
+  }, [confirm, recipeId, router, t]);
 
   const addRecipeToShopping = useCallback(async () => {
     if (!recipe) return;
@@ -224,10 +233,7 @@ export default function RecipeDetailScreen() {
     }
 
     if (allIngredients.length === 0) {
-      Alert.alert(
-        'Geen ingrediënten',
-        'Dit recept heeft geen niet-staple ingrediënten om toe te voegen.'
-      );
+      Alert.alert(t('recipes.detail.shopping.noneTitle'), t('recipes.detail.shopping.noneBody'));
       return;
     }
 
@@ -242,10 +248,10 @@ export default function RecipeDetailScreen() {
     await insertWeekShoppingItems(merged);
 
     Alert.alert(
-      'Toegevoegd',
-      `${merged.length} ingrediënt(en) toegevoegd aan je boodschappenlijst.`
+      t('recipes.detail.shopping.addedTitle'),
+      t('recipes.detail.shopping.addedBody', { count: merged.length })
     );
-  }, [recipe, servings]);
+  }, [recipe, servings, t]);
 
   const openHistory = useCallback(() => {
     if (!Number.isFinite(recipeId)) return;
@@ -274,7 +280,7 @@ export default function RecipeDetailScreen() {
   if (!Number.isFinite(recipeId)) {
     return (
       <View style={styles.center}>
-        <Text>Ongeldig recept.</Text>
+        <Text>{t('recipes.common.invalidRecipe')}</Text>
       </View>
     );
   }
@@ -292,10 +298,10 @@ export default function RecipeDetailScreen() {
   if (!recipe) {
     return (
       <View style={styles.center}>
-        <Text>Recept niet gevonden.</Text>
+        <Text>{t('recipes.common.notFound')}</Text>
         <Link href="/" asChild>
           <Pressable style={styles.linkBtn}>
-            <Text style={styles.linkBtnText}>Terug naar recepten</Text>
+            <Text style={styles.linkBtnText}>{t('recipes.detail.backToRecipes')}</Text>
           </Pressable>
         </Link>
       </View>
@@ -303,23 +309,36 @@ export default function RecipeDetailScreen() {
   }
 
   const metaChips: { key: string; label: string; variant: 'accent' | 'neutral' }[] = [];
-  if (recipe.wantToTry) metaChips.push({ key: 'try', label: 'Wil proberen', variant: 'accent' });
+  if (recipe.wantToTry)
+    metaChips.push({ key: 'try', label: t('recipes.common.wantToTry'), variant: 'accent' });
   if (recipe.category) metaChips.push({ key: 'cat', label: recipe.category, variant: 'neutral' });
   if (recipe.baseServings != null) {
-    metaChips.push({ key: 'srv', label: `${recipe.baseServings} porties`, variant: 'neutral' });
+    metaChips.push({
+      key: 'srv',
+      label: t('recipes.detail.meta.servings', { count: recipe.baseServings }),
+      variant: 'neutral',
+    });
   }
   if (recipe.prepTimeMin != null) {
     metaChips.push({
       key: 'prep',
-      label: `Voorbereiding ${recipe.prepTimeMin} min`,
+      label: t('recipes.detail.meta.prep', { minutes: recipe.prepTimeMin }),
       variant: 'neutral',
     });
   }
   if (recipe.cookTimeMin != null) {
-    metaChips.push({ key: 'cook', label: `Koken ${recipe.cookTimeMin} min`, variant: 'neutral' });
+    metaChips.push({
+      key: 'cook',
+      label: t('recipes.detail.meta.cook', { minutes: recipe.cookTimeMin }),
+      variant: 'neutral',
+    });
   }
   if (recipe.totalTimeMin != null) {
-    metaChips.push({ key: 'tot', label: `Totaal ${recipe.totalTimeMin} min`, variant: 'neutral' });
+    metaChips.push({
+      key: 'tot',
+      label: t('recipes.detail.meta.total', { minutes: recipe.totalTimeMin }),
+      variant: 'neutral',
+    });
   }
   return (
     <>
@@ -333,7 +352,7 @@ export default function RecipeDetailScreen() {
             source={{ uri: recipe.imageUri }}
             style={styles.coverImage}
             resizeMode="cover"
-            accessibilityLabel="Receptfoto"
+            accessibilityLabel={t('recipes.detail.a11y.photo')}
           />
         ) : null}
         <View style={styles.titleRow}>
@@ -343,7 +362,7 @@ export default function RecipeDetailScreen() {
               style={styles.titleLeafWrap}
               onPress={() => setBioDetailsOpen(true)}
               accessibilityRole="button"
-              accessibilityLabel="Bio-score details openen"
+              accessibilityLabel={t('recipes.detail.a11y.openBioDetails')}
               hitSlop={8}
             >
               <Ionicons
@@ -358,10 +377,10 @@ export default function RecipeDetailScreen() {
                 }
                 accessibilityLabel={
                   recipe.bioScoreColor === 'green'
-                    ? 'Bio-score: groen'
+                    ? t('recipes.common.bioScoreGreen')
                     : recipe.bioScoreColor === 'red'
-                      ? 'Bio-score: rood'
-                      : 'Bio-score: oranje'
+                      ? t('recipes.common.bioScoreRed')
+                      : t('recipes.common.bioScoreOrange')
                 }
               />
             </Pressable>
@@ -373,7 +392,9 @@ export default function RecipeDetailScreen() {
             accessibilityRole="button"
             accessibilityState={{ selected: recipe.isFavorite }}
             accessibilityLabel={
-              recipe.isFavorite ? 'Verwijderen uit favorieten' : 'Toevoegen aan favorieten'
+              recipe.isFavorite
+                ? t('recipes.common.removeFavorite')
+                : t('recipes.common.addFavorite')
             }
           >
             <Ionicons
@@ -424,10 +445,13 @@ export default function RecipeDetailScreen() {
             ]}
             onPress={() => setListsModalOpen(true)}
             accessibilityRole="button"
-            accessibilityLabel={`Lijsten, ${selectedLists.length} van ${listRows.length}`}
+            accessibilityLabel={t('recipes.detail.a11y.lists', {
+              selected: selectedLists.length,
+              total: listRows.length,
+            })}
           >
             <Text style={styles.listsCountNum}>{selectedLists.length}</Text>
-            <Text style={styles.listsCountLabel}>lijsten</Text>
+            <Text style={styles.listsCountLabel}>{t('recipes.detail.listsLabel')}</Text>
           </Pressable>
         </View>
         {recipe.description ? <Text style={styles.body}>{recipe.description}</Text> : null}
@@ -443,16 +467,18 @@ export default function RecipeDetailScreen() {
             style={[styles.shareOutlineBtn, { borderColor: theme.accentBorderMuted }]}
             onPress={onShare}
             accessibilityRole="button"
-            accessibilityLabel="Recept delen"
+            accessibilityLabel={t('recipes.detail.a11y.share')}
           >
-            <Text style={[styles.shareOutlineBtnText, { color: theme.accent }]}>Delen</Text>
+            <Text style={[styles.shareOutlineBtnText, { color: theme.accent }]}>
+              {t('recipes.detail.shareBtn')}
+            </Text>
           </Pressable>
           <Pressable
             style={[styles.aiOutlineBtn, { borderColor: theme.accent }]}
             onPress={() => setAdjustOpen(true)}
           >
             <Text style={[styles.aiOutlineBtnText, { color: theme.accent }]} numberOfLines={2}>
-              Recept aanpassen met AI
+              {t('recipes.detail.adjustWithAi')}
             </Text>
           </Pressable>
         </View>
@@ -465,10 +491,10 @@ export default function RecipeDetailScreen() {
             style={[styles.bioDetailsBtn, { borderColor: theme.accentBorderMuted }]}
             onPress={() => setBioDetailsOpen(true)}
             accessibilityRole="button"
-            accessibilityLabel="Waarom deze bio-score?"
+            accessibilityLabel={t('recipes.detail.whyBioScore')}
           >
             <Text style={[styles.bioDetailsBtnText, { color: theme.accent }]}>
-              Waarom deze bio-score?
+              {t('recipes.detail.whyBioScore')}
             </Text>
           </Pressable>
         ) : null}
@@ -481,7 +507,7 @@ export default function RecipeDetailScreen() {
               style={[styles.addToShoppingBtn, { borderColor: theme.accent }]}
               onPress={addRecipeToShopping}
               accessibilityRole="button"
-              accessibilityLabel="Alle ingrediënten toevoegen aan boodschappenlijst"
+              accessibilityLabel={t('recipes.detail.a11y.addToShopping')}
               hitSlop={10}
             >
               <Ionicons name="cart-outline" size={22} color={theme.accent} />
@@ -491,12 +517,14 @@ export default function RecipeDetailScreen() {
 
         {recipe.notes ? (
           <View style={styles.notesBox}>
-            <Text style={styles.notesLabel}>Notities</Text>
+            <Text style={styles.notesLabel}>{t('recipes.detail.notes')}</Text>
             <Text style={styles.notesBody}>{recipe.notes}</Text>
           </View>
         ) : null}
 
-        <Text style={[styles.stepsScreenTitle, { color: theme.accent }]}>Stappen</Text>
+        <Text style={[styles.stepsScreenTitle, { color: theme.accent }]}>
+          {t('recipes.detail.steps')}
+        </Text>
         {recipe.stepSections.map((section) => (
           <View key={section.id} style={styles.stepSection}>
             {section.title ? <Text style={styles.stepSectionHeading}>{section.title}</Text> : null}
@@ -507,7 +535,11 @@ export default function RecipeDetailScreen() {
                   {st.description}
                 </Text>
                 {st.timerSeconds != null && st.timerSeconds > 0 ? (
-                  <Text style={styles.stepTimer}>Timer: {formatStepTimerNl(st.timerSeconds)}</Text>
+                  <Text style={styles.stepTimer}>
+                    {t('recipes.detail.stepTimer', {
+                      duration: formatStepTimerNl(st.timerSeconds),
+                    })}
+                  </Text>
                 ) : null}
               </View>
             ))}
@@ -518,16 +550,14 @@ export default function RecipeDetailScreen() {
           <View style={styles.listsModalRoot}>
             <Pressable style={styles.listsModalBackdrop} onPress={() => setListsModalOpen(false)} />
             <View style={[styles.listsModalCard, { backgroundColor: theme.background }]}>
-              <Text style={styles.listsModalTitle}>Lijsten voor dit recept</Text>
+              <Text style={styles.listsModalTitle}>{t('recipes.detail.listsTitle')}</Text>
               <ScrollView
                 style={styles.listsModalScroll}
                 keyboardShouldPersistTaps="handled"
                 nestedScrollEnabled
               >
                 {listRows.length === 0 ? (
-                  <Text style={styles.listsModalEmpty}>
-                    Nog geen lijsten. Maak er een aan op de receptenpagina.
-                  </Text>
+                  <Text style={styles.listsModalEmpty}>{t('recipes.detail.listsEmpty')}</Text>
                 ) : null}
                 {listRows.map((row) => (
                   <Pressable
@@ -553,7 +583,7 @@ export default function RecipeDetailScreen() {
                 style={[styles.listsModalClose, { backgroundColor: theme.accent }]}
                 onPress={() => setListsModalOpen(false)}
               >
-                <Text style={styles.listsModalCloseText}>Sluiten</Text>
+                <Text style={styles.listsModalCloseText}>{t('recipes.common.close')}</Text>
               </Pressable>
             </View>
           </View>
@@ -564,24 +594,28 @@ export default function RecipeDetailScreen() {
             <Pressable
               style={StyleSheet.flatten([styles.primaryBtn, { backgroundColor: theme.accent }])}
             >
-              <Text style={styles.primaryBtnText}>Kookmodus</Text>
+              <Text style={styles.primaryBtnText}>{t('recipes.detail.cookMode')}</Text>
             </Pressable>
           </Link>
           <Pressable
             style={StyleSheet.flatten([styles.secondaryBtn, { borderColor: theme.accent }])}
             onPress={openHistory}
           >
-            <Text style={[styles.secondaryBtnText, { color: theme.accent }]}>Geschiedenis</Text>
+            <Text style={[styles.secondaryBtnText, { color: theme.accent }]}>
+              {t('recipes.detail.history')}
+            </Text>
           </Pressable>
           <Link href={`/recipe/${recipeId}/edit`} asChild>
             <Pressable
               style={StyleSheet.flatten([styles.secondaryBtn, { borderColor: theme.accent }])}
             >
-              <Text style={[styles.secondaryBtnText, { color: theme.accent }]}>Bewerken</Text>
+              <Text style={[styles.secondaryBtnText, { color: theme.accent }]}>
+                {t('recipes.detail.editBtn')}
+              </Text>
             </Pressable>
           </Link>
           <Pressable style={styles.dangerBtn} onPress={onDelete}>
-            <Text style={styles.dangerBtnText}>Verwijderen</Text>
+            <Text style={styles.dangerBtnText}>{t('recipes.detail.delete.confirm')}</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -595,12 +629,12 @@ export default function RecipeDetailScreen() {
         <View style={styles.historyRoot}>
           <Pressable style={styles.historyBackdrop} onPress={() => setHistoryOpen(false)} />
           <View style={[styles.historyCard, { backgroundColor: theme.background }]}>
-            <Text style={styles.historyTitle}>Geschiedenis</Text>
+            <Text style={styles.historyTitle}>{t('recipes.detail.history')}</Text>
             {historyLoading ? (
               <ActivityIndicator color={theme.accent} style={{ marginTop: 10 }} />
             ) : null}
             {!historyLoading && historyRows.length === 0 ? (
-              <Text style={styles.historyEmpty}>Nog geen opgeslagen versies.</Text>
+              <Text style={styles.historyEmpty}>{t('recipes.detail.historyEmpty')}</Text>
             ) : null}
             <ScrollView
               style={styles.historyScroll}
@@ -611,7 +645,7 @@ export default function RecipeDetailScreen() {
                 <View key={row.id} style={styles.historyRow}>
                   <View style={styles.historyRowMain}>
                     <Text style={styles.historyRowTitle} numberOfLines={2}>
-                      Versie {row.versionNumber}
+                      {t('recipes.detail.historyVersion', { number: row.versionNumber })}
                     </Text>
                     <Text style={styles.historyRowMeta} numberOfLines={1}>
                       {formatHistoryDate(row.createdAt)}
@@ -626,29 +660,30 @@ export default function RecipeDetailScreen() {
                     onPress={() => {
                       void (async () => {
                         const ok = await confirm({
-                          title: 'Terugzetten?',
-                          message:
-                            'De huidige versie wordt eerst opgeslagen als snapshot (\"Vóór terugzetten\").',
-                          confirmText: 'Terugzetten',
-                          cancelText: 'Annuleren',
+                          title: t('recipes.detail.restore.title'),
+                          message: t('recipes.detail.restore.message'),
+                          confirmText: t('recipes.detail.restore.confirm'),
+                          cancelText: t('recipes.common.cancel'),
                           destructive: true,
                         });
                         if (!ok) return;
                         try {
                           await restoreRecipeFromVersion({ recipeId, versionId: row.id });
                           setHistoryOpen(false);
-                          setRecipeTick((t) => t + 1);
+                          setRecipeTick((tk) => tk + 1);
                         } catch (e) {
                           Alert.alert(
-                            'Terugzetten mislukt',
-                            e instanceof Error ? e.message : 'Onbekende fout.'
+                            t('recipes.detail.restore.failedTitle'),
+                            e instanceof Error
+                              ? e.message
+                              : t('recipes.detail.restore.unknownError')
                           );
                         }
                       })();
                     }}
                   >
                     <Text style={[styles.historyRestoreText, { color: theme.accent }]}>
-                      Terugzetten
+                      {t('recipes.detail.restore.confirm')}
                     </Text>
                   </Pressable>
                 </View>
@@ -661,7 +696,7 @@ export default function RecipeDetailScreen() {
               ])}
               onPress={() => setHistoryOpen(false)}
             >
-              <Text style={styles.listsModalCloseText}>Sluiten</Text>
+              <Text style={styles.listsModalCloseText}>{t('recipes.common.close')}</Text>
             </Pressable>
           </View>
         </View>
@@ -683,7 +718,7 @@ export default function RecipeDetailScreen() {
       >
         <View style={[styles.modalWrap, { backgroundColor: theme.background }]}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Bio-score details</Text>
+            <Text style={styles.modalTitle}>{t('recipes.detail.bio.title')}</Text>
             <Pressable
               style={[
                 styles.modalClosePill,
@@ -698,8 +733,8 @@ export default function RecipeDetailScreen() {
                     const ok = await checkHasInternet();
                     if (!ok) {
                       Alert.alert(
-                        'Geen internet',
-                        'Bio score herberekenen vereist internetverbinding.'
+                        t('recipes.detail.bio.noInternet'),
+                        t('recipes.detail.bio.recomputeNeedsInternet')
                       );
                       return;
                     }
@@ -712,7 +747,7 @@ export default function RecipeDetailScreen() {
                     }
                     const assessed = await assessProduceLocalityAndPesticides(ingNames);
                     if (!assessed.ok) {
-                      Alert.alert('Fout', assessed.message);
+                      Alert.alert(t('recipes.common.error'), assessed.message);
                       return;
                     }
                     const { items, color } = await finalizeBioScoreFromAssessment(assessed.items);
@@ -722,11 +757,11 @@ export default function RecipeDetailScreen() {
                       'UPDATE recipes SET bio_score_color = ?, bio_score_updated_at = ?, bio_score_items_json = ?, updated_at = ? WHERE id = ?',
                       [color, now, JSON.stringify(items), now, recipeId]
                     );
-                    setRecipeTick((t) => t + 1);
+                    setRecipeTick((tk) => tk + 1);
                   } catch (e) {
                     Alert.alert(
-                      'Fout',
-                      e instanceof Error ? e.message : 'Bio score herberekenen mislukt.'
+                      t('recipes.common.error'),
+                      e instanceof Error ? e.message : t('recipes.detail.bio.recomputeFailed')
                     );
                   } finally {
                     setBioRecomputeBusy(false);
@@ -735,31 +770,35 @@ export default function RecipeDetailScreen() {
               }}
               disabled={bioRecomputeBusy}
               accessibilityRole="button"
-              accessibilityLabel="Bio score herberekenen"
+              accessibilityLabel={t('recipes.detail.a11y.recomputeBioScore')}
             >
               <Text style={[styles.modalClosePillText, { color: theme.accent }]}>
-                {bioRecomputeBusy ? 'Herberekenen…' : 'Herberekenen'}
+                {bioRecomputeBusy
+                  ? t('recipes.detail.bio.recomputing')
+                  : t('recipes.detail.bio.recompute')}
               </Text>
             </Pressable>
             <Pressable
               style={[styles.modalClosePill, { borderColor: theme.accentBorderMuted }]}
               onPress={() => setBioDetailsOpen(false)}
             >
-              <Text style={[styles.modalClosePillText, { color: theme.accent }]}>Sluiten</Text>
+              <Text style={[styles.modalClosePillText, { color: theme.accent }]}>
+                {t('recipes.common.close')}
+              </Text>
             </Pressable>
           </View>
 
           <ScrollView contentContainerStyle={styles.modalContent}>
             {recipe.bioScoreUpdatedAt ? (
               <Text style={styles.modalHint}>
-                Laatst berekend: {new Date(recipe.bioScoreUpdatedAt).toLocaleDateString('nl-NL')}
+                {t('recipes.detail.bio.lastCalculated', {
+                  date: new Date(recipe.bioScoreUpdatedAt).toLocaleDateString('nl-NL'),
+                })}
               </Text>
             ) : null}
 
             {!recipe.bioScoreItems || recipe.bioScoreItems.length === 0 ? (
-              <Text style={styles.modalHint}>
-                Nog geen details opgeslagen. Druk op “Herberekenen” om uitleg op te slaan.
-              </Text>
+              <Text style={styles.modalHint}>{t('recipes.detail.bio.noDetails')}</Text>
             ) : null}
 
             {(recipe.bioScoreItems ?? []).map((it, idx) => (
@@ -777,7 +816,7 @@ export default function RecipeDetailScreen() {
                             : styles.bioBadgeRed,
                       ]}
                     >
-                      herkomst {it.l}
+                      {t('recipes.detail.bio.origin', { code: it.l })}
                     </Text>
                     <Text
                       style={[
@@ -789,7 +828,7 @@ export default function RecipeDetailScreen() {
                             : styles.bioBadgeRed,
                       ]}
                     >
-                      pesticide {it.p}
+                      {t('recipes.detail.bio.pesticide', { code: it.p })}
                     </Text>
                   </View>
                 </View>
@@ -808,20 +847,22 @@ export default function RecipeDetailScreen() {
                           'UPDATE recipes SET bio_score_color = ?, bio_score_updated_at = ?, bio_score_items_json = ?, updated_at = ? WHERE id = ?',
                           [color, now, JSON.stringify(items), now, recipeId]
                         );
-                        setRecipeTick((t) => t + 1);
+                        setRecipeTick((tk) => tk + 1);
                       } catch (e) {
                         Alert.alert(
-                          'Fout',
-                          e instanceof Error ? e.message : 'Ingredient uitsluiten mislukt.'
+                          t('recipes.common.error'),
+                          e instanceof Error ? e.message : t('recipes.detail.bio.excludeFailed')
                         );
                       }
                     })();
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel={`${it.n} uitsluiten van bio-score`}
+                  accessibilityLabel={t('recipes.detail.a11y.excludeFromBioScore', {
+                    name: it.n,
+                  })}
                 >
                   <Text style={[styles.bioExcludeBtnText, { color: theme.accent }]}>
-                    Verwijder uit berekening
+                    {t('recipes.detail.bio.exclude')}
                   </Text>
                 </Pressable>
               </View>

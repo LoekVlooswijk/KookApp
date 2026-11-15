@@ -11,11 +11,13 @@ import {
 } from 'react-native';
 
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
 import { disposeImportSession, getImportSession } from '../../lib/importDraft';
 import { createRecipe } from '../../lib/recipesRepo';
 
 export default function RecipeImportPreviewScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const router = useRouter();
   const params = useLocalSearchParams<{
     importSid?: string | string[];
@@ -33,15 +35,13 @@ export default function RecipeImportPreviewScreen() {
   if (!payload) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
-        <Text style={styles.title}>Geen preview beschikbaar</Text>
-        <Text style={styles.muted}>
-          Deze importsessie is verlopen. Ga terug en probeer opnieuw.
-        </Text>
+        <Text style={styles.title}>{t('recipes.preview.noPreview')}</Text>
+        <Text style={styles.muted}>{t('recipes.preview.expired')}</Text>
         <Pressable
           style={[styles.btn, { backgroundColor: theme.accent }]}
           onPress={() => router.back()}
         >
-          <Text style={styles.btnText}>Terug</Text>
+          <Text style={styles.btnText}>{t('recipes.preview.back')}</Text>
         </Pressable>
       </View>
     );
@@ -52,22 +52,30 @@ export default function RecipeImportPreviewScreen() {
       style={[styles.scroll, { backgroundColor: theme.background }]}
       contentContainerStyle={styles.content}
     >
-      <Text style={styles.previewTitle}>Controle</Text>
+      <Text style={styles.previewTitle}>{t('recipes.preview.title')}</Text>
       <Text style={styles.head}>{payload.title}</Text>
 
       {payload.description ? <Text style={styles.desc}>{payload.description}</Text> : null}
 
       <View style={styles.metaRow}>
         {payload.totalTimeMin != null ? (
-          <Text style={styles.meta}>Tijd: {payload.totalTimeMin} min</Text>
+          <Text style={styles.meta}>
+            {t('recipes.preview.time', { minutes: payload.totalTimeMin })}
+          </Text>
         ) : null}
         {payload.baseServings != null ? (
-          <Text style={styles.meta}>Porties: {payload.baseServings}</Text>
+          <Text style={styles.meta}>
+            {t('recipes.preview.servings', { servings: payload.baseServings })}
+          </Text>
         ) : null}
-        {payload.category ? <Text style={styles.meta}>Categorie: {payload.category}</Text> : null}
+        {payload.category ? (
+          <Text style={styles.meta}>
+            {t('recipes.preview.category', { category: payload.category })}
+          </Text>
+        ) : null}
       </View>
 
-      <Text style={styles.section}>Ingrediënten</Text>
+      <Text style={styles.section}>{t('recipes.preview.ingredients')}</Text>
       {payload.ingredientGroups.map((g, gi) => (
         <View key={`${gi}-${g.title ?? ''}`} style={styles.block}>
           {g.title ? <Text style={styles.groupTitle}>{g.title}</Text> : null}
@@ -81,7 +89,7 @@ export default function RecipeImportPreviewScreen() {
         </View>
       ))}
 
-      <Text style={styles.section}>Bereiding</Text>
+      <Text style={styles.section}>{t('recipes.preview.method')}</Text>
       {payload.stepSections.map((s, si) => (
         <View key={`${si}-${s.title ?? ''}`} style={styles.block}>
           {s.title ? <Text style={styles.groupTitle}>{s.title}</Text> : null}
@@ -107,7 +115,10 @@ export default function RecipeImportPreviewScreen() {
                   // Return to import screen and clear the URL-preview state there.
                   router.replace({ pathname: '/recipe/import', params: { saved: '1' } });
                 } catch (e) {
-                  Alert.alert('Fout', e instanceof Error ? e.message : 'Opslaan mislukt.');
+                  Alert.alert(
+                    t('recipes.common.error'),
+                    e instanceof Error ? e.message : t('recipes.common.saveFailed')
+                  );
                 } finally {
                   setSaving(false);
                 }
@@ -118,7 +129,7 @@ export default function RecipeImportPreviewScreen() {
             {saving ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.btnText}>Opslaan</Text>
+              <Text style={styles.btnText}>{t('recipes.common.save')}</Text>
             )}
           </Pressable>
         ) : null}
@@ -129,7 +140,9 @@ export default function RecipeImportPreviewScreen() {
             router.back();
           }}
         >
-          <Text style={[styles.btnText, { color: theme.accentSoftText }]}>Sluiten</Text>
+          <Text style={[styles.btnText, { color: theme.accentSoftText }]}>
+            {t('recipes.common.close')}
+          </Text>
         </Pressable>
       </View>
     </ScrollView>

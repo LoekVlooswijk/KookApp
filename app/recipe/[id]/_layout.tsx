@@ -1,6 +1,7 @@
 import { Stack, useRouter } from 'expo-router';
 import { Platform, Pressable, StyleSheet, Text } from 'react-native';
 import { useAppTheme } from '../../../components/ThemeContext';
+import { useI18n } from '../../../components/I18nContext';
 
 function darkenColor(hex: string, factor: number): string {
   const num = parseInt(hex.replace('#', ''), 16);
@@ -13,6 +14,7 @@ function darkenColor(hex: string, factor: number): string {
 export default function RecipeIdLayout() {
   const router = useRouter();
   const theme = useAppTheme();
+  const { t } = useI18n();
 
   return (
     <Stack
@@ -31,18 +33,20 @@ export default function RecipeIdLayout() {
             style={styles.backBtn}
             hitSlop={{ top: 12, bottom: 12, right: 12, left: 4 }}
             accessibilityRole="button"
-            accessibilityLabel="Terug"
+            accessibilityLabel={t('recipes.layout.back')}
           >
             <Text style={[styles.backBtnGlyph, { color: theme.accent }]}>
               {Platform.OS === 'ios' ? '‹' : '←'}
             </Text>
-            <Text style={[styles.backBtnLabel, { color: theme.accent }]}>Terug</Text>
+            <Text style={[styles.backBtnLabel, { color: theme.accent }]}>
+              {t('recipes.layout.back')}
+            </Text>
           </Pressable>
         ),
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'Recept' }} />
-      <Stack.Screen name="edit" options={{ title: 'Bewerken' }} />
+      <Stack.Screen name="index" options={{ title: t('recipes.layout.recipe') }} />
+      <Stack.Screen name="edit" options={{ title: t('recipes.layout.edit') }} />
     </Stack>
   );
 }

@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 
 import { useAppTheme } from './ThemeContext';
+import { useI18n } from './I18nContext';
 import { RecipeAdjustChat } from './RecipeAdjustChat';
 import { useConfirmDialog } from './ConfirmDialog';
 import { disposeImportSession, getImportSession } from '../lib/importDraft';
@@ -189,6 +190,7 @@ type Props = {
 export function RecipeForm({ recipeId, importSessionId, addToListId, addToListName }: Props) {
   const router = useRouter();
   const theme = useAppTheme();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(!!(recipeId || importSessionId?.trim()));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -341,7 +343,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
         const r = await getFullRecipe(recipeId);
         if (cancelled) return;
         if (!r) {
-          setError('Recept niet gevonden.');
+          setError(t('recipes.common.notFound'));
           setLoading(false);
           return;
         }
@@ -368,7 +370,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
     return () => {
       cancelled = true;
     };
-  }, [recipeId, importSessionId, applySavePayload]);
+  }, [recipeId, importSessionId, applySavePayload, t]);
 
   // Snapshot form once loading finishes (initial state for dirty check). Intentionally only `loading`.
   useEffect(() => {
@@ -418,10 +420,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
     setError(null);
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert(
-        'Toegang nodig',
-        'Geef toegang tot je fotobibliotheek om een receptfoto te kiezen.'
-      );
+      Alert.alert(t('recipes.form.accessNeeded'), t('recipes.form.libraryPermission'));
       return;
     }
     setPickingCover(true);
@@ -438,17 +437,17 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
       const stored = await persistPickedRecipeCover(uri);
       applyNewCoverUri(stored);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Foto kon niet worden opgeslagen.');
+      setError(e instanceof Error ? e.message : t('recipes.form.coverSaveFailed'));
     } finally {
       setPickingCover(false);
     }
-  }, [applyNewCoverUri]);
+  }, [applyNewCoverUri, t]);
 
   const onTakeCoverPhoto = useCallback(async () => {
     setError(null);
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Toegang nodig', 'Geef cameratoegang om een foto te maken.');
+      Alert.alert(t('recipes.form.accessNeeded'), t('recipes.form.cameraPermission'));
       return;
     }
     setPickingCover(true);
@@ -464,11 +463,11 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
       const stored = await persistPickedRecipeCover(uri);
       applyNewCoverUri(stored);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Foto kon niet worden opgeslagen.');
+      setError(e instanceof Error ? e.message : t('recipes.form.coverSaveFailed'));
     } finally {
       setPickingCover(false);
     }
-  }, [applyNewCoverUri]);
+  }, [applyNewCoverUri, t]);
 
   const buildCurrentPayload = useCallback((): RecipeSavePayload => {
     const vega = dietVegetarian || dietVegan;
@@ -543,11 +542,10 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
       const current = buildCurrentPayload();
       if (formHasContent()) {
         const ok = await confirm({
-          title: 'Huidige invoer overschrijven?',
-          message:
-            'Het formulier bevat al tekst. De receptvelden (titel t/m bereiding) worden vervangen door het AI-voorstel; foto, notities, bron-URL en status blijven behouden.',
-          confirmText: 'Overschrijven',
-          cancelText: 'Annuleren',
+          title: t('recipes.form.overwriteConfirm.title'),
+          message: t('recipes.form.overwriteConfirm.message'),
+          confirmText: t('recipes.form.overwriteConfirm.confirm'),
+          cancelText: t('recipes.common.cancel'),
           destructive: true,
         });
         if (!ok) return false;
@@ -563,12 +561,10 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
         bioScoreUpdatedAt: current.bioScoreUpdatedAt ?? payload.bioScoreUpdatedAt ?? null,
         bioScoreItems: current.bioScoreItems ?? payload.bioScoreItems ?? null,
       });
-      setAiAppliedNote(
-        'AI-voorstel ingevuld — controleer de velden en sla op om het recept aan te maken.'
-      );
+      setAiAppliedNote(t('recipes.form.aiNote'));
       return true;
     },
-    [buildCurrentPayload, formHasContent, confirm, applySavePayload]
+    [buildCurrentPayload, formHasContent, confirm, applySavePayload, t]
   );
 
   const openAiChat = useCallback(
@@ -587,7 +583,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
       try {
         const hasInternet = await checkHasInternet();
         if (!hasInternet) {
-          Alert.alert('Geen internet', 'Bio score berekenen vereist internetverbinding.');
+          Alert.alert(t('recipes.form.bio.noInternet'), t('recipes.form.bio.needsInternet'));
           return;
         }
         const ingNames: string[] = [];
@@ -599,7 +595,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
         }
         const assessed = await assessProduceLocalityAndPesticides(ingNames);
         if (!assessed.ok) {
-          Alert.alert('Fout', assessed.message);
+          Alert.alert(t('recipes.common.error'), assessed.message);
           return;
         }
         const { items, color } = await finalizeBioScoreFromAssessment(assessed.items);
@@ -607,12 +603,15 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
         setBioScoreItems(items);
         setBioScoreUpdatedAt(new Date().toISOString());
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Bio score berekenen mislukt.');
+        Alert.alert(
+          t('recipes.common.error'),
+          e instanceof Error ? e.message : t('recipes.form.bio.failed')
+        );
       } finally {
         setBioBusy(false);
       }
     })();
-  }, [bioBusy, groups, loading, saving]);
+  }, [bioBusy, groups, loading, saving, t]);
 
   const isDirty =
     !loading &&
@@ -641,38 +640,34 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
   useEffect(() => {
     if (!isDirty) return;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      Alert.alert(
-        'Niet-opgeslagen wijzigingen',
-        'Wil je je wijzigingen opslaan voordat je de pagina verlaat?',
-        [
-          { text: 'Annuleren', style: 'cancel' },
-          {
-            text: 'Niet opslaan',
-            style: 'destructive',
-            onPress: () => router.back(),
+      Alert.alert(t('recipes.form.unsaved.title'), t('recipes.form.unsaved.message'), [
+        { text: t('recipes.common.cancel'), style: 'cancel' },
+        {
+          text: t('recipes.form.unsaved.dontSave'),
+          style: 'destructive',
+          onPress: () => router.back(),
+        },
+        {
+          text: t('recipes.common.save'),
+          onPress: () => {
+            void (async () => {
+              setError(null);
+              setSaving(true);
+              try {
+                await persistFromForm();
+              } catch (e) {
+                setError(e instanceof Error ? e.message : t('recipes.common.saveFailed'));
+              } finally {
+                setSaving(false);
+              }
+            })();
           },
-          {
-            text: 'Opslaan',
-            onPress: () => {
-              void (async () => {
-                setError(null);
-                setSaving(true);
-                try {
-                  await persistFromForm();
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : 'Opslaan mislukt.');
-                } finally {
-                  setSaving(false);
-                }
-              })();
-            },
-          },
-        ]
-      );
+        },
+      ]);
       return true;
     });
     return () => subscription.remove();
-  }, [isDirty, router, persistFromForm, setSaving, setError]);
+  }, [isDirty, router, persistFromForm, setSaving, setError, t]);
 
   const onSave = useCallback(() => {
     setError(null);
@@ -681,12 +676,12 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
       try {
         await persistFromForm();
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Opslaan mislukt.');
+        setError(e instanceof Error ? e.message : t('recipes.common.saveFailed'));
       } finally {
         setSaving(false);
       }
     })();
-  }, [persistFromForm]);
+  }, [persistFromForm, t]);
 
   // headerRight is configured in the parent screen layout (new.tsx / edit.tsx)
 
@@ -718,12 +713,12 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
         >
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Nieuwe categorie</Text>
-              <Text style={styles.modalHint}>Bijv. “diner”, “weekend”, “bakken”.</Text>
+              <Text style={styles.modalTitle}>{t('recipes.form.category.title')}</Text>
+              <Text style={styles.modalHint}>{t('recipes.form.category.hint')}</Text>
               <View style={styles.modalRow}>
                 <TextInput
                   style={[styles.input, styles.flex1, { marginBottom: 0 }]}
-                  placeholder="Categorie…"
+                  placeholder={t('recipes.form.category.placeholder')}
                   value={newCategoryInput}
                   onChangeText={setNewCategoryInput}
                   autoCapitalize="none"
@@ -761,7 +756,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
                 </Pressable>
               </View>
               <Pressable style={styles.modalCloseBtn} onPress={() => setCategoryPickerOpen(false)}>
-                <Text style={styles.modalCloseBtnText}>Sluiten</Text>
+                <Text style={styles.modalCloseBtnText}>{t('recipes.common.close')}</Text>
               </Pressable>
             </View>
           </View>
@@ -775,15 +770,13 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
         >
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Tags kiezen</Text>
-              <Text style={styles.modalHint}>
-                Tik om aan/uit te zetten. Je kunt meerdere tags selecteren.
-              </Text>
+              <Text style={styles.modalTitle}>{t('recipes.form.tags.title')}</Text>
+              <Text style={styles.modalHint}>{t('recipes.form.tags.hint')}</Text>
 
               <View style={styles.modalRow}>
                 <TextInput
                   style={[styles.input, styles.flex1, { marginBottom: 0 }]}
-                  placeholder="Nieuwe tag…"
+                  placeholder={t('recipes.form.tags.newPlaceholder')}
                   value={newTagInput}
                   onChangeText={setNewTagInput}
                   autoCapitalize="none"
@@ -840,7 +833,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
               />
 
               <Pressable style={styles.modalCloseBtn} onPress={() => setTagsPickerOpen(false)}>
-                <Text style={styles.modalCloseBtnText}>Klaar</Text>
+                <Text style={styles.modalCloseBtnText}>{t('recipes.common.done')}</Text>
               </Pressable>
             </View>
           </View>
@@ -861,7 +854,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
         {addToListId != null && addToListName ? (
           <View style={styles.listBanner}>
             <Text style={styles.listBannerText}>
-              Na opslaan wordt dit recept toegevoegd aan de lijst «{addToListName}».
+              {t('recipes.form.addToListNote', { name: addToListName })}
             </Text>
           </View>
         ) : null}
@@ -872,17 +865,21 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
               style={[styles.aiBtn, { borderColor: theme.accent }]}
               onPress={() => openAiChat('create')}
               accessibilityRole="button"
-              accessibilityLabel="Recept maken met AI"
+              accessibilityLabel={t('recipes.form.aiCreate')}
             >
-              <Text style={[styles.aiBtnText, { color: theme.accent }]}>Recept maken met AI</Text>
+              <Text style={[styles.aiBtnText, { color: theme.accent }]}>
+                {t('recipes.form.aiCreate')}
+              </Text>
             </Pressable>
             <Pressable
               style={[styles.aiBtn, { borderColor: theme.accent }]}
               onPress={() => openAiChat('draft')}
               accessibilityRole="button"
-              accessibilityLabel="Aanpassen met AI"
+              accessibilityLabel={t('recipes.form.aiAdjust')}
             >
-              <Text style={[styles.aiBtnText, { color: theme.accent }]}>Aanpassen met AI</Text>
+              <Text style={[styles.aiBtnText, { color: theme.accent }]}>
+                {t('recipes.form.aiAdjust')}
+              </Text>
             </Pressable>
           </View>
         ) : null}
@@ -892,12 +889,12 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
           </View>
         ) : null}
 
-        <Text style={styles.label}>Titel</Text>
+        <Text style={styles.label}>{t('recipes.form.field.title')}</Text>
         <TextInput
           style={styles.input}
           value={title}
           onChangeText={setTitle}
-          placeholder="Bijv. Pasta pesto"
+          placeholder={t('recipes.form.titlePlaceholder')}
         />
 
         {recipeId && bioEnabled && !bioScoreColor ? (
@@ -911,30 +908,30 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
               onPress={onComputeBioScore}
               disabled={bioBusy || saving}
               accessibilityRole="button"
-              accessibilityLabel="Bio score berekenen"
+              accessibilityLabel={t('recipes.form.bio.compute')}
             >
               <Text style={[styles.bioBtnText, { color: theme.accent }]}>
-                {bioBusy ? 'Bio score berekenen…' : 'Bio score berekenen'}
+                {bioBusy ? t('recipes.form.bio.computing') : t('recipes.form.bio.compute')}
               </Text>
             </Pressable>
           </View>
         ) : null}
 
-        <Text style={styles.label}>Beschrijving</Text>
+        <Text style={styles.label}>{t('recipes.form.field.description')}</Text>
         <TextInput
           style={[styles.input, styles.multiline]}
           value={description}
           onChangeText={setDescription}
-          placeholder="Korte omschrijving"
+          placeholder={t('recipes.form.descriptionPlaceholder')}
           multiline
         />
 
-        <Text style={styles.label}>Receptfoto (optioneel)</Text>
+        <Text style={styles.label}>{t('recipes.form.field.photo')}</Text>
         {imageUri ? (
           <Image source={{ uri: imageUri }} style={styles.coverPreview} resizeMode="cover" />
         ) : (
           <View style={styles.coverPlaceholder}>
-            <Text style={styles.coverPlaceholderText}>Nog geen foto</Text>
+            <Text style={styles.coverPlaceholderText}>{t('recipes.form.noPhoto')}</Text>
           </View>
         )}
         <View style={styles.coverActions}>
@@ -950,7 +947,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
             {pickingCover ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.coverPickBtnText}>Kies uit galerij</Text>
+              <Text style={styles.coverPickBtnText}>{t('recipes.form.pickFromLibrary')}</Text>
             )}
           </Pressable>
           {Platform.OS !== 'web' ? (
@@ -964,7 +961,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
               disabled={pickingCover}
             >
               <Text style={[styles.coverPickBtnOutlineText, { color: theme.accent }]}>
-                Maak foto
+                {t('recipes.form.takePhoto')}
               </Text>
             </Pressable>
           ) : null}
@@ -974,12 +971,12 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
               onPress={() => setImageUri('')}
               disabled={pickingCover}
             >
-              <Text style={styles.coverRemoveBtnText}>Verwijderen</Text>
+              <Text style={styles.coverRemoveBtnText}>{t('recipes.form.removePhoto')}</Text>
             </Pressable>
           ) : null}
         </View>
 
-        <Text style={styles.label}>Porties (basis)</Text>
+        <Text style={styles.label}>{t('recipes.form.field.baseServings')}</Text>
         <TextInput
           style={styles.input}
           value={baseServingsStr}
@@ -990,7 +987,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
 
         <View style={styles.row3}>
           <View style={styles.row3Item}>
-            <Text style={styles.label}>Voorbereiding (min)</Text>
+            <Text style={styles.label}>{t('recipes.form.field.prep')}</Text>
             <TextInput
               style={styles.input}
               value={prepStr}
@@ -999,7 +996,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
             />
           </View>
           <View style={styles.row3Item}>
-            <Text style={styles.label}>Koken (min)</Text>
+            <Text style={styles.label}>{t('recipes.form.field.cook')}</Text>
             <TextInput
               style={styles.input}
               value={cookStr}
@@ -1008,7 +1005,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
             />
           </View>
           <View style={styles.row3Item}>
-            <Text style={styles.label}>Totaal (min)</Text>
+            <Text style={styles.label}>{t('recipes.form.field.total')}</Text>
             <TextInput
               style={styles.input}
               value={totalStr}
@@ -1018,7 +1015,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
           </View>
         </View>
 
-        <Text style={styles.label}>Categorie</Text>
+        <Text style={styles.label}>{t('recipes.form.field.category')}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
           <View style={styles.chipRowNoWrap}>
             <Pressable
@@ -1026,7 +1023,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
               onPress={() => setCategory('')}
             >
               <Text style={[styles.chipText, !category.trim() ? styles.chipTextOn : null]}>
-                Geen
+                {t('recipes.form.noCategory')}
               </Text>
             </Pressable>
             {categories.map((c) => {
@@ -1047,12 +1044,14 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
               style={[styles.chip, styles.chipAdd]}
               onPress={() => setCategoryPickerOpen(true)}
             >
-              <Text style={[styles.chipText, styles.chipAddText]}>+ nieuw</Text>
+              <Text style={[styles.chipText, styles.chipAddText]}>
+                {t('recipes.form.newCategory')}
+              </Text>
             </Pressable>
           </View>
         </ScrollView>
 
-        <Text style={styles.label}>Dieet</Text>
+        <Text style={styles.label}>{t('recipes.form.field.diet')}</Text>
         <View style={styles.chipRow}>
           <Pressable
             style={[styles.chip, dietVegetarian ? styles.chipOn : null]}
@@ -1064,7 +1063,9 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
               });
             }}
           >
-            <Text style={[styles.chipText, dietVegetarian ? styles.chipTextOn : null]}>Vega</Text>
+            <Text style={[styles.chipText, dietVegetarian ? styles.chipTextOn : null]}>
+              {t('recipes.common.diet.vegetarian')}
+            </Text>
           </Pressable>
           <Pressable
             style={[styles.chip, dietVegan ? styles.chipOn : null]}
@@ -1076,13 +1077,17 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
               });
             }}
           >
-            <Text style={[styles.chipText, dietVegan ? styles.chipTextOn : null]}>Vegan</Text>
+            <Text style={[styles.chipText, dietVegan ? styles.chipTextOn : null]}>
+              {t('recipes.common.diet.vegan')}
+            </Text>
           </Pressable>
           <Pressable
             style={[styles.chip, dietKeto ? styles.chipOn : null]}
             onPress={() => setDietKeto((v) => !v)}
           >
-            <Text style={[styles.chipText, dietKeto ? styles.chipTextOn : null]}>Keto</Text>
+            <Text style={[styles.chipText, dietKeto ? styles.chipTextOn : null]}>
+              {t('recipes.common.diet.keto')}
+            </Text>
           </Pressable>
           {customDiets.map((d) => {
             const on = customDietKeys.includes(d);
@@ -1107,43 +1112,45 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
           })}
         </View>
 
-        <Text style={styles.label}>Status</Text>
+        <Text style={styles.label}>{t('recipes.form.field.status')}</Text>
         <View style={styles.chipRow}>
           <Pressable
             style={[styles.chip, isFavorite ? styles.chipOn : null]}
             onPress={() => setIsFavorite((v) => !v)}
           >
-            <Text style={[styles.chipText, isFavorite ? styles.chipTextOn : null]}>Favoriet</Text>
+            <Text style={[styles.chipText, isFavorite ? styles.chipTextOn : null]}>
+              {t('recipes.form.favorite')}
+            </Text>
           </Pressable>
           <Pressable
             style={[styles.chip, wantToTry ? styles.chipOn : null]}
             onPress={() => setWantToTry((v) => !v)}
           >
             <Text style={[styles.chipText, wantToTry ? styles.chipTextOn : null]}>
-              Wil proberen
+              {t('recipes.common.wantToTry')}
             </Text>
           </Pressable>
         </View>
 
-        <Text style={styles.label}>Tags</Text>
+        <Text style={styles.label}>{t('recipes.form.field.tags')}</Text>
         <View style={styles.chipRow}>
-          {tagKeys.map((t) => (
+          {tagKeys.map((tg) => (
             <Pressable
-              key={t}
+              key={tg}
               style={[styles.chip, styles.chipOn]}
-              onPress={() => setTagKeys((prev) => prev.filter((x) => x !== t))}
+              onPress={() => setTagKeys((prev) => prev.filter((x) => x !== tg))}
             >
               <Text style={[styles.chipText, styles.chipTextOn]} numberOfLines={1}>
-                {t}
+                {tg}
               </Text>
             </Pressable>
           ))}
           <Pressable style={styles.chip} onPress={() => setTagsPickerOpen(true)}>
-            <Text style={styles.chipText}>+ tags</Text>
+            <Text style={styles.chipText}>{t('recipes.form.addTagsChip')}</Text>
           </Pressable>
         </View>
 
-        <Text style={styles.label}>Notities</Text>
+        <Text style={styles.label}>{t('recipes.form.field.notes')}</Text>
         <TextInput
           style={[styles.input, styles.multiline]}
           value={notes}
@@ -1151,7 +1158,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
           multiline
         />
 
-        <Text style={styles.label}>Bron-URL (optioneel)</Text>
+        <Text style={styles.label}>{t('recipes.form.field.sourceUrl')}</Text>
         <TextInput
           style={styles.input}
           value={sourceUrl}
@@ -1159,66 +1166,66 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
           placeholder="https://…"
         />
 
-        <Text style={styles.sectionTitle}>Ingrediënten</Text>
+        <Text style={styles.sectionTitle}>{t('recipes.form.field.ingredients')}</Text>
         {groups.map((g, gi) => (
           <View key={g.id} style={styles.card}>
-            <Text style={styles.label}>Groep (optioneel)</Text>
+            <Text style={styles.label}>{t('recipes.form.field.group')}</Text>
             <TextInput
               style={styles.input}
               value={g.title}
-              onChangeText={(t) => {
+              onChangeText={(txt) => {
                 setGroups((prev) => {
                   const next = [...prev];
-                  next[gi] = { ...next[gi], title: t };
+                  next[gi] = { ...next[gi], title: txt };
                   return next;
                 });
               }}
-              placeholder="Bijv. voor de saus"
+              placeholder={t('recipes.form.groupPlaceholder')}
             />
             {g.ingredients.map((ing, ii) => (
               <View key={ing.id} style={styles.ingRow}>
                 <TextInput
                   style={[styles.input, styles.ingName]}
                   value={ing.name}
-                  onChangeText={(t) => {
+                  onChangeText={(txt) => {
                     setGroups((prev) => {
                       const next = [...prev];
                       const ings = [...next[gi].ingredients];
-                      ings[ii] = { ...ings[ii], name: t };
+                      ings[ii] = { ...ings[ii], name: txt };
                       next[gi] = { ...next[gi], ingredients: ings };
                       return next;
                     });
                   }}
-                  placeholder="Naam"
+                  placeholder={t('recipes.form.ing.name')}
                 />
                 <TextInput
                   style={[styles.input, styles.ingAmt]}
                   value={ing.amount}
-                  onChangeText={(t) => {
+                  onChangeText={(txt) => {
                     setGroups((prev) => {
                       const next = [...prev];
                       const ings = [...next[gi].ingredients];
-                      ings[ii] = { ...ings[ii], amount: t };
+                      ings[ii] = { ...ings[ii], amount: txt };
                       next[gi] = { ...next[gi], ingredients: ings };
                       return next;
                     });
                   }}
-                  placeholder="Hvh"
+                  placeholder={t('recipes.form.ing.amount')}
                   keyboardType="decimal-pad"
                 />
                 <TextInput
                   style={[styles.input, styles.ingUnit]}
                   value={ing.unit}
-                  onChangeText={(t) => {
+                  onChangeText={(txt) => {
                     setGroups((prev) => {
                       const next = [...prev];
                       const ings = [...next[gi].ingredients];
-                      ings[ii] = { ...ings[ii], unit: t };
+                      ings[ii] = { ...ings[ii], unit: txt };
                       next[gi] = { ...next[gi], ingredients: ings };
                       return next;
                     });
                   }}
-                  placeholder="eenheid"
+                  placeholder={t('recipes.form.ing.unit')}
                 />
               </View>
             ))}
@@ -1239,7 +1246,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
                 });
               }}
             >
-              <Text style={styles.smallBtnText}>+ Ingrediënt</Text>
+              <Text style={styles.smallBtnText}>{t('recipes.form.addIngredient')}</Text>
             </Pressable>
           </View>
         ))}
@@ -1257,42 +1264,44 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
             ])
           }
         >
-          <Text style={[styles.secondaryBtnText, { color: theme.accent }]}>+ Ingrediëntgroep</Text>
+          <Text style={[styles.secondaryBtnText, { color: theme.accent }]}>
+            {t('recipes.form.addIngredientGroup')}
+          </Text>
         </Pressable>
 
-        <Text style={styles.sectionTitle}>Bereiding</Text>
+        <Text style={styles.sectionTitle}>{t('recipes.form.field.method')}</Text>
         {sections.map((s, si) => (
           <View key={s.id} style={styles.card}>
-            <Text style={styles.label}>Sectie (optioneel)</Text>
+            <Text style={styles.label}>{t('recipes.form.field.section')}</Text>
             <TextInput
               style={styles.input}
               value={s.title}
-              onChangeText={(t) => {
+              onChangeText={(txt) => {
                 setSections((prev) => {
                   const next = [...prev];
-                  next[si] = { ...next[si], title: t };
+                  next[si] = { ...next[si], title: txt };
                   return next;
                 });
               }}
-              placeholder="Bijv. het deeg"
+              placeholder={t('recipes.form.sectionPlaceholder')}
             />
             {s.steps.map((st, ti) => (
               <View key={st.id} style={styles.stepBlock}>
-                <Text style={styles.label}>Stap {ti + 1}</Text>
+                <Text style={styles.label}>{t('recipes.form.stepLabel', { number: ti + 1 })}</Text>
                 <View style={styles.stepDescRow}>
                   <TextInput
                     style={[styles.input, styles.multiline, styles.stepDescInput]}
                     value={st.description}
-                    onChangeText={(t) => {
+                    onChangeText={(txt) => {
                       setSections((prev) => {
                         const next = [...prev];
                         const steps = [...next[si].steps];
-                        steps[ti] = { ...steps[ti], description: t };
+                        steps[ti] = { ...steps[ti], description: txt };
                         next[si] = { ...next[si], steps };
                         return next;
                       });
                     }}
-                    placeholder="Wat doe je?"
+                    placeholder={t('recipes.form.stepPlaceholder')}
                     multiline
                   />
                   <Pressable
@@ -1313,7 +1322,9 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
                     }}
                     accessibilityRole="button"
                     accessibilityLabel={
-                      st.showTimerField ? 'Timer-veld verbergen' : 'Timer instellen'
+                      st.showTimerField
+                        ? t('recipes.form.a11y.hideTimer')
+                        : t('recipes.form.a11y.setTimer')
                     }
                     accessibilityState={{ expanded: st.showTimerField }}
                     hitSlop={8}
@@ -1323,21 +1334,21 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
                 </View>
                 {st.showTimerField ? (
                   <>
-                    <Text style={styles.label}>Timer (minuten, optioneel)</Text>
+                    <Text style={styles.label}>{t('recipes.form.field.timer')}</Text>
                     <TextInput
                       style={styles.input}
                       value={st.timerMin}
-                      onChangeText={(t) => {
+                      onChangeText={(txt) => {
                         setSections((prev) => {
                           const next = [...prev];
                           const steps = [...next[si].steps];
-                          steps[ti] = { ...steps[ti], timerMin: t };
+                          steps[ti] = { ...steps[ti], timerMin: txt };
                           next[si] = { ...next[si], steps };
                           return next;
                         });
                       }}
                       keyboardType="decimal-pad"
-                      placeholder="Geen"
+                      placeholder={t('recipes.form.noTimer')}
                     />
                   </>
                 ) : null}
@@ -1360,7 +1371,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
                 });
               }}
             >
-              <Text style={styles.smallBtnText}>+ Stap</Text>
+              <Text style={styles.smallBtnText}>{t('recipes.form.addStep')}</Text>
             </Pressable>
           </View>
         ))}
@@ -1378,7 +1389,9 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
             ])
           }
         >
-          <Text style={[styles.secondaryBtnText, { color: theme.accent }]}>+ Stap-sectie</Text>
+          <Text style={[styles.secondaryBtnText, { color: theme.accent }]}>
+            {t('recipes.form.addStepSection')}
+          </Text>
         </Pressable>
 
         <Pressable
@@ -1394,7 +1407,7 @@ export function RecipeForm({ recipeId, importSessionId, addToListId, addToListNa
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.saveBtnText}>
-              {recipeId ? 'Wijzigingen opslaan' : 'Recept opslaan'}
+              {recipeId ? t('recipes.form.saveChanges') : t('recipes.form.saveRecipe')}
             </Text>
           )}
         </Pressable>

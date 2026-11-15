@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppTheme } from './ThemeContext';
+import { useI18n } from './I18nContext';
 import { getAiPromptCatalog } from '../lib/aiPromptsCatalog';
 
 type Props = {
@@ -11,6 +12,7 @@ type Props = {
 
 export function AiPromptsCatalogModal({ visible, onClose }: Props) {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const catalog = useMemo(() => getAiPromptCatalog(), []);
   const [activeId, setActiveId] = useState(catalog[0]?.id ?? '');
 
@@ -28,14 +30,14 @@ export function AiPromptsCatalogModal({ visible, onClose }: Props) {
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.root}>
-        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Sluiten" />
+        <Pressable
+          style={styles.backdrop}
+          onPress={onClose}
+          accessibilityLabel={t('recipes.common.close')}
+        />
         <View style={[styles.card, { backgroundColor: theme.background }]}>
-          <Text style={styles.title}>AI-prompts in deze app</Text>
-          <Text style={styles.subtitle}>
-            Per functie zie je het systeembericht (of samengestelde prompt) zoals de app die nu
-            opbouwt. Onder elke tab staat welke context en welk deel van je kookprofiel (indien van
-            toepassing) worden meegestuurd.
-          </Text>
+          <Text style={styles.title}>{t('recipes.aiPrompts.title')}</Text>
+          <Text style={styles.subtitle}>{t('recipes.aiPrompts.subtitle')}</Text>
 
           <ScrollView
             horizontal
@@ -75,7 +77,7 @@ export function AiPromptsCatalogModal({ visible, onClose }: Props) {
             contentContainerStyle={styles.bodyContent}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.section}>Context en meegestuurde informatie</Text>
+            <Text style={styles.section}>{t('recipes.aiPrompts.contextSection')}</Text>
             {active.contextLines.map((line, i) => (
               <Text key={i} style={styles.bullet}>
                 {'\u2022 '}
@@ -85,7 +87,9 @@ export function AiPromptsCatalogModal({ visible, onClose }: Props) {
 
             {active.userRoleNl ? (
               <>
-                <Text style={[styles.section, styles.sectionSpaced]}>Gebruikersinvoer (user)</Text>
+                <Text style={[styles.section, styles.sectionSpaced]}>
+                  {t('recipes.aiPrompts.userRole')}
+                </Text>
                 <Text style={styles.p}>{active.userRoleNl}</Text>
               </>
             ) : null}
@@ -93,7 +97,7 @@ export function AiPromptsCatalogModal({ visible, onClose }: Props) {
             {active.userExample ? (
               <>
                 <Text style={[styles.section, styles.sectionSpaced]}>
-                  Voorbeeld of fragment user-bericht
+                  {t('recipes.aiPrompts.userExample')}
                 </Text>
                 <View style={styles.codeBox}>
                   <Text selectable style={styles.code}>
@@ -103,7 +107,9 @@ export function AiPromptsCatalogModal({ visible, onClose }: Props) {
               </>
             ) : null}
 
-            <Text style={[styles.section, styles.sectionSpaced]}>Systeembericht (system)</Text>
+            <Text style={[styles.section, styles.sectionSpaced]}>
+              {t('recipes.aiPrompts.systemPrompt')}
+            </Text>
             <View style={styles.codeBox}>
               <Text selectable style={styles.code}>
                 {active.systemPrompt}
@@ -112,7 +118,7 @@ export function AiPromptsCatalogModal({ visible, onClose }: Props) {
           </ScrollView>
 
           <Pressable style={[styles.closeBtn, { backgroundColor: theme.accent }]} onPress={onClose}>
-            <Text style={styles.closeBtnText}>Sluiten</Text>
+            <Text style={styles.closeBtnText}>{t('recipes.common.close')}</Text>
           </Pressable>
         </View>
       </View>

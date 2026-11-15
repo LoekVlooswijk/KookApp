@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
 import { useAnimatedValue } from '../../components/useAnimatedValue';
 import RecipeWebViewLoader from '../../components/RecipeWebViewLoader';
 import type { AiImageMediaType } from '../../lib/aiClient';
@@ -41,6 +42,7 @@ import {
 import type { RecipePhotoInput } from '../../lib/recipeImportFromRecipePhotos';
 import { extractRecipeFromRecipePhotos } from '../../lib/recipeImportFromRecipePhotos';
 import { createRecipe } from '../../lib/recipesRepo';
+import type { TranslationKey } from '../../lib/i18n';
 import type { RecipeSavePayload } from '../../lib/types';
 
 type UrlPhase = 'idle' | 'loading' | 'preview' | 'error';
@@ -67,7 +69,10 @@ function mimeToAiMediaType(mime: string | undefined): AiImageMediaType {
   return 'image/jpeg';
 }
 
-async function downscaleForVision(asset: ImagePicker.ImagePickerAsset): Promise<{
+async function downscaleForVision(
+  asset: ImagePicker.ImagePickerAsset,
+  t: (key: TranslationKey) => string
+): Promise<{
   base64: string;
   mediaType: AiImageMediaType;
 }> {
@@ -89,13 +94,14 @@ async function downscaleForVision(asset: ImagePicker.ImagePickerAsset): Promise<
   }
   const b64 = asset.base64;
   if (!b64) {
-    throw new Error('Kon de afbeelding niet lezen. Probeer een andere foto.');
+    throw new Error(t('recipes.import.imageReadFailed'));
   }
   return { base64: b64, mediaType: mimeToAiMediaType(asset.mimeType) };
 }
 
 export default function ImportRecipeScreen() {
   const theme = useAppTheme();
+  const { t } = useI18n();
   const router = useRouter();
   const params = useLocalSearchParams<{ saved?: string | string[] }>();
   const [tab, setTab] = useState<'url' | 'foto' | 'receptfotos'>('url');
@@ -164,22 +170,25 @@ export default function ImportRecipeScreen() {
     })();
   }, []);
 
-  const onTogglePhotoAhSearch = useCallback((v: boolean) => {
-    void (async () => {
-      try {
-        await setImportAhSiteSearchEnabled(v);
-        setPhotoAhSearch(v);
-      } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Opslaan mislukt.');
-      }
-    })();
-  }, []);
+  const onTogglePhotoAhSearch = useCallback(
+    (v: boolean) => {
+      void (async () => {
+        try {
+          await setImportAhSiteSearchEnabled(v);
+          setPhotoAhSearch(v);
+        } catch (e) {
+          Alert.alert(
+            t('recipes.common.error'),
+            e instanceof Error ? e.message : t('recipes.common.saveFailed')
+          );
+        }
+      })();
+    },
+    [t]
+  );
 
   usePreventRemove(importBusy, () => {
-    Alert.alert(
-      'Even wachten',
-      'De assistent is nog bezig met importeren. Wacht tot dit klaar is.'
-    );
+    Alert.alert(t('recipes.import.wait.title'), t('recipes.import.wait.body'));
   });
 
   const recipeJobsRunning =
@@ -187,24 +196,20 @@ export default function ImportRecipeScreen() {
     tab === 'receptfotos' &&
     recipeJobs.some((j) => j.status === 'ocr' || j.status === 'extract');
   usePreventRemove(recipeJobsRunning, ({ repeat }) => {
-    Alert.alert(
-      'Import stoppen?',
-      'Er worden nog recepten geanalyseerd. Als je dit scherm sluit, kunnen imports stoppen.',
-      [
-        { text: 'Blijven', style: 'cancel' },
-        {
-          text: 'Toch sluiten',
-          style: 'destructive',
-          onPress: () => repeat(),
-        },
-      ]
-    );
+    Alert.alert(t('recipes.import.stopImport.title'), t('recipes.import.stopImport.body'), [
+      { text: t('recipes.import.stopImport.stay'), style: 'cancel' },
+      {
+        text: t('recipes.import.stopImport.closeAnyway'),
+        style: 'destructive',
+        onPress: () => repeat(),
+      },
+    ]);
   });
 
   const runExtractUrl = useCallback(async () => {
     const okKey = await hasActiveAiKey();
     if (!okKey) {
-      setUrlMessage('Geen API-sleutel ingesteld. Voeg die toe bij Instellingen.');
+      setUrlMessage(t('recipes.import.noApiKey'));
       setUrlPhase('error');
       setRawDebug(null);
       return;
@@ -212,7 +217,7 @@ export default function ImportRecipeScreen() {
 
     const u = url.trim();
     if (!u) {
-      setUrlMessage('Plak een URL of tik een zoekterm.');
+      setUrlMessage(t('recipes.import.urlRequired'));
       setUrlPhase('error');
       setRawDebug(null);
       return;
@@ -233,9 +238,7 @@ export default function ImportRecipeScreen() {
       } else {
         const found = await resolveRecipeUrlFromSearchQuery(classified.query);
         if (!found) {
-          setUrlMessage(
-            'Geen recept-URL gevonden voor deze zoekterm. Probeer specifiezer te zijn (bijv. titel + site) of plak een directe link.'
-          );
+          setUrlMessage(t('recipes.import.noUrlFound'));
           setUrlPhase('error');
           return;
         }
@@ -255,11 +258,11 @@ export default function ImportRecipeScreen() {
       setUrlImportHtmlTruncated(result.sourceHtmlTruncated ?? false);
       setUrlPhase('preview');
     } catch (e) {
-      setUrlMessage(e instanceof Error ? e.message : 'Er ging iets mis.');
+      setUrlMessage(e instanceof Error ? e.message : t('recipes.import.somethingWrong'));
       setRawDebug(null);
       setUrlPhase('error');
     }
-  }, [url]);
+  }, [url, t]);
 
   const goToEditor = useCallback(() => {
     if (!payload) return;
@@ -297,7 +300,7 @@ export default function ImportRecipeScreen() {
     }
     const b64 = asset.base64;
     if (!b64) {
-      throw new Error('Kon de afbeelding niet lezen. Probeer een andere foto.');
+      throw new Error(t('recipes.import.imageReadFailed'));
     }
     return { base64: b64, mediaType: mimeToAiMediaType(asset.mimeType), uri: asset.uri };
   }
@@ -354,15 +357,28 @@ export default function ImportRecipeScreen() {
     }
   }, [pickDialogAnim, pickDialogOpen]);
 
-  const pickOneRecipePhoto = useCallback(async (source: 'camera' | 'library') => {
-    if (Platform.OS === 'web') {
-      throw new Error('Receptfoto’s werken het beste op iOS of Android.');
-    }
+  const pickOneRecipePhoto = useCallback(
+    async (source: 'camera' | 'library') => {
+      if (Platform.OS === 'web') {
+        throw new Error(t('recipes.import.recipePhotosPlatform'));
+      }
 
-    if (source === 'camera') {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) throw new Error('Toegang tot je camera is nodig om een foto te maken.');
-      const res = await ImagePicker.launchCameraAsync({
+      if (source === 'camera') {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) throw new Error(t('recipes.import.cameraPermission'));
+        const res = await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          quality: 0.9,
+          base64: true,
+          allowsEditing: true,
+        });
+        if (res.canceled || !res.assets?.[0]) return null;
+        return res.assets[0];
+      }
+
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) throw new Error(t('recipes.import.photoLibraryPermission'));
+      const res = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         quality: 0.9,
         base64: true,
@@ -370,41 +386,27 @@ export default function ImportRecipeScreen() {
       });
       if (res.canceled || !res.assets?.[0]) return null;
       return res.assets[0];
-    }
-
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted)
-      throw new Error('Toegang tot je fotobibliotheek is nodig om een foto te kiezen.');
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.9,
-      base64: true,
-      allowsEditing: true,
-    });
-    if (res.canceled || !res.assets?.[0]) return null;
-    return res.assets[0];
-  }, []);
+    },
+    [t]
+  );
 
   const ensureAiKeyOrAlert = useCallback(async (): Promise<boolean> => {
     const okKey = await hasActiveAiKey();
     if (!okKey) {
-      Alert.alert(
-        'AI niet ingesteld',
-        'Geen API-sleutel ingesteld. Voeg die toe bij Instellingen.'
-      );
+      Alert.alert(t('recipes.import.aiNotConfigured'), t('recipes.import.noApiKey'));
       return false;
     }
     return true;
-  }, []);
+  }, [t]);
 
   const ensureOnlineOrAlert = useCallback(async (): Promise<boolean> => {
     const online = await checkHasInternet();
     if (!online) {
-      Alert.alert('Offline', 'Geen internetverbinding. Foto-analyse met AI werkt alleen online.');
+      Alert.alert(t('recipes.import.offline.title'), t('recipes.import.offline.body'));
       return false;
     }
     return true;
-  }, []);
+  }, [t]);
 
   const setSlotPhoto = useCallback(
     async (slot: 1 | 2, source: 'camera' | 'library') => {
@@ -422,10 +424,13 @@ export default function ImportRecipeScreen() {
         if (slot === 1) setRecipePhoto1(photo);
         else setRecipePhoto2(photo);
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Kon geen foto toevoegen.');
+        Alert.alert(
+          t('recipes.common.error'),
+          e instanceof Error ? e.message : t('recipes.import.addPhotoFailed')
+        );
       }
     },
-    [ensureAiKeyOrAlert, pickOneRecipePhoto]
+    [ensureAiKeyOrAlert, pickOneRecipePhoto, t]
   );
 
   const addExtraRecipePhoto = useCallback(
@@ -443,10 +448,13 @@ export default function ImportRecipeScreen() {
         };
         setRecipeExtraPhotos((prev) => [...prev, photo]);
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Kon geen foto toevoegen.');
+        Alert.alert(
+          t('recipes.common.error'),
+          e instanceof Error ? e.message : t('recipes.import.addPhotoFailed')
+        );
       }
     },
-    [ensureAiKeyOrAlert, pickOneRecipePhoto]
+    [ensureAiKeyOrAlert, pickOneRecipePhoto, t]
   );
 
   const enqueueRecipePhotoJob = useCallback(async () => {
@@ -463,14 +471,21 @@ export default function ImportRecipeScreen() {
     for (const p of recipeExtraPhotos) photos.push({ base64: p.base64, mediaType: p.mediaType });
 
     if (photos.length === 0) {
-      Alert.alert('Geen foto’s', 'Voeg eerst één of meer foto’s toe.');
+      Alert.alert(t('recipes.import.noPhotos.title'), t('recipes.import.noPhotos.body'));
       return;
     }
 
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     const hintText = recipeHint.trim();
     setRecipeJobs((prev) => [
-      { id, createdAt: Date.now(), hintText, photos, status: 'queued', statusText: 'Wacht…' },
+      {
+        id,
+        createdAt: Date.now(),
+        hintText,
+        photos,
+        status: 'queued',
+        statusText: t('recipes.import.job.queued'),
+      },
       ...prev,
     ]);
     clearRecipePhotoDraft();
@@ -482,104 +497,117 @@ export default function ImportRecipeScreen() {
     recipeHint,
     recipePhoto1,
     recipePhoto2,
+    t,
   ]);
 
-  const runRecipePhotoJob = useCallback(async (job: RecipePhotoJob) => {
-    recipeJobRunningRef.current += 1;
-    try {
-      const online = await checkHasInternet();
-      if (!online) {
+  const runRecipePhotoJob = useCallback(
+    async (job: RecipePhotoJob) => {
+      recipeJobRunningRef.current += 1;
+      try {
+        const online = await checkHasInternet();
+        if (!online) {
+          setRecipeJobs((prev) =>
+            prev.map((j) =>
+              j.id === job.id
+                ? {
+                    ...j,
+                    status: 'error',
+                    statusText: t('recipes.import.offline.title'),
+                    message: t('recipes.import.offline.body'),
+                  }
+                : j
+            )
+          );
+          return;
+        }
+        setRecipeJobs((prev) =>
+          prev.map((j) =>
+            j.id === job.id
+              ? { ...j, status: 'ocr', statusText: t('recipes.import.job.readingText') }
+              : j
+          )
+        );
+        const res = await extractRecipeFromRecipePhotos({
+          photos: job.photos,
+          hintText: job.hintText,
+          onProgress: (p) => {
+            if (p.phase === 'ocr') {
+              setRecipeJobs((prev) =>
+                prev.map((j) =>
+                  j.id === job.id
+                    ? {
+                        ...j,
+                        status: 'ocr',
+                        statusText: t('recipes.import.job.readingTextProgress', {
+                          current: p.photoIndex + 1,
+                          total: p.totalPhotos,
+                        }),
+                      }
+                    : j
+                )
+              );
+            } else {
+              setRecipeJobs((prev) =>
+                prev.map((j) =>
+                  j.id === job.id
+                    ? { ...j, status: 'extract', statusText: t('recipes.import.job.building') }
+                    : j
+                )
+              );
+            }
+          },
+        });
+        if (!res.ok) {
+          setRecipeJobs((prev) =>
+            prev.map((j) =>
+              j.id === job.id
+                ? {
+                    ...j,
+                    status: 'error',
+                    statusText: t('recipes.import.failed'),
+                    message: res.message,
+                    rawDebug: res.rawModelText,
+                  }
+                : j
+            )
+          );
+          return;
+        }
+        setRecipeJobs((prev) =>
+          prev.map((j) =>
+            j.id === job.id
+              ? {
+                  ...j,
+                  status: 'ready',
+                  statusText: t('recipes.common.done'),
+                  payload: res.payload,
+                  message: undefined,
+                  rawDebug: undefined,
+                }
+              : j
+          )
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : t('recipes.import.job.analysisFailed');
         setRecipeJobs((prev) =>
           prev.map((j) =>
             j.id === job.id
               ? {
                   ...j,
                   status: 'error',
-                  statusText: 'Offline',
-                  message: 'Geen internetverbinding. Foto-analyse met AI werkt alleen online.',
+                  statusText: t('recipes.import.failed'),
+                  message: msg,
                 }
               : j
           )
         );
-        return;
+      } finally {
+        recipeJobRunningRef.current = Math.max(0, recipeJobRunningRef.current - 1);
+        setRecipeJobs((prev) => prev.map((j) => j));
       }
-      setRecipeJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, status: 'ocr', statusText: 'Tekst lezen…' } : j))
-      );
-      const res = await extractRecipeFromRecipePhotos({
-        photos: job.photos,
-        hintText: job.hintText,
-        onProgress: (p) => {
-          if (p.phase === 'ocr') {
-            setRecipeJobs((prev) =>
-              prev.map((j) =>
-                j.id === job.id
-                  ? {
-                      ...j,
-                      status: 'ocr',
-                      statusText: `Tekst lezen (${p.photoIndex + 1}/${p.totalPhotos})…`,
-                    }
-                  : j
-              )
-            );
-          } else {
-            setRecipeJobs((prev) =>
-              prev.map((j) =>
-                j.id === job.id ? { ...j, status: 'extract', statusText: 'Recept opbouwen…' } : j
-              )
-            );
-          }
-        },
-      });
-      if (!res.ok) {
-        setRecipeJobs((prev) =>
-          prev.map((j) =>
-            j.id === job.id
-              ? {
-                  ...j,
-                  status: 'error',
-                  statusText: 'Mislukt',
-                  message: res.message,
-                  rawDebug: res.rawModelText,
-                }
-              : j
-          )
-        );
-        return;
-      }
-      setRecipeJobs((prev) =>
-        prev.map((j) =>
-          j.id === job.id
-            ? {
-                ...j,
-                status: 'ready',
-                statusText: 'Klaar',
-                payload: res.payload,
-                message: undefined,
-                rawDebug: undefined,
-              }
-            : j
-        )
-      );
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Er ging iets mis bij de analyse.';
-      setRecipeJobs((prev) =>
-        prev.map((j) =>
-          j.id === job.id
-            ? {
-                ...j,
-                status: 'error',
-                statusText: 'Mislukt',
-                message: msg,
-              }
-            : j
-        )
-      );
-    } finally {
-      recipeJobRunningRef.current = Math.max(0, recipeJobRunningRef.current - 1);
-      setRecipeJobs((prev) => prev.map((j) => j));
-    }
-  }, []);
+    },
+    [t]
+  );
 
   useEffect(() => {
     if (recipeJobRunningRef.current >= recipeJobConcurrency) return;
@@ -604,29 +632,39 @@ export default function ImportRecipeScreen() {
         await createRecipe(job.payload);
         setRecipeJobs((prev) =>
           prev.map((j) =>
-            j.id === jobId ? { ...j, status: 'saved', statusText: 'Opgeslagen' } : j
+            j.id === jobId
+              ? { ...j, status: 'saved', statusText: t('recipes.import.job.saved') }
+              : j
           )
         );
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Opslaan mislukt.');
+        Alert.alert(
+          t('recipes.common.error'),
+          e instanceof Error ? e.message : t('recipes.common.saveFailed')
+        );
       }
     },
-    [recipeJobs]
+    [recipeJobs, t]
   );
 
   const saveAllReadyRecipeJobs = useCallback(async () => {
     const ids = recipeJobs.filter((j) => j.status === 'ready' && j.payload).map((j) => j.id);
     if (ids.length === 0) {
-      Alert.alert('Niets om op te slaan', 'Er zijn nog geen gelukte analyses.');
+      Alert.alert(
+        t('recipes.import.nothingToSaveTitle'),
+        t('recipes.import.nothingToSaveNoAnalyses')
+      );
       return;
     }
     Alert.alert(
-      'Alles opslaan',
-      `${ids.length} recept${ids.length === 1 ? '' : 'en'} opslaan in je kookboek?`,
+      t('recipes.import.saveAll.title'),
+      ids.length === 1
+        ? t('recipes.import.saveAll.confirmSingle', { count: ids.length })
+        : t('recipes.import.saveAll.confirmPlural', { count: ids.length }),
       [
-        { text: 'Annuleren', style: 'cancel' },
+        { text: t('recipes.common.cancel'), style: 'cancel' },
         {
-          text: 'Opslaan',
+          text: t('recipes.common.save'),
           onPress: () => {
             void (async () => {
               try {
@@ -634,33 +672,33 @@ export default function ImportRecipeScreen() {
                   await saveRecipeJob(id);
                 }
               } catch (e) {
-                Alert.alert('Fout', e instanceof Error ? e.message : 'Opslaan mislukt.');
+                Alert.alert(
+                  t('recipes.common.error'),
+                  e instanceof Error ? e.message : t('recipes.common.saveFailed')
+                );
               }
             })();
           },
         },
       ]
     );
-  }, [recipeJobs, saveRecipeJob]);
+  }, [recipeJobs, saveRecipeJob, t]);
 
   const pickPhotoAndImport = useCallback(async () => {
     if (Platform.OS === 'web') {
-      Alert.alert(
-        'Foto op web',
-        'Importeren via foto werkt het beste op iOS of Android. Op web kun je een URL plakken.'
-      );
+      Alert.alert(t('recipes.import.photoOnWeb.title'), t('recipes.import.photoOnWeb.body'));
       return;
     }
 
     const okKey = await hasActiveAiKey();
     if (!okKey) {
-      setPhotoError('Geen API-sleutel ingesteld. Voeg die toe bij Instellingen.');
+      setPhotoError(t('recipes.import.noApiKey'));
       return;
     }
 
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      setPhotoError('Toegang tot je fotobibliotheek is nodig om een screenshot te kiezen.');
+      setPhotoError(t('recipes.import.screenshotLibraryPermission'));
       return;
     }
 
@@ -681,7 +719,7 @@ export default function ImportRecipeScreen() {
     setPhotoRows([]);
 
     try {
-      const { base64, mediaType } = await downscaleForVision(asset);
+      const { base64, mediaType } = await downscaleForVision(asset, t);
       const discovered = await discoverRecipesFromPhoto(base64, mediaType);
       if (!discovered.ok) {
         setPhotoError(discovered.message);
@@ -695,9 +733,7 @@ export default function ImportRecipeScreen() {
         url: r.url,
         toelichting: r.toelichting,
         status: r.url ? 'pending' : 'error',
-        message: r.url
-          ? undefined
-          : 'Geen recept-URL gevonden (ook niet via zoeken). Voeg de link handmatig toe via de URL-tab of kies een scherpere foto.',
+        message: r.url ? undefined : t('recipes.import.noRecipeUrl'),
       }));
 
       setPhotoRows(rows);
@@ -729,7 +765,7 @@ export default function ImportRecipeScreen() {
                   : {
                       ...p,
                       status: 'error' as const,
-                      message: result.ok ? 'Importeren mislukt.' : result.message,
+                      message: result.ok ? t('recipes.import.importFailed') : result.message,
                     }
                 : p
             )
@@ -741,28 +777,33 @@ export default function ImportRecipeScreen() {
         Array.from({ length: Math.min(concurrency, indices.length) }, () => worker())
       );
     } catch (e) {
-      setPhotoError(e instanceof Error ? e.message : 'Er ging iets mis.');
+      setPhotoError(e instanceof Error ? e.message : t('recipes.import.somethingWrong'));
     } finally {
       setPhotoBusy(false);
     }
-  }, []);
+  }, [t]);
 
   const saveAllOk = useCallback(async () => {
     const okPayloads = photoRows
       .filter((r) => r.status === 'ok' && r.payload)
       .map((r) => r.payload!);
     if (okPayloads.length === 0) {
-      Alert.alert('Niets om op te slaan', 'Er zijn nog geen gelukte imports.');
+      Alert.alert(
+        t('recipes.import.nothingToSaveTitle'),
+        t('recipes.import.nothingToSaveNoImports')
+      );
       return;
     }
 
     Alert.alert(
-      'Recepten opslaan',
-      `${okPayloads.length} recept${okPayloads.length === 1 ? '' : 'en'} in je kookboek zetten?`,
+      t('recipes.import.saveRecipes.title'),
+      okPayloads.length === 1
+        ? t('recipes.import.saveRecipes.confirmSingle', { count: okPayloads.length })
+        : t('recipes.import.saveRecipes.confirmPlural', { count: okPayloads.length }),
       [
-        { text: 'Annuleren', style: 'cancel' },
+        { text: t('recipes.common.cancel'), style: 'cancel' },
         {
-          text: 'Opslaan',
+          text: t('recipes.common.save'),
           onPress: () => {
             void (async () => {
               try {
@@ -772,17 +813,25 @@ export default function ImportRecipeScreen() {
                   n++;
                 }
                 setPhotoRows([]);
-                Alert.alert('Klaar', `${n} recept${n === 1 ? '' : 'en'} opgeslagen.`);
+                Alert.alert(
+                  t('recipes.common.done'),
+                  n === 1
+                    ? t('recipes.import.saveRecipes.doneSingle', { count: n })
+                    : t('recipes.import.saveRecipes.donePlural', { count: n })
+                );
                 router.replace('/(tabs)/recipes');
               } catch (e) {
-                Alert.alert('Fout', e instanceof Error ? e.message : 'Opslaan mislukt.');
+                Alert.alert(
+                  t('recipes.common.error'),
+                  e instanceof Error ? e.message : t('recipes.common.saveFailed')
+                );
               }
             })();
           },
         },
       ]
     );
-  }, [photoRows, router]);
+  }, [photoRows, router, t]);
 
   const ingCount = payload?.ingredientGroups.reduce((n, g) => n + g.ingredients.length, 0) ?? 0;
   const stepCount = payload?.stepSections.reduce((n, s) => n + s.steps.length, 0) ?? 0;
@@ -825,8 +874,8 @@ export default function ImportRecipeScreen() {
               },
             ]}
           >
-            <Text style={styles.pickTitle}>{pickDialogTitle || 'Foto toevoegen'}</Text>
-            <Text style={styles.pickSubtitle}>Kies hoe je een foto wilt toevoegen.</Text>
+            <Text style={styles.pickTitle}>{pickDialogTitle || t('recipes.import.addPhoto')}</Text>
+            <Text style={styles.pickSubtitle}>{t('recipes.import.pickDialog.subtitle')}</Text>
 
             <Pressable
               style={[
@@ -836,7 +885,7 @@ export default function ImportRecipeScreen() {
               onPress={() => confirmPickDialog('camera')}
             >
               <Text style={[styles.pickActionText, { color: theme.accentSoftText }]}>
-                Foto maken
+                {t('recipes.import.pickDialog.takePhoto')}
               </Text>
             </Pressable>
             <Pressable
@@ -847,12 +896,14 @@ export default function ImportRecipeScreen() {
               onPress={() => confirmPickDialog('library')}
             >
               <Text style={[styles.pickActionText, { color: '#1a1a1a' }]}>
-                Kies uit bibliotheek
+                {t('recipes.import.pickDialog.fromLibrary')}
               </Text>
             </Pressable>
 
             <Pressable style={styles.pickCancelBtn} onPress={closePickDialog}>
-              <Text style={[styles.pickCancelText, { color: theme.accent }]}>Annuleren</Text>
+              <Text style={[styles.pickCancelText, { color: theme.accent }]}>
+                {t('recipes.common.cancel')}
+              </Text>
             </Pressable>
           </Animated.View>
         </View>
@@ -864,48 +915,42 @@ export default function ImportRecipeScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="always"
       >
-        <Text style={styles.lead}>
-          Importeer een recept via een link of zoekterm op de URL-tab, of upload een screenshot. Bij
-          foto’s leest de assistent de afbeelding; zichtbare links helpen het meest. Ontbreken er
-          links of gebruik je een zoekterm, dan volgt web search op titel/zoekterm (met het gekozen
-          model in Instellingen). In Instellingen kun je web search ook al bij de eerste resolve
-          aanzetten. Daarna worden de pagina’s opgehaald.
-        </Text>
+        <Text style={styles.lead}>{t('recipes.import.lead')}</Text>
 
         <View style={styles.tabRow}>
           <Pressable
             style={[styles.tabChip, tab === 'url' && chipOnStyle]}
             onPress={() => setTab('url')}
           >
-            <Text style={[styles.tabChipText, tab === 'url' && chipTextOnStyle]}>URL</Text>
+            <Text style={[styles.tabChipText, tab === 'url' && chipTextOnStyle]}>
+              {t('recipes.import.tab.url')}
+            </Text>
           </Pressable>
           <Pressable
             style={[styles.tabChip, tab === 'foto' && chipOnStyle]}
             onPress={() => setTab('foto')}
           >
-            <Text style={[styles.tabChipText, tab === 'foto' && chipTextOnStyle]}>Foto</Text>
+            <Text style={[styles.tabChipText, tab === 'foto' && chipTextOnStyle]}>
+              {t('recipes.import.tab.photo')}
+            </Text>
           </Pressable>
           <Pressable
             style={[styles.tabChip, tab === 'receptfotos' && chipOnStyle]}
             onPress={() => setTab('receptfotos')}
           >
             <Text style={[styles.tabChipText, tab === 'receptfotos' && chipTextOnStyle]}>
-              Receptfoto’s
+              {t('recipes.import.tab.recipePhotos')}
             </Text>
           </Pressable>
         </View>
 
         {tab === 'url' ? (
           <>
-            <Text style={styles.label}>URL of zoekterm</Text>
-            <Text style={styles.hintBlock}>
-              Plak een receptlink (https://… of www.…), of typ een zoekterm — dan zoekt de assistent
-              op het web naar een passende receptpagina (zelfde stappen als bij foto-import,
-              inclusief web search).
-            </Text>
+            <Text style={styles.label}>{t('recipes.import.url.label')}</Text>
+            <Text style={styles.hintBlock}>{t('recipes.import.url.hint')}</Text>
             <TextInput
               style={styles.input}
-              placeholder="https://… of bijv. pasta rode pesto ah"
+              placeholder={t('recipes.import.url.placeholder')}
               placeholderTextColor="#999"
               value={url}
               onChangeText={setUrl}
@@ -926,16 +971,18 @@ export default function ImportRecipeScreen() {
               {urlPhase === 'loading' ? (
                 <View style={styles.row}>
                   <ActivityIndicator color="#fff" />
-                  <Text style={[styles.primaryBtnText, { marginLeft: 10 }]}>Bezig…</Text>
+                  <Text style={[styles.primaryBtnText, { marginLeft: 10 }]}>
+                    {t('recipes.import.busy')}
+                  </Text>
                 </View>
               ) : (
-                <Text style={styles.primaryBtnText}>Zoek of haal op en importeer</Text>
+                <Text style={styles.primaryBtnText}>{t('recipes.import.url.action')}</Text>
               )}
             </Pressable>
 
             {urlPhase === 'preview' && payload ? (
               <View style={styles.card}>
-                <Text style={styles.previewTitle}>Voorbeeld</Text>
+                <Text style={styles.previewTitle}>{t('recipes.import.preview.title')}</Text>
                 <Text style={styles.previewHead}>{payload.title}</Text>
                 {payload.description ? (
                   <Text style={styles.previewDesc} numberOfLines={4}>
@@ -943,17 +990,18 @@ export default function ImportRecipeScreen() {
                   </Text>
                 ) : null}
                 <Text style={styles.previewMeta}>
-                  {ingCount} ingrediënt(en) · {stepCount} stap(pen)
-                  {payload.baseServings ? ` · ${payload.baseServings} porties` : ''}
+                  {t('recipes.import.preview.meta', { ingredients: ingCount, steps: stepCount })}
+                  {payload.baseServings
+                    ? ` · ${t('recipes.import.preview.portions', { count: payload.baseServings })}`
+                    : ''}
                 </Text>
                 {urlImportHtmlTruncated ? (
-                  <Text style={styles.hintBlock}>
-                    De bronpagina was lang; voor import is de HTML ingekort (minder tokens, meer
-                    privacy). Controleer de tekst bij Controleren.
-                  </Text>
+                  <Text style={styles.hintBlock}>{t('recipes.import.preview.truncatedHint')}</Text>
                 ) : null}
                 {payload.tagNames.length > 0 ? (
-                  <Text style={styles.tags}>Tags: {payload.tagNames.join(', ')}</Text>
+                  <Text style={styles.tags}>
+                    {t('recipes.import.preview.tags', { tags: payload.tagNames.join(', ') })}
+                  </Text>
                 ) : null}
                 <Pressable
                   style={[
@@ -963,7 +1011,7 @@ export default function ImportRecipeScreen() {
                   onPress={goToEditor}
                 >
                   <Text style={[styles.secondaryBtnText, { color: theme.accentSoftText }]}>
-                    Controleren
+                    {t('recipes.import.check')}
                   </Text>
                 </Pressable>
                 <Pressable
@@ -976,14 +1024,14 @@ export default function ImportRecipeScreen() {
                     setUrlImportHtmlTruncated(false);
                   }}
                 >
-                  <Text style={styles.ghostBtnText}>Opnieuw</Text>
+                  <Text style={styles.ghostBtnText}>{t('recipes.import.retry')}</Text>
                 </Pressable>
               </View>
             ) : null}
 
             {urlPhase === 'error' && urlMessage ? (
               <View style={styles.errorBox}>
-                <Text style={styles.errorTitle}>Mislukt</Text>
+                <Text style={styles.errorTitle}>{t('recipes.import.failed')}</Text>
                 <Text style={styles.errorBody}>{urlMessage}</Text>
                 {url.trim() ? (
                   <Pressable
@@ -998,7 +1046,7 @@ export default function ImportRecipeScreen() {
                     onPress={() =>
                       goToEditorFromPayload(
                         buildManualFallbackImportPayload(
-                          'Nieuw recept',
+                          t('recipes.import.manualFallbackTitle'),
                           lastUrlImportFetchRef.current ??
                             (url.trim().toLowerCase().startsWith('http') ? url.trim() : ''),
                           urlMessage
@@ -1007,13 +1055,13 @@ export default function ImportRecipeScreen() {
                     }
                   >
                     <Text style={[styles.secondaryBtnText, { color: theme.accentSoftText }]}>
-                      Handmatig invullen in formulier
+                      {t('recipes.import.fillManually')}
                     </Text>
                   </Pressable>
                 ) : null}
                 {__DEV__ && rawDebug ? (
                   <>
-                    <Text style={styles.rawLabel}>Ruwe AI-output (alleen in ontwikkelmodus)</Text>
+                    <Text style={styles.rawLabel}>{t('recipes.import.rawOutputLabel')}</Text>
                     <Text selectable style={styles.raw}>
                       {rawDebug}
                     </Text>
@@ -1024,21 +1072,13 @@ export default function ImportRecipeScreen() {
           </>
         ) : tab === 'foto' ? (
           <>
-            <Text style={styles.label}>Screenshot of foto</Text>
-            <Text style={styles.hintBlock}>
-              Kies een afbeelding met één of meerdere recepten. Zichtbare URL’s in de screenshot
-              (adresbalk of link) geven het beste resultaat. Als de receptpagina een eigen foto
-              heeft, wordt die als omslag gebruikt.
-            </Text>
+            <Text style={styles.label}>{t('recipes.import.photo.label')}</Text>
+            <Text style={styles.hintBlock}>{t('recipes.import.photo.hint')}</Text>
 
             <View style={styles.switchRow}>
               <View style={styles.switchTextCol}>
-                <Text style={styles.switchLabel}>AH/Allerhande site-zoekfunctie gebruiken</Text>
-                <Text style={styles.hintBlock}>
-                  Als je screenshot geen URL’s bevat, probeert de app eerst via ah.nl
-                  recepten-zoeken een match te vinden op basis van titel. Dit voorkomt dure AI
-                  web_search calls.
-                </Text>
+                <Text style={styles.switchLabel}>{t('recipes.import.photo.ahSearchLabel')}</Text>
+                <Text style={styles.hintBlock}>{t('recipes.import.photo.ahSearchHint')}</Text>
               </View>
               <Switch
                 value={photoAhSearch && Platform.OS !== 'web'}
@@ -1063,23 +1103,25 @@ export default function ImportRecipeScreen() {
               {photoBusy ? (
                 <View style={styles.row}>
                   <ActivityIndicator color="#fff" />
-                  <Text style={[styles.primaryBtnText, { marginLeft: 10 }]}>Bezig…</Text>
+                  <Text style={[styles.primaryBtnText, { marginLeft: 10 }]}>
+                    {t('recipes.import.busy')}
+                  </Text>
                 </View>
               ) : (
-                <Text style={styles.primaryBtnText}>Kies foto uit galerij</Text>
+                <Text style={styles.primaryBtnText}>{t('recipes.import.photo.pickAction')}</Text>
               )}
             </Pressable>
 
             {photoError ? (
               <View style={styles.errorBox}>
-                <Text style={styles.errorTitle}>Mislukt</Text>
+                <Text style={styles.errorTitle}>{t('recipes.import.failed')}</Text>
                 <Text style={styles.errorBody}>{photoError}</Text>
               </View>
             ) : null}
 
             {photoRows.length > 0 ? (
               <View style={styles.card}>
-                <Text style={styles.previewTitle}>Resultaat</Text>
+                <Text style={styles.previewTitle}>{t('recipes.import.photo.results')}</Text>
                 {photoRows.map((row, idx) => (
                   <View key={`${row.titel}-${idx}`} style={styles.photoRow}>
                     <Text style={styles.photoRowTitle} numberOfLines={2}>
@@ -1091,17 +1133,17 @@ export default function ImportRecipeScreen() {
                       </Text>
                     ) : null}
                     <Text style={styles.photoRowStatus}>
-                      {row.status === 'pending' && 'Wacht…'}
-                      {row.status === 'loading' && 'Pagina ophalen…'}
-                      {row.status === 'ok' && 'Gelukt'}
-                      {row.status === 'error' && (row.message ?? 'Mislukt')}
+                      {row.status === 'pending' && t('recipes.import.job.queued')}
+                      {row.status === 'loading' && t('recipes.import.photo.fetchingPage')}
+                      {row.status === 'ok' && t('recipes.import.photo.success')}
+                      {row.status === 'error' && (row.message ?? t('recipes.import.failed'))}
                     </Text>
                     {row.status === 'ok' && row.payload ? (
                       <Pressable
                         style={styles.smallLinkBtn}
                         onPress={() => goToEditorFromPayload(row.payload!)}
                       >
-                        <Text style={styles.smallLinkBtnText}>Controleren</Text>
+                        <Text style={styles.smallLinkBtnText}>{t('recipes.import.check')}</Text>
                       </Pressable>
                     ) : null}
                     {row.status === 'error' && row.url ? (
@@ -1115,7 +1157,9 @@ export default function ImportRecipeScreen() {
                           );
                         }}
                       >
-                        <Text style={styles.smallLinkBtnText}>Handmatig invullen in formulier</Text>
+                        <Text style={styles.smallLinkBtnText}>
+                          {t('recipes.import.fillManually')}
+                        </Text>
                       </Pressable>
                     ) : null}
                   </View>
@@ -1130,7 +1174,9 @@ export default function ImportRecipeScreen() {
                     onPress={() => void saveAllOk()}
                   >
                     <Text style={[styles.secondaryBtnText, { color: theme.accentSoftText }]}>
-                      Alles opslaan ({okPhotoCount} recept{okPhotoCount === 1 ? '' : 'en'})
+                      {okPhotoCount === 1
+                        ? t('recipes.import.saveAllBtnSingle', { count: okPhotoCount })
+                        : t('recipes.import.saveAllBtnPlural', { count: okPhotoCount })}
                     </Text>
                   </Pressable>
                 ) : null}
@@ -1142,39 +1188,45 @@ export default function ImportRecipeScreen() {
                     setPhotoError(null);
                   }}
                 >
-                  <Text style={styles.ghostBtnText}>Wissen</Text>
+                  <Text style={styles.ghostBtnText}>{t('recipes.import.clear')}</Text>
                 </Pressable>
               </View>
             ) : null}
           </>
         ) : (
           <>
-            <Text style={styles.label}>Receptfoto’s (boek/print/handgeschreven)</Text>
-            <Text style={styles.hintBlock}>
-              Maak of kies foto’s van het recept. Tik op een vak om te croppen. Daarna kun je “Foto
-              analyseren” gebruiken: de assistent leest de tekst en zet het om naar een recept dat
-              je kunt controleren en opslaan.
-            </Text>
+            <Text style={styles.label}>{t('recipes.import.recipePhotos.label')}</Text>
+            <Text style={styles.hintBlock}>{t('recipes.import.recipePhotos.hint')}</Text>
 
             <View style={styles.photoSlotsRow}>
               <Pressable
                 style={styles.photoSlot}
-                onPress={() => openPickDialog('Foto 1', (src) => void setSlotPhoto(1, src))}
+                onPress={() =>
+                  openPickDialog(
+                    t('recipes.import.slot.photo1'),
+                    (src) => void setSlotPhoto(1, src)
+                  )
+                }
               >
                 {recipePhoto1 ? (
                   <Image source={{ uri: recipePhoto1.uri }} style={styles.photoSlotImg} />
                 ) : (
-                  <Text style={styles.photoSlotText}>Foto 1</Text>
+                  <Text style={styles.photoSlotText}>{t('recipes.import.slot.photo1')}</Text>
                 )}
               </Pressable>
               <Pressable
                 style={styles.photoSlot}
-                onPress={() => openPickDialog('Foto 2', (src) => void setSlotPhoto(2, src))}
+                onPress={() =>
+                  openPickDialog(
+                    t('recipes.import.slot.photo2'),
+                    (src) => void setSlotPhoto(2, src)
+                  )
+                }
               >
                 {recipePhoto2 ? (
                   <Image source={{ uri: recipePhoto2.uri }} style={styles.photoSlotImg} />
                 ) : (
-                  <Text style={styles.photoSlotText}>Foto 2</Text>
+                  <Text style={styles.photoSlotText}>{t('recipes.import.slot.photo2')}</Text>
                 )}
               </Pressable>
               <Pressable
@@ -1183,11 +1235,14 @@ export default function ImportRecipeScreen() {
                   { backgroundColor: theme.accentSoft, borderColor: theme.accent },
                 ]}
                 onPress={() =>
-                  openPickDialog('Foto toevoegen', (src) => void addExtraRecipePhoto(src))
+                  openPickDialog(
+                    t('recipes.import.addPhoto'),
+                    (src) => void addExtraRecipePhoto(src)
+                  )
                 }
               >
                 <Text style={[styles.addPhotoBtnText, { color: theme.accentSoftText }]}>
-                  Foto toevoegen
+                  {t('recipes.import.addPhoto')}
                 </Text>
               </Pressable>
             </View>
@@ -1198,7 +1253,10 @@ export default function ImportRecipeScreen() {
                   <View style={styles.thumbWrap}>
                     <Pressable
                       onPress={() =>
-                        openPickDialog('Foto 1 wijzigen', (src) => void setSlotPhoto(1, src))
+                        openPickDialog(
+                          t('recipes.import.editPhoto1'),
+                          (src) => void setSlotPhoto(1, src)
+                        )
                       }
                       style={styles.thumbPress}
                     >
@@ -1213,7 +1271,10 @@ export default function ImportRecipeScreen() {
                   <View style={styles.thumbWrap}>
                     <Pressable
                       onPress={() =>
-                        openPickDialog('Foto 2 wijzigen', (src) => void setSlotPhoto(2, src))
+                        openPickDialog(
+                          t('recipes.import.editPhoto2'),
+                          (src) => void setSlotPhoto(2, src)
+                        )
                       }
                       style={styles.thumbPress}
                     >
@@ -1240,10 +1301,10 @@ export default function ImportRecipeScreen() {
               </View>
             ) : null}
 
-            <Text style={styles.label}>Extra hint (optioneel)</Text>
+            <Text style={styles.label}>{t('recipes.import.recipePhotos.hintLabel')}</Text>
             <TextInput
               style={styles.input}
-              placeholder="Bijv. ‘Ottolenghi’, ‘Italiaans’, ‘taart’, ‘2 personen’…"
+              placeholder={t('recipes.import.recipePhotos.hintPlaceholder')}
               placeholderTextColor="#999"
               value={recipeHint}
               onChangeText={setRecipeHint}
@@ -1253,25 +1314,27 @@ export default function ImportRecipeScreen() {
               style={[styles.primaryBtn, { backgroundColor: theme.accent }]}
               onPress={() => void enqueueRecipePhotoJob()}
             >
-              <Text style={styles.primaryBtnText}>Foto analyseren</Text>
+              <Text style={styles.primaryBtnText}>{t('recipes.import.recipePhotos.analyze')}</Text>
             </Pressable>
 
             {recipeJobs.length > 0 ? (
               <View style={styles.card}>
-                <Text style={styles.previewTitle}>Queue</Text>
+                <Text style={styles.previewTitle}>{t('recipes.import.queue')}</Text>
 
                 {recipeJobs.map((j) => (
                   <View key={j.id} style={styles.jobRow}>
                     <Text style={styles.photoRowTitle} numberOfLines={2}>
-                      {j.payload?.title?.trim() ? j.payload.title : 'Receptfoto’s'}
+                      {j.payload?.title?.trim()
+                        ? j.payload.title
+                        : t('recipes.import.tab.recipePhotos')}
                     </Text>
                     <Text style={styles.photoRowStatus}>
-                      {j.status === 'queued' && (j.statusText ?? 'Wacht…')}
-                      {j.status === 'ocr' && (j.statusText ?? 'Tekst lezen…')}
-                      {j.status === 'extract' && (j.statusText ?? 'Recept opbouwen…')}
-                      {j.status === 'ready' && 'Klaar'}
-                      {j.status === 'saved' && 'Opgeslagen'}
-                      {j.status === 'error' && (j.message ?? 'Mislukt')}
+                      {j.status === 'queued' && (j.statusText ?? t('recipes.import.job.queued'))}
+                      {j.status === 'ocr' && (j.statusText ?? t('recipes.import.job.readingText'))}
+                      {j.status === 'extract' && (j.statusText ?? t('recipes.import.job.building'))}
+                      {j.status === 'ready' && t('recipes.common.done')}
+                      {j.status === 'saved' && t('recipes.import.job.saved')}
+                      {j.status === 'error' && (j.message ?? t('recipes.import.failed'))}
                     </Text>
 
                     {j.status === 'error' ? (
@@ -1285,7 +1348,7 @@ export default function ImportRecipeScreen() {
                                   ? {
                                       ...x,
                                       status: 'queued',
-                                      statusText: 'Wacht…',
+                                      statusText: t('recipes.import.job.queued'),
                                       message: undefined,
                                     }
                                   : x
@@ -1293,14 +1356,14 @@ export default function ImportRecipeScreen() {
                             );
                           }}
                         >
-                          <Text style={styles.smallLinkBtnText}>Opnieuw</Text>
+                          <Text style={styles.smallLinkBtnText}>{t('recipes.import.retry')}</Text>
                         </Pressable>
                         {__DEV__ && j.rawDebug ? (
                           <Pressable
                             style={styles.smallLinkBtn}
-                            onPress={() => Alert.alert('Debug', j.rawDebug ?? '')}
+                            onPress={() => Alert.alert(t('recipes.import.debug'), j.rawDebug ?? '')}
                           >
-                            <Text style={styles.smallLinkBtnText}>Debug</Text>
+                            <Text style={styles.smallLinkBtnText}>{t('recipes.import.debug')}</Text>
                           </Pressable>
                         ) : null}
                       </View>
@@ -1312,13 +1375,15 @@ export default function ImportRecipeScreen() {
                           style={styles.smallLinkBtn}
                           onPress={() => previewRecipeJob(j.payload!)}
                         >
-                          <Text style={styles.smallLinkBtnText}>Preview</Text>
+                          <Text style={styles.smallLinkBtnText}>
+                            {t('recipes.import.previewBtn')}
+                          </Text>
                         </Pressable>
                         <Pressable
                           style={styles.smallLinkBtn}
                           onPress={() => void saveRecipeJob(j.id)}
                         >
-                          <Text style={styles.smallLinkBtnText}>Opslaan</Text>
+                          <Text style={styles.smallLinkBtnText}>{t('recipes.common.save')}</Text>
                         </Pressable>
                       </View>
                     ) : null}
@@ -1334,7 +1399,7 @@ export default function ImportRecipeScreen() {
                     onPress={() => void saveAllReadyRecipeJobs()}
                   >
                     <Text style={[styles.secondaryBtnText, { color: theme.accentSoftText }]}>
-                      Alles opslaan
+                      {t('recipes.import.saveAll.title')}
                     </Text>
                   </Pressable>
                 ) : null}
@@ -1346,7 +1411,7 @@ export default function ImportRecipeScreen() {
                     clearRecipePhotoDraft();
                   }}
                 >
-                  <Text style={styles.ghostBtnText}>Wissen</Text>
+                  <Text style={styles.ghostBtnText}>{t('recipes.import.clear')}</Text>
                 </Pressable>
               </View>
             ) : null}
@@ -1354,7 +1419,7 @@ export default function ImportRecipeScreen() {
         )}
 
         <Pressable onPress={() => router.push('/settings')} style={styles.linkWrap}>
-          <Text style={styles.link}>API-sleutel & model → Instellingen</Text>
+          <Text style={styles.link}>{t('recipes.import.settingsLink')}</Text>
         </Pressable>
       </ScrollView>
     </>

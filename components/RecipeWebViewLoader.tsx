@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
 
+import { useI18n } from './I18nContext';
 import {
   buildRecipeHtmlFromWebViewData,
   isBlockedPageData,
@@ -21,6 +22,7 @@ const PAGE_LOAD_TIMEOUT_MS = 30_000;
  * dat de WebView na het laden van de pagina uitvoert.
  */
 function HiddenPageWorker() {
+  const { t } = useI18n();
   const jobRef = useRef<WebViewJob | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [jobId, setJobId] = useState<number | null>(null);
@@ -58,11 +60,11 @@ function HiddenPageWorker() {
       timeoutRef.current = setTimeout(() => {
         finishJob({
           ok: false,
-          message: 'Het laden van de pagina duurde te lang. Probeer het opnieuw.',
+          message: t('recipes.webview.loadTimeout'),
         });
       }, PAGE_LOAD_TIMEOUT_MS);
     },
-    [finishJob]
+    [finishJob, t]
   );
 
   useEffect(() => {
@@ -81,10 +83,9 @@ function HiddenPageWorker() {
     if (!jobRef.current) return;
     finishJob({
       ok: false,
-      message:
-        'Pagina kon niet geladen worden in de webweergave (netwerkfout of blokkade door de site).',
+      message: t('recipes.webview.loadFailed'),
     });
-  }, [finishJob]);
+  }, [finishJob, t]);
 
   const onMessage = useCallback(
     (event: WebViewMessageEvent) => {
@@ -110,7 +111,9 @@ function HiddenPageWorker() {
       if (payload.kind === 'recipe-webview-error') {
         finishJob({
           ok: false,
-          message: `Kon de pagina niet uitlezen: ${payload.message ?? 'onbekende fout'}`,
+          message: t('recipes.webview.extractFailed', {
+            message: payload.message ?? t('recipes.webview.unknownError'),
+          }),
         });
         return;
       }
@@ -132,23 +135,21 @@ function HiddenPageWorker() {
       if (isBlockedPageData(data)) {
         finishJob({
           ok: false,
-          message:
-            'De site blokkeerde het automatisch laden (toegang geweigerd). Open de link in je browser en voer het recept handmatig in.',
+          message: t('recipes.webview.blocked'),
         });
         return;
       }
       if (data.jsonLd.length === 0 && data.visibleText.trim().length < 400) {
         finishJob({
           ok: false,
-          message:
-            'De pagina bevatte geen leesbare receptinhoud (wellicht geen receptpagina of een blokkade).',
+          message: t('recipes.webview.noContent'),
         });
         return;
       }
 
       finishJob({ ok: true, html: buildRecipeHtmlFromWebViewData(data) });
     },
-    [finishJob]
+    [finishJob, t]
   );
 
   // Tussen klussen door (about:blank) geen externe navigaties toestaan.

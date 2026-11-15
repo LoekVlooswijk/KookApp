@@ -24,21 +24,23 @@ import {
   chatMessageToAiTurn,
   type ChatSession,
 } from '../lib/chatSessionRepo';
+import type { TranslationKey } from '../lib/i18n';
 import type { FullRecipe, RecipeSavePayload } from '../lib/types';
 import { ChatSheetKeyboardWrap } from './ChatSheetKeyboardWrap';
 import { FormattedText } from './FormattedText';
 import { useAppTheme } from './ThemeContext';
+import { useI18n } from './I18nContext';
 
-const QUICK_SUGGESTIONS = [
-  'Maak het sneller klaar',
-  'Maak het gezonder',
-  'Meer smaak / kruiden',
-  'Maak het vegetarisch',
+const QUICK_SUGGESTION_KEYS: readonly TranslationKey[] = [
+  'recipes.chat.suggest.faster',
+  'recipes.chat.suggest.healthier',
+  'recipes.chat.suggest.moreFlavour',
+  'recipes.chat.suggest.vegetarian',
 ];
-const CREATE_QUICK_SUGGESTIONS = [
-  'Een snel vegetarisch gerecht voor doordeweeks',
-  'Comfort food met pasta',
-  'Iets met kip, citroen en knoflook',
+const CREATE_QUICK_SUGGESTION_KEYS: readonly TranslationKey[] = [
+  'recipes.chat.createSuggest.quickWeekday',
+  'recipes.chat.createSuggest.pastaComfort',
+  'recipes.chat.createSuggest.chickenLemon',
 ];
 
 type BaseProps = {
@@ -79,6 +81,7 @@ export function RecipeAdjustChat(props: Props) {
   const onApplied = mode === 'adjust' ? props.onApplied : undefined;
   const onApplyPayload = mode === 'create' ? props.onApplyPayload : undefined;
   const theme = useAppTheme();
+  const { t } = useI18n();
   const [turns, setTurns] = useState<AiChatTurn[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -136,20 +139,20 @@ export function RecipeAdjustChat(props: Props) {
   const isCreate = mode === 'create';
   const sheetTitle = isCreate
     ? recipe
-      ? 'Aanpassen met AI'
-      : 'Recept maken met AI'
-    : 'Recept aanpassen';
+      ? t('recipes.chat.title.adjustDraft')
+      : t('recipes.chat.title.create')
+    : t('recipes.chat.title.adjust');
   const introText = isCreate
     ? recipe
-      ? 'Beschrijf wat je wilt veranderen aan de huidige invoer. De assistent bespreekt de aanpassingen met je — daarna kun je ze in het formulier laden.'
-      : 'Beschrijf welk recept je wilt, bijv. «een snelle pasta met citroen». De assistent bedenkt het recept met je — daarna kun je het in het formulier laden.'
-    : `Beschrijf wat je wilt veranderen aan «${recipe?.title ?? ''}». De assistent bespreekt de aanpassingen met je — daarna kun je ze toepassen.`;
-  const suggestions = isCreate ? CREATE_QUICK_SUGGESTIONS : QUICK_SUGGESTIONS;
-  const applyLabel = isCreate ? 'Inladen in formulier' : 'Ja doen, voeg toe';
+      ? t('recipes.chat.intro.createDraft')
+      : t('recipes.chat.intro.create')
+    : t('recipes.chat.intro.adjust', { title: recipe?.title ?? '' });
+  const suggestions = isCreate ? CREATE_QUICK_SUGGESTION_KEYS : QUICK_SUGGESTION_KEYS;
+  const applyLabel = isCreate ? t('recipes.chat.applyToForm') : t('recipes.chat.applyAdjust');
   const inputPlaceholder =
     isCreate && !recipe
-      ? 'Bijv. een snel vegetarisch recept…'
-      : 'Bijv. meer knoflook, kortere bereidingstijd…';
+      ? t('recipes.chat.placeholder.create')
+      : t('recipes.chat.placeholder.adjust');
 
   const sendWithText = useCallback(
     async (userText: string) => {
@@ -231,10 +234,7 @@ export function RecipeAdjustChat(props: Props) {
         setInput('');
         onApplied();
         onClose();
-        Alert.alert(
-          'Opgeslagen',
-          'Het recept is bijgewerkt. De vorige versie staat in de versiegeschiedenis.'
-        );
+        Alert.alert(t('recipes.chat.saved.title'), t('recipes.chat.saved.body'));
       } else {
         if (!onApplyPayload) return;
         const result = recipe
@@ -249,17 +249,14 @@ export function RecipeAdjustChat(props: Props) {
         setTurns([]);
         setInput('');
         onClose();
-        Alert.alert(
-          'Ingeladen in het formulier',
-          'Controleer de velden en sla op om het recept aan te maken.'
-        );
+        Alert.alert(t('recipes.chat.loaded.title'), t('recipes.chat.loaded.body'));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Toepassen mislukt.');
+      setError(e instanceof Error ? e.message : t('recipes.chat.applyFailed'));
     } finally {
       setApplying(false);
     }
-  }, [busy, mode, recipe, recipeId, turns, onApplied, onClose, onApplyPayload]);
+  }, [busy, mode, recipe, recipeId, turns, onApplied, onClose, onApplyPayload, t]);
 
   useEffect(() => {
     if (!visible) return;
@@ -282,18 +279,18 @@ export function RecipeAdjustChat(props: Props) {
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>{sheetTitle}</Text>
               <Pressable onPress={handleClose} hitSlop={12} disabled={busy}>
-                <Text style={[styles.close, busy && { opacity: 0.4 }]}>Sluiten</Text>
+                <Text style={[styles.close, busy && { opacity: 0.4 }]}>
+                  {t('recipes.common.close')}
+                </Text>
               </Pressable>
             </View>
 
             {!hasKey ? (
               <View style={styles.warnBox}>
-                <Text style={styles.warnText}>
-                  Zet een API-sleutel in Instellingen om AI-aanpassingen te gebruiken.
-                </Text>
+                <Text style={styles.warnText}>{t('recipes.chat.noKeyWarning')}</Text>
                 <Link href="/settings" asChild>
                   <Pressable style={styles.linkBtn}>
-                    <Text style={styles.linkBtnText}>Naar instellingen</Text>
+                    <Text style={styles.linkBtnText}>{t('recipes.chat.goToSettings')}</Text>
                   </Pressable>
                 </Link>
               </View>
@@ -315,14 +312,14 @@ export function RecipeAdjustChat(props: Props) {
                       styles.quickChip,
                       { backgroundColor: theme.accentSoft, borderColor: theme.accentBorderMuted },
                     ]}
-                    onPress={() => void sendWithText(q)}
+                    onPress={() => void sendWithText(t(q))}
                     disabled={busy || !hasKey}
                   >
                     <Text
                       style={[styles.quickChipText, { color: theme.accentSoftText }]}
                       numberOfLines={2}
                     >
-                      {q}
+                      {t(q)}
                     </Text>
                   </Pressable>
                 ))}
@@ -333,20 +330,22 @@ export function RecipeAdjustChat(props: Props) {
                   key={`${i}-${m.role}`}
                   style={[styles.bubble, m.role === 'user' ? styles.bubbleUser : styles.bubbleAsst]}
                 >
-                  <Text style={styles.bubbleRole}>{m.role === 'user' ? 'Jij' : 'Chef'}</Text>
+                  <Text style={styles.bubbleRole}>
+                    {m.role === 'user' ? t('recipes.chat.you') : t('recipes.chat.chef')}
+                  </Text>
                   <FormattedText text={m.text} style={styles.bubbleText} />
                 </View>
               ))}
               {loading ? (
                 <View style={styles.loadingRow}>
                   <ActivityIndicator color={theme.accent} />
-                  <Text style={styles.loadingText}>Even geduld…</Text>
+                  <Text style={styles.loadingText}>{t('recipes.chat.thinking')}</Text>
                 </View>
               ) : null}
               {applying ? (
                 <View style={styles.loadingRow}>
                   <ActivityIndicator color="#2a6cb6" />
-                  <Text style={styles.loadingText}>Aanpassingen doorvoeren…</Text>
+                  <Text style={styles.loadingText}>{t('recipes.chat.applying')}</Text>
                 </View>
               ) : null}
               {error ? (
@@ -376,7 +375,7 @@ export function RecipeAdjustChat(props: Props) {
                 onPress={onSend}
                 disabled={!input.trim() || busy || !hasKey}
               >
-                <Text style={styles.sendBtnText}>Verstuur</Text>
+                <Text style={styles.sendBtnText}>{t('recipes.chat.send')}</Text>
               </Pressable>
             </View>
 

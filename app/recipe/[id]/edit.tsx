@@ -1,16 +1,18 @@
 import { useLocalSearchParams } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { useI18n } from '../../../components/I18nContext';
 import { RecipeForm } from '../../../components/RecipeForm';
 
 export default function RecipeEditScreen() {
   const { id: idParam } = useLocalSearchParams<{ id: string }>();
+  const { t } = useI18n();
   const recipeId = Number.parseInt(idParam ?? '', 10);
 
   if (!Number.isFinite(recipeId)) {
     return (
       <View style={styles.center}>
-        <Text>Ongeldig recept.</Text>
+        <Text>{t('recipes.common.invalidRecipe')}</Text>
       </View>
     );
   }

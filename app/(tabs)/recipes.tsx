@@ -25,6 +25,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { RecipeListThumb } from '../../components/RecipeListThumb';
 import { useAppTheme } from '../../components/ThemeContext';
+import { useI18n } from '../../components/I18nContext';
+import { type TranslationKey } from '../../lib/i18n';
 import { useAnimatedValue } from '../../components/useAnimatedValue';
 import { getAiCookProfile, hydrateAiCookProfileFromDb } from '../../lib/aiCookProfile';
 import { ensureDatabaseAsync } from '../../lib/db';
@@ -66,9 +68,20 @@ const SCREEN_EDGE = 10;
 const TILE_GAP = 8;
 const TILE_COLS = 3;
 
+const WEEKDAY_KEYS: readonly TranslationKey[] = [
+  'recipes.browse.weekday.sunday',
+  'recipes.browse.weekday.monday',
+  'recipes.browse.weekday.tuesday',
+  'recipes.browse.weekday.wednesday',
+  'recipes.browse.weekday.thursday',
+  'recipes.browse.weekday.friday',
+  'recipes.browse.weekday.saturday',
+];
+
 export default function RecipesScreen() {
   const theme = useAppTheme();
   const router = useRouter();
+  const { t } = useI18n();
   const { width: windowWidth } = useWindowDimensions();
   const listRef = useRef<FlatList<RecipeListItem>>(null);
   const [searchBlockY, setSearchBlockY] = useState(0);
@@ -117,26 +130,18 @@ export default function RecipesScreen() {
     [quickToday]
   );
 
-  function weekdayNl(dateOnly: string): string {
+  function weekdayLabel(dateOnly: string): string {
     const [y, m, d] = dateOnly.split('-').map((x) => Number.parseInt(x, 10));
     const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
-    const days = [
-      'zondag',
-      'maandag',
-      'dinsdag',
-      'woensdag',
-      'donderdag',
-      'vrijdag',
-      'zaterdag',
-    ] as const;
-    return days[dt.getDay()] ?? dateOnly;
+    const key = WEEKDAY_KEYS[dt.getDay()];
+    return key != null ? t(key) : dateOnly;
   }
 
   function labelForIndex(i: number, dateOnly: string): string {
-    const wd = weekdayNl(dateOnly);
-    if (i === 0) return `Vandaag (${wd})`;
-    if (i === 1) return `Morgen (${wd})`;
-    if (i === 2) return `Overmorgen (${wd})`;
+    const wd = weekdayLabel(dateOnly);
+    if (i === 0) return t('recipes.browse.quickPlan.today', { weekday: wd });
+    if (i === 1) return t('recipes.browse.quickPlan.tomorrow', { weekday: wd });
+    if (i === 2) return t('recipes.browse.quickPlan.dayAfterTomorrow', { weekday: wd });
     return wd;
   }
 
@@ -173,7 +178,7 @@ export default function RecipesScreen() {
           for (const d of quickDates) {
             const p = plansByDate[d] ?? null;
             if (!p) {
-              out[d] = '— leeg —';
+              out[d] = t('recipes.browse.quickPlan.empty');
               continue;
             }
             if (p.labelText) {
@@ -183,13 +188,17 @@ export default function RecipesScreen() {
             if (p.leftoverOfDate) {
               const src = plansByDate[p.leftoverOfDate] ?? null;
               const srcRid = src?.recipeId ?? p.recipeId;
-              out[d] =
-                `Restjes: ${srcRid != null ? (titleById.get(srcRid) ?? 'Onbekend recept') : 'Onbekend recept'}`;
+              out[d] = t('recipes.browse.quickPlan.leftovers', {
+                title:
+                  srcRid != null
+                    ? (titleById.get(srcRid) ?? t('recipes.browse.unknownRecipe'))
+                    : t('recipes.browse.unknownRecipe'),
+              });
             } else {
               out[d] =
                 p.recipeId != null
-                  ? (titleById.get(p.recipeId) ?? 'Onbekend recept')
-                  : 'Onbekend recept';
+                  ? (titleById.get(p.recipeId) ?? t('recipes.browse.unknownRecipe'))
+                  : t('recipes.browse.unknownRecipe');
             }
           }
           setQuickPlanPlannedTitleByDate(out);
@@ -198,7 +207,7 @@ export default function RecipesScreen() {
         }
       })();
     },
-    [quickDates]
+    [quickDates, t]
   );
 
   const quickAddToDate = useCallback(
@@ -239,18 +248,18 @@ export default function RecipesScreen() {
       const results = await discoverRecipes(searchQuery);
       if (results.length === 0) {
         Alert.alert(
-          'Geen recepten gevonden',
-          'Er zijn geen recepten die passen bij je zoekopdracht.'
+          t('recipes.browse.discover.emptyTitle'),
+          t('recipes.browse.discover.emptyBody')
         );
       } else {
         setDiscoveredIds(results.map((r) => r.id));
       }
     } catch {
-      Alert.alert('Fout', 'Kon recepten niet ophalen. Probeer het opnieuw.');
+      Alert.alert(t('recipes.common.error'), t('recipes.browse.discover.errorBody'));
     } finally {
       setDiscoverLoading(false);
     }
-  }, [searchQuery, discoveredIds]);
+  }, [searchQuery, discoveredIds, t]);
 
   const canSwipe = !filtersModalOpen && !modalOpen && !tagsPickerOpen;
 
@@ -433,49 +442,55 @@ export default function RecipesScreen() {
     };
   }, [dataTick]);
 
-  const toggleFavoriteFromList = useCallback((recipeId: number) => {
-    setItems((prev) => {
-      const it = prev.find((x) => x.id === recipeId);
-      if (!it) return prev;
-      const nextFav = !it.isFavorite;
+  const toggleFavoriteFromList = useCallback(
+    (recipeId: number) => {
+      setItems((prev) => {
+        const it = prev.find((x) => x.id === recipeId);
+        if (!it) return prev;
+        const nextFav = !it.isFavorite;
 
-      void (async () => {
-        try {
-          await setRecipeFavoriteFlag(recipeId, nextFav);
-        } catch (e) {
-          console.error(safeErrorMessage(e));
-          setItems((p2) =>
-            p2.map((x) => (x.id === recipeId ? { ...x, isFavorite: it.isFavorite } : x))
-          );
-          Alert.alert('Kon favorieten niet bijwerken.', 'Probeer het opnieuw.');
-        }
-      })();
+        void (async () => {
+          try {
+            await setRecipeFavoriteFlag(recipeId, nextFav);
+          } catch (e) {
+            console.error(safeErrorMessage(e));
+            setItems((p2) =>
+              p2.map((x) => (x.id === recipeId ? { ...x, isFavorite: it.isFavorite } : x))
+            );
+            Alert.alert(t('recipes.browse.favoriteError'), t('recipes.common.retry'));
+          }
+        })();
 
-      return prev.map((x) => (x.id === recipeId ? { ...x, isFavorite: nextFav } : x));
-    });
-  }, []);
+        return prev.map((x) => (x.id === recipeId ? { ...x, isFavorite: nextFav } : x));
+      });
+    },
+    [t]
+  );
 
-  const toggleWantToTryFromList = useCallback((recipeId: number) => {
-    setItems((prev) => {
-      const it = prev.find((x) => x.id === recipeId);
-      if (!it) return prev;
-      const next = !it.wantToTry;
+  const toggleWantToTryFromList = useCallback(
+    (recipeId: number) => {
+      setItems((prev) => {
+        const it = prev.find((x) => x.id === recipeId);
+        if (!it) return prev;
+        const next = !it.wantToTry;
 
-      void (async () => {
-        try {
-          await setRecipeWantToTryFlag(recipeId, next);
-        } catch (e) {
-          console.error(safeErrorMessage(e));
-          setItems((p2) =>
-            p2.map((x) => (x.id === recipeId ? { ...x, wantToTry: it.wantToTry } : x))
-          );
-          Alert.alert('Kon “Wil proberen” niet bijwerken.', 'Probeer het opnieuw.');
-        }
-      })();
+        void (async () => {
+          try {
+            await setRecipeWantToTryFlag(recipeId, next);
+          } catch (e) {
+            console.error(safeErrorMessage(e));
+            setItems((p2) =>
+              p2.map((x) => (x.id === recipeId ? { ...x, wantToTry: it.wantToTry } : x))
+            );
+            Alert.alert(t('recipes.browse.wantToTryError'), t('recipes.common.retry'));
+          }
+        })();
 
-      return prev.map((x) => (x.id === recipeId ? { ...x, wantToTry: next } : x));
-    });
-  }, []);
+        return prev.map((x) => (x.id === recipeId ? { ...x, wantToTry: next } : x));
+      });
+    },
+    [t]
+  );
 
   const scrollSearchToTop = useCallback(() => {
     const target = Math.max(0, searchBlockY - 6);
@@ -543,7 +558,10 @@ export default function RecipesScreen() {
   const saveNewList = useCallback(() => {
     const n = newName.trim();
     if (!n) {
-      Alert.alert('Naam verplicht', 'Geef de lijst een naam (bijv. Zomerrecepten).');
+      Alert.alert(
+        t('recipes.browse.newList.nameRequired'),
+        t('recipes.browse.newList.nameRequiredBody')
+      );
       return;
     }
     void (async () => {
@@ -555,10 +573,13 @@ export default function RecipesScreen() {
         refresh();
         router.push(`/list/${id}`);
       } catch (e) {
-        Alert.alert('Fout', e instanceof Error ? e.message : 'Aanmaken mislukt.');
+        Alert.alert(
+          t('recipes.common.error'),
+          e instanceof Error ? e.message : t('recipes.browse.newList.createFailed')
+        );
       }
     })();
-  }, [newName, newDesc, refresh, router]);
+  }, [newName, newDesc, refresh, router, t]);
 
   const listTilesGrid = (
     <View style={styles.tilesGrid}>
@@ -577,7 +598,9 @@ export default function RecipesScreen() {
               {l.name}
             </Text>
             <Text style={styles.listBoxCount}>
-              {l.recipeCount} recept{l.recipeCount === 1 ? '' : 'en'}
+              {l.recipeCount === 1
+                ? t('recipes.browse.recipeCountSingle', { count: l.recipeCount })
+                : t('recipes.browse.recipeCountPlural', { count: l.recipeCount })}
             </Text>
           </Pressable>
         );
@@ -585,12 +608,15 @@ export default function RecipesScreen() {
     </View>
   );
 
-  const dietLabel = useCallback((k: string) => {
-    if (k === 'vegetarian') return 'Vega';
-    if (k === 'vegan') return 'Vegan';
-    if (k === 'keto') return 'Keto';
-    return k;
-  }, []);
+  const dietLabel = useCallback(
+    (k: string) => {
+      if (k === 'vegetarian') return t('recipes.common.diet.vegetarian');
+      if (k === 'vegan') return t('recipes.common.diet.vegan');
+      if (k === 'keto') return t('recipes.common.diet.keto');
+      return k;
+    },
+    [t]
+  );
 
   const topBarRow = () => (
     <View style={styles.topBarRow}>
@@ -603,12 +629,12 @@ export default function RecipesScreen() {
             <Text
               style={[styles.segmentTrackLabel, view === 'recepten' ? { color: '#1a1a1a' } : null]}
             >
-              Recepten
+              {t('recipes.browse.tab.recipes')}
             </Text>
             <Text
               style={[styles.segmentTrackLabel, view === 'lijsten' ? { color: '#1a1a1a' } : null]}
             >
-              Lijsten
+              {t('recipes.browse.tab.lists')}
             </Text>
           </View>
 
@@ -653,14 +679,14 @@ export default function RecipesScreen() {
           <View style={styles.segmentTapRow}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Toon recepten"
+              accessibilityLabel={t('recipes.browse.tab.showRecipes')}
               accessibilityState={{ selected: view === 'recepten' }}
               style={styles.segmentTapHalf}
               onPress={() => setView('recepten')}
             />
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Toon lijsten"
+              accessibilityLabel={t('recipes.browse.tab.showLists')}
               accessibilityState={{ selected: view === 'lijsten' }}
               style={styles.segmentTapHalf}
               onPress={() => setView('lijsten')}
@@ -675,14 +701,14 @@ export default function RecipesScreen() {
               <Pressable
                 style={StyleSheet.flatten([styles.headerBtn, { backgroundColor: theme.accent }])}
               >
-                <Text style={styles.headerBtnText}>+ Nieuw</Text>
+                <Text style={styles.headerBtnText}>{t('recipes.browse.newBtn')}</Text>
               </Pressable>
             </Link>
             <Link href="/recipe/import" asChild>
               <Pressable
                 style={StyleSheet.flatten([styles.headerBtn, { backgroundColor: theme.accent }])}
               >
-                <Text style={styles.headerBtnText}>Importeer</Text>
+                <Text style={styles.headerBtnText}>{t('recipes.browse.importBtn')}</Text>
               </Pressable>
             </Link>
           </>
@@ -691,7 +717,7 @@ export default function RecipesScreen() {
             style={StyleSheet.flatten([styles.headerBtn, { backgroundColor: theme.accent }])}
             onPress={() => setModalOpen(true)}
           >
-            <Text style={styles.headerBtnText}>+ Nieuwe lijst</Text>
+            <Text style={styles.headerBtnText}>{t('recipes.browse.newListBtn')}</Text>
           </Pressable>
         )}
       </View>
@@ -717,7 +743,7 @@ export default function RecipesScreen() {
           <View style={styles.searchInputWrap}>
             <TextInput
               style={styles.searchInput}
-              placeholder="Zoek op titel, ingrediënt, stap, tag…"
+              placeholder={t('recipes.browse.searchPlaceholder')}
               placeholderTextColor="#999"
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -731,7 +757,7 @@ export default function RecipesScreen() {
                 style={styles.searchClearBtn}
                 onPress={() => setSearchQuery('')}
                 accessibilityRole="button"
-                accessibilityLabel="Zoekopdracht wissen"
+                accessibilityLabel={t('recipes.browse.clearSearch')}
                 hitSlop={10}
               >
                 <Ionicons name="close-circle" size={20} color="#999" />
@@ -747,7 +773,7 @@ export default function RecipesScreen() {
               onPress={() => setFavoritesOnly((v) => !v)}
             >
               <Text style={[styles.chipText, favoritesOnly ? chipTextOnStyle : null]}>
-                Favorieten
+                {t('recipes.browse.chip.favorites')}
               </Text>
             </Pressable>
             <Pressable
@@ -755,7 +781,7 @@ export default function RecipesScreen() {
               onPress={() => setWantToTryOnly((v) => !v)}
             >
               <Text style={[styles.chipText, wantToTryOnly ? chipTextOnStyle : null]}>
-                Wil proberen
+                {t('recipes.common.wantToTry')}
               </Text>
             </Pressable>
             <Pressable
@@ -767,7 +793,7 @@ export default function RecipesScreen() {
                 <ActivityIndicator size="small" color={theme.accentSoftText} />
               ) : (
                 <Text style={[styles.chipText, discoveredIds ? chipTextOnStyle : null]}>
-                  Ontdek
+                  {t('recipes.browse.chip.discover')}
                 </Text>
               )}
             </Pressable>
@@ -789,7 +815,9 @@ export default function RecipesScreen() {
               ]}
               numberOfLines={1}
             >
-              {secondaryFilterCount > 0 ? `Filters · ${secondaryFilterCount}` : 'Filters'}
+              {secondaryFilterCount > 0
+                ? t('recipes.browse.filtersWithCount', { count: secondaryFilterCount })
+                : t('recipes.browse.filters')}
             </Text>
           </Pressable>
         </View>
@@ -807,7 +835,7 @@ export default function RecipesScreen() {
                   onPress={() => setMaxTotalTimeMin(null)}
                 >
                   <Text style={styles.chipText} numberOfLines={1}>
-                    Max. {maxTotalTimeMin} min
+                    {t('recipes.browse.maxTime', { minutes: maxTotalTimeMin })}
                   </Text>
                   <Text style={styles.activeFilterClose}>✕</Text>
                 </Pressable>
@@ -883,6 +911,7 @@ export default function RecipesScreen() {
       toggleCustomDiet,
       setCategoryKey,
       toggleTag,
+      t,
     ]
   );
 
@@ -896,7 +925,7 @@ export default function RecipesScreen() {
     if (!lastOpenedRecipe || hasAnyActiveFilters) return null;
     return (
       <View style={[styles.recentOpenedCard, { backgroundColor: theme.background }]}>
-        <Text style={styles.recentOpenedLabel}>Recent geopend</Text>
+        <Text style={styles.recentOpenedLabel}>{t('recipes.browse.recentOpened')}</Text>
         <Pressable
           style={styles.recentOpenedPress}
           onPress={() => router.push(`/recipe/${lastOpenedRecipe.id}`)}
@@ -913,7 +942,7 @@ export default function RecipesScreen() {
         </Pressable>
       </View>
     );
-  }, [lastOpenedRecipe, hasAnyActiveFilters, theme.background, router]);
+  }, [lastOpenedRecipe, hasAnyActiveFilters, theme.background, router, t]);
 
   /** Combined header with recent opened tile at the top */
   const combinedListHeader = useMemo(
@@ -948,7 +977,7 @@ export default function RecipesScreen() {
                 <View style={styles.lijstenSearchBlock}>
                   <TextInput
                     style={styles.searchInput}
-                    placeholder="Zoek lijsten…"
+                    placeholder={t('recipes.browse.searchListsPlaceholder')}
                     placeholderTextColor="#999"
                     value={listsQuery}
                     onChangeText={setListsQuery}
@@ -959,7 +988,7 @@ export default function RecipesScreen() {
                 </View>
                 {listTilesGrid}
                 {listsQuery.trim() !== '' && filteredLists.length === 0 ? (
-                  <Text style={styles.lijstenEmptyFilter}>Geen lijsten gevonden.</Text>
+                  <Text style={styles.lijstenEmptyFilter}>{t('recipes.browse.noListsFound')}</Text>
                 ) : null}
               </View>
             </ScrollView>
@@ -975,8 +1004,8 @@ export default function RecipesScreen() {
                 <View style={styles.emptyWrap}>
                   <Text style={styles.empty}>
                     {totalRecipeCount === 0
-                      ? 'Nog geen recepten. Tik op + Nieuw of Importeer om er een toe te voegen.'
-                      : 'Geen recepten die voldoen aan je zoek- of filterkeuze. Pas je zoekwoorden of filters aan.'}
+                      ? t('recipes.browse.emptyNoRecipes')
+                      : t('recipes.browse.emptyNoMatches')}
                   </Text>
                 </View>
               }
@@ -999,7 +1028,7 @@ export default function RecipesScreen() {
                             <Text style={styles.cardSub}>{item.category}</Text>
                           ) : null}
                           {item.wantToTry ? (
-                            <Text style={styles.tryBadge}>Wil proberen</Text>
+                            <Text style={styles.tryBadge}>{t('recipes.common.wantToTry')}</Text>
                           ) : null}
                         </View>
                       </View>
@@ -1014,8 +1043,8 @@ export default function RecipesScreen() {
                         accessibilityState={{ selected: item.isFavorite }}
                         accessibilityLabel={
                           item.isFavorite
-                            ? 'Verwijderen uit favorieten'
-                            : 'Toevoegen aan favorieten'
+                            ? t('recipes.common.removeFavorite')
+                            : t('recipes.common.addFavorite')
                         }
                       >
                         <Ionicons
@@ -1040,10 +1069,10 @@ export default function RecipesScreen() {
                           }
                           accessibilityLabel={
                             item.bioScoreColor === 'green'
-                              ? 'Bio-score: groen'
+                              ? t('recipes.common.bioScoreGreen')
                               : item.bioScoreColor === 'red'
-                                ? 'Bio-score: rood'
-                                : 'Bio-score: oranje'
+                                ? t('recipes.common.bioScoreRed')
+                                : t('recipes.common.bioScoreOrange')
                           }
                           accessibilityElementsHidden
                           importantForAccessibility="no"
@@ -1081,7 +1110,7 @@ export default function RecipesScreen() {
                 setTimeout(() => openQuickPlan(it), 0);
               }}
             >
-              <Text style={styles.cardActionBtnText}>Zet in weekplanner…</Text>
+              <Text style={styles.cardActionBtnText}>{t('recipes.browse.actions.plan')}</Text>
             </Pressable>
 
             <Pressable
@@ -1094,7 +1123,9 @@ export default function RecipesScreen() {
               }}
             >
               <Text style={styles.cardActionOutlineText}>
-                {cardActionFor?.wantToTry ? 'Niet meer proberen' : 'Wil proberen'}
+                {cardActionFor?.wantToTry
+                  ? t('recipes.browse.stopWantToTry')
+                  : t('recipes.common.wantToTry')}
               </Text>
             </Pressable>
 
@@ -1111,7 +1142,7 @@ export default function RecipesScreen() {
               }}
             >
               <Text style={[styles.cardActionOutlineText, { color: theme.accent }]}>
-                Aan lijst koppelen…
+                {t('recipes.browse.actions.linkList')}
               </Text>
             </Pressable>
 
@@ -1128,7 +1159,9 @@ export default function RecipesScreen() {
                 })();
               }}
             >
-              <Text style={styles.cardActionOutlineText}>Dupliceren</Text>
+              <Text style={styles.cardActionOutlineText}>
+                {t('recipes.browse.actions.duplicate')}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -1149,7 +1182,7 @@ export default function RecipesScreen() {
           />
           <View style={[styles.cardActionsSheet, { backgroundColor: theme.background }]}>
             <Text style={styles.cardActionsTitle} numberOfLines={1}>
-              Zet in weekplanner
+              {t('recipes.browse.quickPlan.title')}
             </Text>
             <Text style={styles.cardActionsSub} numberOfLines={2}>
               {quickPlanFor?.title ?? ''}
@@ -1169,7 +1202,9 @@ export default function RecipesScreen() {
                 >
                   <Text style={styles.quickPlanRowTitle}>{labelForIndex(i, d)}</Text>
                   <Text style={styles.quickPlanRowSub} numberOfLines={1}>
-                    {quickPlanBusy ? 'Laden…' : (quickPlanPlannedTitleByDate[d] ?? '—')}
+                    {quickPlanBusy
+                      ? t('recipes.browse.loading')
+                      : (quickPlanPlannedTitleByDate[d] ?? '—')}
                   </Text>
                 </Pressable>
               ))}
@@ -1184,7 +1219,7 @@ export default function RecipesScreen() {
               onPress={() => setQuickPlanFor(null)}
               disabled={quickPlanBusy}
             >
-              <Text style={styles.listPickCloseText}>Annuleren</Text>
+              <Text style={styles.listPickCloseText}>{t('recipes.common.cancel')}</Text>
             </Pressable>
           </View>
         </View>
@@ -1200,16 +1235,14 @@ export default function RecipesScreen() {
           <Pressable style={styles.sheetBackdropPress} onPress={() => setListPickFor(null)} />
           <View style={[styles.cardActionsSheet, { backgroundColor: theme.background }]}>
             <Text style={styles.cardActionsTitle} numberOfLines={2}>
-              Lijsten
+              {t('recipes.browse.listPick.title')}
             </Text>
             <Text style={styles.cardActionsSub} numberOfLines={2}>
               {listPickFor?.title ?? ''}
             </Text>
             <ScrollView style={styles.listPickScroll} keyboardShouldPersistTaps="handled">
               {listPickRows.length === 0 ? (
-                <Text style={styles.listPickEmpty}>
-                  Nog geen lijsten. Maak er eerst één via “Lijsten”.
-                </Text>
+                <Text style={styles.listPickEmpty}>{t('recipes.browse.listPick.empty')}</Text>
               ) : (
                 listPickRows.map((r) => (
                   <Pressable
@@ -1237,7 +1270,7 @@ export default function RecipesScreen() {
               style={[styles.listPickClose, { backgroundColor: theme.accent }]}
               onPress={() => setListPickFor(null)}
             >
-              <Text style={styles.listPickCloseText}>Klaar</Text>
+              <Text style={styles.listPickCloseText}>{t('recipes.common.done')}</Text>
             </Pressable>
           </View>
         </View>
@@ -1252,13 +1285,15 @@ export default function RecipesScreen() {
         <View style={styles.sheetBackdrop}>
           <Pressable style={styles.sheetBackdropPress} onPress={() => setFiltersModalOpen(false)} />
           <View style={styles.filtersSheet}>
-            <Text style={styles.filtersSheetTitle}>Filters</Text>
+            <Text style={styles.filtersSheetTitle}>{t('recipes.browse.filters')}</Text>
             <ScrollView
               style={styles.filtersSheetScroll}
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={styles.filtersSheetScrollInner}
             >
-              <Text style={styles.filterSubLabel}>Max. totale tijd (min.)</Text>
+              <Text style={styles.filterSubLabel}>
+                {t('recipes.browse.filtersSheet.maxTotalTime')}
+              </Text>
               <View style={styles.timeSliderRow}>
                 <View style={styles.timeSliderCol}>
                   <Slider
@@ -1276,7 +1311,9 @@ export default function RecipesScreen() {
                     }}
                   />
                   <Text style={styles.timeSliderValue}>
-                    {maxTotalTimeMin == null ? 'Geen maximum' : `Max. ${maxTotalTimeMin} min`}
+                    {maxTotalTimeMin == null
+                      ? t('recipes.browse.filtersSheet.noMax')
+                      : t('recipes.browse.maxTime', { minutes: maxTotalTimeMin })}
                   </Text>
                 </View>
                 <Pressable
@@ -1293,12 +1330,12 @@ export default function RecipesScreen() {
                       maxTotalTimeMin == null ? styles.timeSliderResetTextOff : null,
                     ]}
                   >
-                    Reset
+                    {t('recipes.browse.filtersSheet.reset')}
                   </Text>
                 </Pressable>
               </View>
 
-              <Text style={styles.filterSubLabel}>Dieet</Text>
+              <Text style={styles.filterSubLabel}>{t('recipes.browse.filtersSheet.diet')}</Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -1323,20 +1360,13 @@ export default function RecipesScreen() {
                           : null,
                       ]}
                     >
-                      Alle
+                      {t('recipes.browse.filtersSheet.all')}
                     </Text>
                   </Pressable>
                   {['vegetarian', 'vegan', 'keto', ...customDiets].map((k) => {
                     const isBuiltIn = k === 'vegetarian' || k === 'vegan' || k === 'keto';
                     const on = isBuiltIn ? selectedDietSet.has(k) : selectedCustomDietSet.has(k);
-                    const label =
-                      k === 'vegetarian'
-                        ? 'Vega'
-                        : k === 'vegan'
-                          ? 'Vegan'
-                          : k === 'keto'
-                            ? 'Keto'
-                            : k;
+                    const label = dietLabel(k);
                     return (
                       <Pressable
                         key={`diet-${k}`}
@@ -1360,7 +1390,9 @@ export default function RecipesScreen() {
 
               {categories.length > 0 ? (
                 <>
-                  <Text style={styles.filterSubLabel}>Categorie</Text>
+                  <Text style={styles.filterSubLabel}>
+                    {t('recipes.browse.filtersSheet.category')}
+                  </Text>
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
@@ -1374,7 +1406,7 @@ export default function RecipesScreen() {
                         <Text
                           style={[styles.chipText, categoryKey === null ? chipTextOnStyle : null]}
                         >
-                          Alle
+                          {t('recipes.browse.filtersSheet.all')}
                         </Text>
                       </Pressable>
                       {categories.map((c) => (
@@ -1398,7 +1430,7 @@ export default function RecipesScreen() {
 
               {recipeTags.length > 0 ? (
                 <>
-                  <Text style={styles.filterSubLabel}>Tag</Text>
+                  <Text style={styles.filterSubLabel}>{t('recipes.browse.filtersSheet.tag')}</Text>
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
@@ -1412,7 +1444,7 @@ export default function RecipesScreen() {
                         <Text
                           style={[styles.chipText, tagKeys.length === 0 ? chipTextOnStyle : null]}
                         >
-                          Alle
+                          {t('recipes.browse.filtersSheet.all')}
                         </Text>
                       </Pressable>
                       {tagKeys.map((t) => (
@@ -1448,7 +1480,7 @@ export default function RecipesScreen() {
                               tagKeyInExtra ? chipTextOnStyle : null,
                             ]}
                           >
-                            + tags
+                            {t('recipes.browse.filtersSheet.moreTags')}
                           </Text>
                         </Pressable>
                       ) : null}
@@ -1459,13 +1491,15 @@ export default function RecipesScreen() {
             </ScrollView>
             <View style={styles.filtersSheetActions}>
               <Pressable style={styles.filterClearAllBtn} onPress={clearFiltersInModal}>
-                <Text style={styles.filterClearAllText}>Filters wissen</Text>
+                <Text style={styles.filterClearAllText}>
+                  {t('recipes.browse.filtersSheet.clearAll')}
+                </Text>
               </Pressable>
               <Pressable
                 style={[styles.filterDoneBtn, { backgroundColor: theme.accent }]}
                 onPress={() => setFiltersModalOpen(false)}
               >
-                <Text style={styles.filterDoneBtnText}>Klaar</Text>
+                <Text style={styles.filterDoneBtnText}>{t('recipes.common.done')}</Text>
               </Pressable>
             </View>
           </View>
@@ -1480,8 +1514,8 @@ export default function RecipesScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.tagPickerCard}>
-            <Text style={styles.modalTitle}>Meer tags</Text>
-            <Text style={styles.tagPickerHint}>Tik op een tag om daarop te filteren.</Text>
+            <Text style={styles.modalTitle}>{t('recipes.browse.tagsPicker.title')}</Text>
+            <Text style={styles.tagPickerHint}>{t('recipes.browse.tagsPicker.hint')}</Text>
             <FlatList
               data={extraTags}
               numColumns={2}
@@ -1509,7 +1543,7 @@ export default function RecipesScreen() {
               )}
             />
             <Pressable style={styles.tagPickerCloseBtn} onPress={() => setTagsPickerOpen(false)}>
-              <Text style={styles.tagPickerCloseBtnText}>Klaar</Text>
+              <Text style={styles.tagPickerCloseBtnText}>{t('recipes.common.done')}</Text>
             </Pressable>
           </View>
         </View>
@@ -1518,31 +1552,31 @@ export default function RecipesScreen() {
       <Modal visible={modalOpen} animationType="fade" transparent>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Nieuwe lijst</Text>
-            <Text style={styles.label}>Naam *</Text>
+            <Text style={styles.modalTitle}>{t('recipes.browse.newList.modalTitle')}</Text>
+            <Text style={styles.label}>{t('recipes.browse.newList.nameLabel')}</Text>
             <TextInput
               style={styles.input}
-              placeholder="Bijv. Zomerrecepten"
+              placeholder={t('recipes.browse.newList.namePlaceholder')}
               value={newName}
               onChangeText={setNewName}
             />
-            <Text style={styles.label}>Omschrijving (optioneel)</Text>
+            <Text style={styles.label}>{t('recipes.browse.newList.descLabel')}</Text>
             <TextInput
               style={[styles.input, styles.multiline]}
-              placeholder="Wanneer gebruik je deze lijst?"
+              placeholder={t('recipes.browse.newList.descPlaceholder')}
               value={newDesc}
               onChangeText={setNewDesc}
               multiline
             />
             <View style={styles.modalActions}>
               <Pressable style={styles.cancelBtn} onPress={() => setModalOpen(false)}>
-                <Text style={styles.cancelBtnText}>Annuleren</Text>
+                <Text style={styles.cancelBtnText}>{t('recipes.common.cancel')}</Text>
               </Pressable>
               <Pressable
                 style={[styles.saveModalBtn, { backgroundColor: theme.accent }]}
                 onPress={saveNewList}
               >
-                <Text style={styles.saveModalBtnText}>Aanmaken</Text>
+                <Text style={styles.saveModalBtnText}>{t('recipes.browse.newList.create')}</Text>
               </Pressable>
             </View>
           </View>

@@ -17,6 +17,7 @@ import {
   type KnowledgeEntryDetail,
   type KnowledgeTagBare,
 } from '../../../lib/knowledgeRepo';
+import { translateKnowledgeTagName } from '../../../lib/knowledgeTagNames';
 
 export default function KnowledgeEntryDetailScreen() {
   const theme = useAppTheme();
@@ -186,11 +187,12 @@ export default function KnowledgeEntryDetailScreen() {
               <Text style={styles.subHead}>{t('kennis.entry.form.tagsLabel')}</Text>
             </View>
             <View style={styles.tagWrap}>
-              {entry.tagNames.map((name) => {
-                const tag = tagByName.get(name) ?? null;
+              {entry.tagNames.map((rawName) => {
+                const tag = tagByName.get(rawName) ?? null;
+                const displayName = translateKnowledgeTagName(rawName, t);
                 return (
                   <Pressable
-                    key={name}
+                    key={rawName}
                     style={[
                       styles.tagChip,
                       tag?.isSheet
@@ -202,12 +204,12 @@ export default function KnowledgeEntryDetailScreen() {
                       router.push(`/kennis/sheet/${tag.id}`);
                     }}
                     accessibilityRole="button"
-                    accessibilityLabel={t('kennis.entry.detail.openTagA11y', { name })}
+                    accessibilityLabel={t('kennis.entry.detail.openTagA11y', { name: displayName })}
                   >
                     <Text
                       style={[styles.tagChipText, tag?.isSheet ? { color: theme.accent } : null]}
                     >
-                      {name}
+                      {displayName}
                     </Text>
                   </Pressable>
                 );

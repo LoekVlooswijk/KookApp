@@ -26,6 +26,7 @@ import {
   type KnowledgeEntryRow,
   type KnowledgeTagRow,
 } from '../../lib/knowledgeRepo';
+import { translateKnowledgeTagName } from '../../lib/knowledgeTagNames';
 
 type UiRow =
   | { kind: 'sheets'; sheets: KnowledgeTagRow[] }
@@ -137,7 +138,7 @@ function SheetTile({ sheet, onPress }: { sheet: KnowledgeTagRow; onPress: () => 
       ) : null}
       <View style={{ position: 'relative', flex: sheet.isWide ? 1 : undefined }}>
         <Text style={styles.sheetTileTitle} numberOfLines={2}>
-          {sheet.name}
+          {translateKnowledgeTagName(sheet.name, t)}
         </Text>
         <Text style={styles.sheetTileMeta}>
           {sheet.entryCount}{' '}
@@ -197,6 +198,7 @@ function NoteCard({
   accentSoft: string;
   tagPillBackground: string;
 }) {
+  const { t } = useI18n();
   return (
     <Pressable
       style={[styles.noteCard, entry.isPinned ? { borderColor: accent } : null]}
@@ -218,9 +220,9 @@ function NoteCard({
       </Text>
       {entry.tagNames.length > 0 ? (
         <View style={styles.tagRow}>
-          {entry.tagNames.map((t) => (
-            <View key={t} style={[styles.tagPill, { backgroundColor: tagPillBackground }]}>
-              <Text style={styles.tagPillText}>{t}</Text>
+          {entry.tagNames.map((name) => (
+            <View key={name} style={[styles.tagPill, { backgroundColor: tagPillBackground }]}>
+              <Text style={styles.tagPillText}>{translateKnowledgeTagName(name, t)}</Text>
             </View>
           ))}
         </View>
@@ -371,13 +373,13 @@ export default function KennisbankScreen() {
                       />
                       {e.tagNames.length > 0 ? (
                         <View style={styles.searchTagRow}>
-                          {e.tagNames.map((t) => (
+                          {e.tagNames.map((name) => (
                             <View
-                              key={`${e.id}-tag-${t}`}
+                              key={`${e.id}-tag-${name}`}
                               style={[styles.searchTagChip, { backgroundColor: theme.accentSoft }]}
                             >
                               <Text style={[styles.searchTagChipText, { color: theme.accent }]}>
-                                {t}
+                                {translateKnowledgeTagName(name, t)}
                               </Text>
                             </View>
                           ))}

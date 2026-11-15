@@ -29,6 +29,14 @@ export const kennisNl = {
     notesSection: 'NOTITIES',
     notesLooseCount: '{count} losse',
   },
+  /** Weergavenamen van gezaaide sheets/tags (DB blijft NL; zie lib/knowledgeTagNames.ts). */
+  tagNames: {
+    technieken: 'Technieken',
+    kooktijden: 'Kooktijden',
+    ratios: "Ratio's",
+    temperaturen: 'Temperaturen',
+    substituties: 'Substituties',
+  },
   entry: {
     newTitle: 'Nieuwe entry',
     form: {
@@ -80,6 +88,14 @@ export const kennisEn: Widen<typeof kennisNl> = {
     searchEmpty: 'No results for "{query}"',
     notesSection: 'NOTES',
     notesLooseCount: '{count} loose',
+  },
+  /** Weergavenamen van gezaaide sheets/tags (DB blijft NL; zie lib/knowledgeTagNames.ts). */
+  tagNames: {
+    technieken: 'Techniques',
+    kooktijden: 'Cooking times',
+    ratios: "Ratio's",
+    temperaturen: 'Temperatures',
+    substituties: 'Substitutions',
   },
   entry: {
     newTitle: 'New entry',

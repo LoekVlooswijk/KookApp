@@ -25,6 +25,7 @@ import {
   type KnowledgeEntryDetail,
   type KnowledgeTagBare,
 } from '../../../../lib/knowledgeRepo';
+import { translateKnowledgeTagName } from '../../../../lib/knowledgeTagNames';
 
 type RecipePick = { id: number; title: string };
 
@@ -82,6 +83,7 @@ export default function KnowledgeEntryEditScreen() {
 
   const canSave = title.trim().length > 0;
   const keyboardOffset = Math.round(insets.top * 0.67) + 56;
+  const tagName = useCallback((name: string) => translateKnowledgeTagName(name, t), [t]);
 
   const selectedTags = useMemo(() => {
     const map = new Map(tags.map((t) => [t.id, t]));
@@ -92,9 +94,13 @@ export default function KnowledgeEntryEditScreen() {
     const q = tagQuery.trim().toLowerCase();
     if (!q) return [];
     return tags
-      .filter((t) => t.name.toLowerCase().includes(q) && !selectedTagIds.includes(t.id))
+      .filter(
+        (t) =>
+          (t.name.toLowerCase().includes(q) || tagName(t.name).toLowerCase().includes(q)) &&
+          !selectedTagIds.includes(t.id)
+      )
       .slice(0, 10);
-  }, [selectedTagIds, tagQuery, tags]);
+  }, [selectedTagIds, tagQuery, tags, tagName]);
 
   const sheetQuickAdds = useMemo(() => tags.filter((t) => t.isSheet), [tags]);
 
@@ -222,7 +228,7 @@ export default function KnowledgeEntryEditScreen() {
                   style={[styles.tagChip, { backgroundColor: theme.background }]}
                   onPress={() => setSelectedTagIds((prev) => prev.filter((x) => x !== t.id))}
                 >
-                  <Text style={styles.tagChipText}>{t.name}</Text>
+                  <Text style={styles.tagChipText}>{tagName(t.name)}</Text>
                   <IconClose size={12} stroke={2} color={KennisColors.inkSoft} />
                 </Pressable>
               ))}
@@ -271,7 +277,7 @@ export default function KnowledgeEntryEditScreen() {
                         style={[styles.sheetQuickChipText, on ? { color: theme.accent } : null]}
                         numberOfLines={1}
                       >
-                        {t.name}
+                        {tagName(t.name)}
                       </Text>
                     </Pressable>
                   );
@@ -290,7 +296,7 @@ export default function KnowledgeEntryEditScreen() {
                       setTagQuery('');
                     }}
                   >
-                    <Text style={styles.suggestionText}>{t.name}</Text>
+                    <Text style={styles.suggestionText}>{tagName(t.name)}</Text>
                     {t.isSheet ? <Text style={styles.suggestionMeta}>sheet</Text> : null}
                   </Pressable>
                 ))}

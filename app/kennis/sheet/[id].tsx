@@ -22,6 +22,7 @@ import {
   type KnowledgeEntryRow,
   type KnowledgeTagBare,
 } from '../../../lib/knowledgeRepo';
+import { translateKnowledgeTagName } from '../../../lib/knowledgeTagNames';
 
 function plural(n: number, one: string, many: string) {
   return n === 1 ? one : many;
@@ -119,7 +120,7 @@ export default function SheetDetailScreen() {
           <View style={styles.identityTextCol}>
             <Text style={styles.identityEyebrow}>SHEET</Text>
             <Text style={styles.identityTitle} numberOfLines={2}>
-              {sheet?.name ?? 'Sheet'}
+              {sheet?.name ? translateKnowledgeTagName(sheet.name, t) : 'Sheet'}
             </Text>
             <Text style={styles.identityMeta}>
               {entries.length}{' '}

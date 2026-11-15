@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { useConfirmDialog } from '../../components/ConfirmDialog';
+import { useI18n } from '../../components/I18nContext';
 import { useAppTheme } from '../../components/ThemeContext';
 import { callAiText, hasActiveAiKey } from '../../lib/aiClient';
 import {
@@ -89,6 +90,7 @@ export default function PlannerScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { confirm, ConfirmDialog } = useConfirmDialog();
+  const { t } = useI18n();
   const { recipeId: recipeIdParam } = useLocalSearchParams<{ recipeId?: string }>();
   const quickRecipeId = Number.parseInt(String(recipeIdParam ?? ''), 10);
 
@@ -256,15 +258,15 @@ export default function PlannerScreen() {
   const quickRecipeTitle = useMemo(() => {
     if (!Number.isFinite(quickRecipeId) || quickRecipeId <= 0) return null;
     const r = recipes.find((x) => x.id === quickRecipeId);
-    return r?.title ?? 'Recept';
-  }, [quickRecipeId, recipes]);
+    return r?.title ?? t('planner.common.recipeFallback');
+  }, [quickRecipeId, recipes, t]);
 
   const plannedTitleByDate = useMemo(() => {
     const out: Record<string, string> = {};
     for (const d of dates) {
       const p = plansByDate[d] ?? null;
       if (!p) {
-        out[d] = '— leeg —';
+        out[d] = t('planner.common.emptySlot');
         continue;
       }
       const isLeftover = (p.leftoverOfDate ?? null) != null;
@@ -272,22 +274,25 @@ export default function PlannerScreen() {
         const src = p.leftoverOfDate ?? '';
         const srcPlan = plansByDate[src] ?? null;
         const srcRecipeId = srcPlan?.recipeId ?? p.recipeId;
-        const t =
+        const srcTitle =
           srcPlan?.labelText ??
           (srcRecipeId != null ? recipeById.get(srcRecipeId)?.title : undefined) ??
-          'Onbekend recept';
-        out[d] = `Restjes: ${t}`;
+          t('planner.common.unknownRecipe');
+        out[d] = t('planner.day.leftoversPrefix', { title: srcTitle });
         continue;
       }
       if (p.labelText) {
         out[d] = p.labelText;
         continue;
       }
-      const t = p.recipeId != null ? (recipeById.get(p.recipeId)?.title ?? 'Onbekend recept') : '';
-      out[d] = t || 'Onbekend recept';
+      const title =
+        p.recipeId != null
+          ? (recipeById.get(p.recipeId)?.title ?? t('planner.common.unknownRecipe'))
+          : '';
+      out[d] = title || t('planner.common.unknownRecipe');
     }
     return out;
-  }, [dates, plansByDate, recipeById]);
+  }, [dates, plansByDate, recipeById, t]);
 
   const clearQuickAddParam = useCallback(() => {
     setQuickAddOpen(false);
@@ -597,12 +602,12 @@ export default function PlannerScreen() {
               if (pendingNew || pendingCook) {
                 applyIfCurrent(() => setPreviewRecipeId(null));
                 const src = pendingNew ?? pendingCook;
-                if (!src) throw new Error('Kon preview niet opbouwen.');
+                if (!src) throw new Error(t('planner.preview.errorBuild'));
                 const parsed = parseExtractedRecipeJson(src.recipeJsonText, '');
                 if (!parsed.ok) throw new Error(parsed.reason);
                 const p = parsed.payload;
                 applyIfCurrent(() => {
-                  setPreviewTitle(p.title.trim() || 'Nieuw recept');
+                  setPreviewTitle(p.title.trim() || t('planner.common.newRecipe'));
                   setPreviewImageUri((p.imageUri ?? '').trim() || null);
                   setPreviewIngredients(p.ingredientGroups);
                   setPreviewSteps(p.stepSections);
@@ -610,10 +615,10 @@ export default function PlannerScreen() {
                 return;
               }
 
-              if (!plan) throw new Error('Kon preview niet opbouwen.');
-              if (plan.recipeId == null) throw new Error('Deze dag heeft geen recept.');
+              if (!plan) throw new Error(t('planner.preview.errorBuild'));
+              if (plan.recipeId == null) throw new Error(t('planner.preview.errorNoRecipe'));
               const full: FullRecipe | null = await getFullRecipe(plan.recipeId);
-              if (!full) throw new Error('Recept niet gevonden.');
+              if (!full) throw new Error(t('planner.preview.errorNotFound'));
               applyIfCurrent(() => {
                 setPreviewTitle(full.title);
                 setPreviewImageUri(full.imageUri);
@@ -639,20 +644,17 @@ export default function PlannerScreen() {
               });
             })(),
             new Promise<never>((_, reject) =>
-              setTimeout(
-                () => reject(new Error('Preview laden duurt te lang. Probeer opnieuw.')),
-                8000
-              )
+              setTimeout(() => reject(new Error(t('planner.preview.errorTimeout'))), 8000)
             ),
           ]);
         } catch (e) {
-          finishPreviewLoad(e instanceof Error ? e.message : 'Onbekende fout.');
+          finishPreviewLoad(e instanceof Error ? e.message : t('planner.preview.errorUnknown'));
           return;
         }
         finishPreviewLoad();
       })();
     },
-    [defaultServings, pendingLeftoverOfDateByDate, pendingNewByDate, plansByDate]
+    [defaultServings, pendingLeftoverOfDateByDate, pendingNewByDate, plansByDate, t]
   );
 
   const filteredRecipes = useMemo(() => pickerItems, [pickerItems]);
@@ -766,18 +768,18 @@ export default function PlannerScreen() {
       const results = await discoverRecipes(q);
       if (results.length === 0) {
         Alert.alert(
-          'Geen recepten gevonden',
-          'Er zijn geen recepten die passen bij je zoekopdracht.'
+          t('planner.picker.alertNoRecipesTitle'),
+          t('planner.picker.alertNoRecipesMessage')
         );
       } else {
         setPickerAiIds(results.map((r) => r.id));
       }
     } catch {
-      Alert.alert('Fout', 'Kon recepten niet ophalen. Probeer het opnieuw.');
+      Alert.alert(t('planner.picker.alertErrorTitle'), t('planner.picker.alertErrorMessage'));
     } finally {
       setPickerAiLoading(false);
     }
-  }, [pickerAiIds, pickerQuery]);
+  }, [pickerAiIds, pickerQuery, t]);
 
   const leftoversForDate = useCallback(
     (date: string): { sourceDate: string; recipeId: number; title: string; servings: number }[] => {
@@ -828,28 +830,21 @@ export default function PlannerScreen() {
         await hydrateShoppingStaplesPrefsFromDb();
         const plans = await listWeekPlansBetween(startDate, endDate);
         if (plans.length === 0) {
-          Alert.alert(
-            'Geen planning',
-            'Plan eerst één of meer dagen voordat je de boodschappenlijst vult.'
-          );
+          Alert.alert(t('planner.export.noPlansTitle'), t('planner.export.noPlansMessage'));
           return;
         }
         const staplesExclude = getShoppingStaplesExcludeList();
         const agg = await aggregateShoppingFromWeekPlans({ plans, staplesExclude });
         if (agg.length === 0) {
-          Alert.alert(
-            'Niets om toe te voegen',
-            'Er zijn geen boodschappen gevonden (mogelijk door de uitsluitlijst).'
-          );
+          Alert.alert(t('planner.export.nothingTitle'), t('planner.export.nothingMessage'));
           return;
         }
 
         const ok = await confirm({
-          title: 'Op boodschappenlijstje zetten?',
-          message:
-            'Dit vervangt alleen de “week”-items op je boodschappenlijst. Handmatige items blijven staan.',
-          confirmText: 'Zet erop',
-          cancelText: 'Annuleren',
+          title: t('planner.export.confirmTitle'),
+          message: t('planner.export.confirmMessage'),
+          confirmText: t('planner.export.confirmOk'),
+          cancelText: t('planner.common.cancel'),
         });
         if (!ok) return;
         await clearWeekShoppingItems();
@@ -858,16 +853,19 @@ export default function PlannerScreen() {
         setBusyExport(false);
       }
     })();
-  }, [busyExport, confirm, endDate, startDate]);
+  }, [busyExport, confirm, endDate, startDate, t]);
 
   const clearWeek = useCallback(() => {
     if (busyClear) return;
     void (async () => {
       const ok = await confirm({
-        title: 'Weekplanner wissen?',
-        message: `Dit verwijdert alle geplande dagen van ${formatDateDdMmYyyy(startDate)} t/m ${formatDateDdMmYyyy(endDate)}.`,
-        confirmText: 'Wissen',
-        cancelText: 'Annuleren',
+        title: t('planner.clearWeek.confirmTitle'),
+        message: t('planner.clearWeek.confirmMessage', {
+          start: formatDateDdMmYyyy(startDate),
+          end: formatDateDdMmYyyy(endDate),
+        }),
+        confirmText: t('planner.clearWeek.confirmOk'),
+        cancelText: t('planner.common.cancel'),
         destructive: true,
       });
       if (!ok) return;
@@ -884,7 +882,7 @@ export default function PlannerScreen() {
         setBusyClear(false);
       }
     })();
-  }, [busyClear, confirm, endDate, reload, startDate]);
+  }, [busyClear, confirm, endDate, reload, startDate, t]);
 
   const generateWeekPlan = useCallback(() => {
     if (busyGenerate) return;
@@ -894,26 +892,20 @@ export default function PlannerScreen() {
         await ensureDatabaseAsync();
         const hasKey = await hasActiveAiKey();
         if (!hasKey) {
-          Alert.alert(
-            'AI niet ingesteld',
-            'Stel eerst een API-sleutel en model in bij Instellingen.'
-          );
+          Alert.alert(t('planner.alerts.aiNotSetUpTitle'), t('planner.alerts.aiNotSetUpMessage'));
           return;
         }
 
         const selectedDays = dates.filter((d) => selectedByDate[d]);
         if (selectedDays.length === 0) {
-          Alert.alert('Geen dagen gekozen', 'Selecteer minstens één dag om te plannen.');
+          Alert.alert(t('planner.alerts.noDaysTitle'), t('planner.alerts.noDaysMessage'));
           return;
         }
 
         const promptPack = await listRecipesForWeekPlanningPrompt();
         const promptRecipes = promptPack.recipes;
         if (promptRecipes.length === 0) {
-          Alert.alert(
-            'Geen recepten',
-            'Voeg eerst één of meer recepten toe voordat je een weekmenu laat genereren.'
-          );
+          Alert.alert(t('planner.alerts.noRecipesTitle'), t('planner.alerts.noRecipesMessage'));
           return;
         }
 
@@ -959,7 +951,7 @@ export default function PlannerScreen() {
           task: 'weekplan',
         });
         if (!res.ok) {
-          Alert.alert('AI-fout', res.message);
+          Alert.alert(t('planner.alerts.aiErrorTitle'), res.message);
           return;
         }
 
@@ -1210,7 +1202,7 @@ export default function PlannerScreen() {
             task: 'weekplan',
           });
           if (!repaired.ok) {
-            Alert.alert('AI-fout', repaired.message);
+            Alert.alert(t('planner.alerts.aiErrorTitle'), repaired.message);
             return;
           }
           parsed = tryParse(repaired.text);
@@ -1218,8 +1210,10 @@ export default function PlannerScreen() {
 
         if (!parsed.ok) {
           Alert.alert(
-            'AI-output niet bruikbaar',
-            `Kon weekmenu niet verwerken:\n\n- ${parsed.errors.slice(0, 6).join('\n- ')}`
+            t('planner.alerts.aiOutputTitle'),
+            t('planner.alerts.weekPlanFailed', {
+              errors: parsed.errors.slice(0, 6).join('\n- '),
+            })
           );
           return;
         }
@@ -1229,13 +1223,16 @@ export default function PlannerScreen() {
           const parsedRecipe = parseExtractedRecipeJson(nr.recipeJsonText, '');
           if (!parsedRecipe.ok) {
             Alert.alert(
-              'Nieuw recept niet bruikbaar',
-              `Kon nieuw recept niet verwerken (${nr.tempId}): ${parsedRecipe.reason}`
+              t('planner.alerts.newRecipeInvalidTitle'),
+              t('planner.alerts.newRecipeInvalidMessage', {
+                tempId: nr.tempId,
+                reason: parsedRecipe.reason,
+              })
             );
             return;
           }
           newRecipeByTemp.set(nr.tempId, {
-            title: parsedRecipe.payload.title.trim() || 'Nieuw recept',
+            title: parsedRecipe.payload.title.trim() || t('planner.common.newRecipe'),
             recipeJsonText: nr.recipeJsonText,
           });
         }
@@ -1271,8 +1268,8 @@ export default function PlannerScreen() {
           const nr = newRecipeByTemp.get(p.recipeId) ?? null;
           if (!nr) {
             Alert.alert(
-              'Weekmenu niet compleet',
-              `Kon een nieuw recept niet koppelen voor ${p.date}.`
+              t('planner.alerts.incompleteTitle'),
+              t('planner.alerts.incompleteLinkMessage', { date: p.date })
             );
             return;
           }
@@ -1303,7 +1300,7 @@ export default function PlannerScreen() {
         setBusyGenerate(false);
       }
     })();
-  }, [busyGenerate, dates, reload, selectedByDate, wishesText]);
+  }, [busyGenerate, dates, reload, selectedByDate, t, wishesText]);
 
   const approvePendingNewRecipe = useCallback(
     (date: string) => {
@@ -1312,7 +1309,7 @@ export default function PlannerScreen() {
       void (async () => {
         const parsedRecipe = parseExtractedRecipeJson(pending.recipeJsonText, '');
         if (!parsedRecipe.ok) {
-          Alert.alert('Nieuw recept niet bruikbaar', parsedRecipe.reason);
+          Alert.alert(t('planner.alerts.newRecipeInvalidTitle'), parsedRecipe.reason);
           return;
         }
         const newId = await createRecipe(parsedRecipe.payload);
@@ -1356,7 +1353,7 @@ export default function PlannerScreen() {
         reload();
       })();
     },
-    [pendingLeftoverOfDateByDate, pendingNewByDate, reload]
+    [pendingLeftoverOfDateByDate, pendingNewByDate, reload, t]
   );
 
   const openReplacePopup = useCallback((date: string) => {
@@ -1378,10 +1375,7 @@ export default function PlannerScreen() {
         await ensureDatabaseAsync();
         const hasKey = await hasActiveAiKey();
         if (!hasKey) {
-          Alert.alert(
-            'AI niet ingesteld',
-            'Stel eerst een API-sleutel en model in bij Instellingen.'
-          );
+          Alert.alert(t('planner.alerts.aiNotSetUpTitle'), t('planner.alerts.aiNotSetUpMessage'));
           return;
         }
         const promptPack = await listRecipesForWeekPlanningPrompt();
@@ -1438,7 +1432,7 @@ export default function PlannerScreen() {
           task: 'weekplan',
         });
         if (!res.ok) {
-          Alert.alert('AI-fout', res.message);
+          Alert.alert(t('planner.alerts.aiErrorTitle'), res.message);
           return;
         }
 
@@ -1538,15 +1532,17 @@ export default function PlannerScreen() {
             task: 'weekplan',
           });
           if (!repaired.ok) {
-            Alert.alert('AI-fout', repaired.message);
+            Alert.alert(t('planner.alerts.aiErrorTitle'), repaired.message);
             return;
           }
           parsed = tryParse(repaired.text);
         }
         if (!parsed.ok) {
           Alert.alert(
-            'AI-output niet bruikbaar',
-            `Kon alternatief niet verwerken:\n\n- ${parsed.errors.slice(0, 6).join('\n- ')}`
+            t('planner.alerts.aiOutputTitle'),
+            t('planner.alerts.alternativeFailed', {
+              errors: parsed.errors.slice(0, 6).join('\n- '),
+            })
           );
           return;
         }
@@ -1573,12 +1569,15 @@ export default function PlannerScreen() {
 
         const nr = parsed.newRecipes.find((x) => x.tempId === p.recipeId) ?? null;
         if (!nr) {
-          Alert.alert('Weekmenu niet compleet', 'Kon nieuw alternatief recept niet vinden.');
+          Alert.alert(
+            t('planner.alerts.incompleteTitle'),
+            t('planner.alerts.incompleteAlternativeMessage')
+          );
           return;
         }
         const parsedRecipe = parseExtractedRecipeJson(nr.recipeJsonText, '');
         if (!parsedRecipe.ok) {
-          Alert.alert('Nieuw recept niet bruikbaar', parsedRecipe.reason);
+          Alert.alert(t('planner.alerts.newRecipeInvalidTitle'), parsedRecipe.reason);
           return;
         }
         // If this date had pending leftovers attached, clear them (old suggestion is discarded).
@@ -1593,7 +1592,7 @@ export default function PlannerScreen() {
           ...cur,
           [date]: {
             tempId: nr.tempId,
-            title: parsedRecipe.payload.title.trim() || 'Nieuw recept',
+            title: parsedRecipe.payload.title.trim() || t('planner.common.newRecipe'),
             recipeJsonText: nr.recipeJsonText,
             servings: p.servings,
             cooksForDays: p.cooksForDays,
@@ -1612,29 +1611,30 @@ export default function PlannerScreen() {
     pendingReplaceDate,
     pendingReplaceText,
     reload,
+    t,
     wishesText,
   ]);
 
-  function weekdayNl(dateOnly: string): string {
+  function weekdayLabel(dateOnly: string): string {
     const [y, m, d] = dateOnly.split('-').map((x) => Number.parseInt(x, 10));
     const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
     const days = [
-      'zondag',
-      'maandag',
-      'dinsdag',
-      'woensdag',
-      'donderdag',
-      'vrijdag',
-      'zaterdag',
-    ] as const;
+      t('planner.weekDays.sunday'),
+      t('planner.weekDays.monday'),
+      t('planner.weekDays.tuesday'),
+      t('planner.weekDays.wednesday'),
+      t('planner.weekDays.thursday'),
+      t('planner.weekDays.friday'),
+      t('planner.weekDays.saturday'),
+    ];
     return days[dt.getDay()] ?? dateOnly;
   }
 
   function labelForIndex(i: number, dateOnly: string): string {
-    const wd = weekdayNl(dateOnly);
-    if (i === 0) return `Vandaag (${wd})`;
-    if (i === 1) return `Morgen (${wd})`;
-    if (i === 2) return `Overmorgen (${wd})`;
+    const wd = weekdayLabel(dateOnly);
+    if (i === 0) return t('planner.weekDays.today', { weekday: wd });
+    if (i === 1) return t('planner.weekDays.tomorrow', { weekday: wd });
+    if (i === 2) return t('planner.weekDays.dayAfterTomorrow', { weekday: wd });
     return wd;
   }
 
@@ -1647,7 +1647,7 @@ export default function PlannerScreen() {
       >
         <View style={styles.loadingRow}>
           <ActivityIndicator color={theme.accent} />
-          <Text style={styles.loadingText}>Laden…</Text>
+          <Text style={styles.loadingText}>{t('planner.common.loading')}</Text>
         </View>
       </View>
 
@@ -1661,7 +1661,7 @@ export default function PlannerScreen() {
           <Pressable style={styles.quickBackdropPress} onPress={clearQuickAddParam} />
           <View style={[styles.quickCard, { backgroundColor: theme.background }]}>
             <Text style={styles.quickTitle} numberOfLines={1}>
-              Zet in weekplanner
+              {t('planner.quickAdd.title')}
             </Text>
             <Text style={styles.quickSub} numberOfLines={2}>
               {quickRecipeTitle ?? ''}
@@ -1681,7 +1681,7 @@ export default function PlannerScreen() {
               ))}
             </View>
             <Pressable style={styles.quickCancel} onPress={clearQuickAddParam}>
-              <Text style={styles.quickCancelText}>Annuleren</Text>
+              <Text style={styles.quickCancelText}>{t('planner.common.cancel')}</Text>
             </Pressable>
           </View>
         </View>
@@ -1701,7 +1701,7 @@ export default function PlannerScreen() {
             <ActivityIndicator color="#fff" size="small" style={styles.topPrimarySpinner} />
           ) : null}
           <Text style={styles.topPrimaryBtnText} numberOfLines={1}>
-            {busyGenerate ? 'Bezig…' : 'Maak weekmenu'}
+            {busyGenerate ? t('planner.common.busy') : t('planner.topBar.makeWeekMenu')}
           </Text>
         </Pressable>
         <Pressable
@@ -1714,14 +1714,14 @@ export default function PlannerScreen() {
           disabled={busyExport}
         >
           <Text style={[styles.topSecondaryBtnText, { color: theme.accent }]} numberOfLines={1}>
-            Maak lijstje
+            {t('planner.topBar.makeList')}
           </Text>
         </Pressable>
         <Pressable
           style={styles.overflowMenuBtn}
           onPress={() => setOverflowMenuOpen(true)}
           hitSlop={10}
-          accessibilityLabel="Meer"
+          accessibilityLabel={t('planner.topBar.more')}
         >
           <MaterialIcons name="more-vert" size={24} color="#444" />
         </Pressable>
@@ -1744,12 +1744,14 @@ export default function PlannerScreen() {
           const displayTitle = pendingNew
             ? pendingNew.title
             : pendingCook
-              ? `Restje: ${pendingCook.title}`
+              ? t('planner.day.leftoverPrefix', { title: pendingCook.title })
               : plan && (plan.leftoverOfDate ?? null) != null
-                ? `Restje: ${recipe?.title ?? 'Kies een recept…'}`
+                ? t('planner.day.leftoverPrefix', {
+                    title: recipe?.title ?? t('planner.day.chooseRecipe'),
+                  })
                 : isLabelDay
                   ? (plan?.labelText ?? '')
-                  : (recipe?.title ?? 'Kies een recept…');
+                  : (recipe?.title ?? t('planner.day.chooseRecipe'));
           return (
             <View
               key={date}
@@ -1762,7 +1764,7 @@ export default function PlannerScreen() {
                     onPress={() => toggleExpandedForDate(date)}
                     hitSlop={10}
                     accessibilityRole="button"
-                    accessibilityLabel="Toon opties voor deze dag"
+                    accessibilityLabel={t('planner.day.showOptions')}
                   >
                     <Text style={styles.dayLabelTop} numberOfLines={1}>
                       {labelForIndex(i, date)}
@@ -1779,7 +1781,7 @@ export default function PlannerScreen() {
                       style={styles.dayIconBtn}
                       onPress={() => removePlan(date)}
                       hitSlop={10}
-                      accessibilityLabel="Dag wissen"
+                      accessibilityLabel={t('planner.day.clearDay')}
                     >
                       <MaterialIcons name="delete" size={20} color="#b00020" />
                     </Pressable>
@@ -1788,7 +1790,7 @@ export default function PlannerScreen() {
                         style={styles.dayIconBtn}
                         onPress={() => toggleExpandedForDate(date)}
                         hitSlop={10}
-                        accessibilityLabel="Porties en meerdere dagen"
+                        accessibilityLabel={t('planner.day.servingsAndMultiDay')}
                       >
                         <MaterialIcons
                           name={expanded ? 'expand-less' : 'expand-more'}
@@ -1827,7 +1829,7 @@ export default function PlannerScreen() {
                   onPress={() => openPickerForDate(date)}
                   disabled={busyGenerate}
                   hitSlop={10}
-                  accessibilityLabel="Recept wisselen"
+                  accessibilityLabel={t('planner.day.swapRecipe')}
                 >
                   <MaterialIcons name="autorenew" size={22} color="#666" />
                 </Pressable>
@@ -1842,7 +1844,7 @@ export default function PlannerScreen() {
                   >
                     <MaterialIcons name="check" size={18} color={theme.accent} />
                     <Text style={[styles.newRecipeApproveText, { color: theme.accent }]}>
-                      Toevoegen
+                      {t('planner.day.add')}
                     </Text>
                   </Pressable>
                   <Pressable
@@ -1850,7 +1852,7 @@ export default function PlannerScreen() {
                     onPress={() => openReplacePopup(date)}
                     disabled={busyGenerate || busyReplace}
                   >
-                    <Text style={styles.newRecipeOtherText}>Iets anders</Text>
+                    <Text style={styles.newRecipeOtherText}>{t('planner.replace.title')}</Text>
                   </Pressable>
                 </View>
               ) : null}
@@ -1859,12 +1861,12 @@ export default function PlannerScreen() {
                   onPress={() => toggleExpandedForDate(date)}
                   hitSlop={10}
                   accessibilityRole="button"
-                  accessibilityLabel="Toon opties voor deze dag"
+                  accessibilityLabel={t('planner.day.showOptions')}
                 >
                   <Text style={styles.daySubMeta}>
-                    {plan.servings}p
+                    {t('planner.day.servingsCompact', { count: plan.servings })}
                     {plan.cooksForDays > 1 && (plan.leftoverOfDate ?? null) == null
-                      ? ' · Meerdere dagen'
+                      ? ` · ${t('planner.day.multiDay')}`
                       : ''}
                   </Text>
                 </Pressable>
@@ -1880,7 +1882,9 @@ export default function PlannerScreen() {
                       >
                         <Text style={styles.stepBtnText}>−</Text>
                       </Pressable>
-                      <Text style={styles.stepValue}>{plan.servings} p.</Text>
+                      <Text style={styles.stepValue}>
+                        {t('planner.day.servingsStep', { count: plan.servings })}
+                      </Text>
                       <Pressable
                         style={styles.stepBtn}
                         onPress={() => adjustPlanServings(date, 1)}
@@ -1909,7 +1913,7 @@ export default function PlannerScreen() {
                           {plan.cooksForDays > 1 ? '✓' : ''}
                         </Text>
                       </View>
-                      <Text style={styles.multiCookLabel}>Meerdere dagen</Text>
+                      <Text style={styles.multiCookLabel}>{t('planner.day.multiDay')}</Text>
                     </Pressable>
                   ) : (
                     <View style={styles.multiCookPlaceholder} pointerEvents="none" />
@@ -1940,7 +1944,7 @@ export default function PlannerScreen() {
                 router.push('/settings/cook-profile-ai');
               }}
             >
-              <Text style={styles.overflowItemText}>AI kookprofiel</Text>
+              <Text style={styles.overflowItemText}>{t('planner.overflow.aiCookProfile')}</Text>
             </Pressable>
             <Pressable
               style={styles.overflowItem}
@@ -1950,7 +1954,7 @@ export default function PlannerScreen() {
               }}
               disabled={busyClear}
             >
-              <Text style={styles.overflowDestructive}>Wis weekplanner</Text>
+              <Text style={styles.overflowDestructive}>{t('planner.overflow.clearWeek')}</Text>
             </Pressable>
           </View>
         </View>
@@ -1965,10 +1969,10 @@ export default function PlannerScreen() {
         <View style={styles.sheetRoot}>
           <Pressable style={styles.sheetDim} onPress={() => setGenerateSheetOpen(false)} />
           <View style={styles.generateSheet}>
-            <Text style={styles.generateSheetTitle}>Maak weekmenu</Text>
+            <Text style={styles.generateSheetTitle}>{t('planner.generate.title')}</Text>
             <TextInput
               style={styles.wishesInputSheet}
-              placeholder="Optioneel: wensen (bijv. ‘licht deze week’, ‘iets met aubergine’)…"
+              placeholder={t('planner.generate.wishesPlaceholder')}
               placeholderTextColor="#999"
               value={wishesText}
               onChangeText={setWishesText}
@@ -1976,13 +1980,14 @@ export default function PlannerScreen() {
             />
             {weekPlanRecipeLibraryCount > MAX_RECIPES_IN_WEEK_PLAN_PROMPT ? (
               <Text style={styles.weekPlanAiHint}>
-                Je hebt {weekPlanRecipeLibraryCount} recepten. Voor weekmenu-AI worden maximaal{' '}
-                {MAX_RECIPES_IN_WEEK_PLAN_PROMPT} tegelijk meegestuurd (favorieten, &apos;wil
-                proberen&apos; en recent voorrang).
+                {t('planner.generate.aiHint', {
+                  total: weekPlanRecipeLibraryCount,
+                  max: MAX_RECIPES_IN_WEEK_PLAN_PROMPT,
+                })}
               </Text>
             ) : null}
             <View style={styles.welkeDagenHeader}>
-              <Text style={styles.generateSectionLabelFlat}>Welke dagen?</Text>
+              <Text style={styles.generateSectionLabelFlat}>{t('planner.generate.whichDays')}</Text>
               <View style={styles.allesNietsRow}>
                 <Pressable
                   style={styles.hintChip}
@@ -1994,7 +1999,7 @@ export default function PlannerScreen() {
                     });
                   }}
                 >
-                  <Text style={styles.hintChipText}>Alles</Text>
+                  <Text style={styles.hintChipText}>{t('planner.generate.all')}</Text>
                 </Pressable>
                 <Pressable
                   style={styles.hintChip}
@@ -2006,7 +2011,7 @@ export default function PlannerScreen() {
                     });
                   }}
                 >
-                  <Text style={styles.hintChipText}>Niets</Text>
+                  <Text style={styles.hintChipText}>{t('planner.generate.none')}</Text>
                 </Pressable>
               </View>
             </View>
@@ -2026,13 +2031,15 @@ export default function PlannerScreen() {
                 const existingTitle = pendingNew
                   ? pendingNew.title
                   : pendingCook
-                    ? `Restje: ${pendingCook.title}`
+                    ? t('planner.day.leftoverPrefix', { title: pendingCook.title })
                     : plan
                       ? plan.labelText
                         ? plan.labelText
                         : plan.recipeId != null
                           ? plan.leftoverOfDate
-                            ? `Restje: ${recipeById.get(plan.recipeId)?.title ?? ''}`
+                            ? t('planner.day.leftoverPrefix', {
+                                title: recipeById.get(plan.recipeId)?.title ?? '',
+                              })
                             : (recipeById.get(plan.recipeId)?.title ?? '')
                           : ''
                       : '';
@@ -2065,7 +2072,7 @@ export default function PlannerScreen() {
             </ScrollView>
             <View style={styles.generateSheetActions}>
               <Pressable style={styles.generateCancel} onPress={() => setGenerateSheetOpen(false)}>
-                <Text style={styles.generateCancelText}>Annuleren</Text>
+                <Text style={styles.generateCancelText}>{t('planner.common.cancel')}</Text>
               </Pressable>
               <Pressable
                 style={[
@@ -2082,7 +2089,7 @@ export default function PlannerScreen() {
                 {busyGenerate ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={styles.generateGoBtnText}>Genereer</Text>
+                  <Text style={styles.generateGoBtnText}>{t('planner.generate.go')}</Text>
                 )}
               </Pressable>
             </View>
@@ -2093,7 +2100,7 @@ export default function PlannerScreen() {
       <Modal visible={pickerOpen} animationType="slide" onRequestClose={() => setPickerOpen(false)}>
         <View style={[styles.pickerRoot, { backgroundColor: theme.background }]}>
           <View style={styles.pickerHeader}>
-            <Text style={styles.pickerTitle}>Kies recept</Text>
+            <Text style={styles.pickerTitle}>{t('planner.picker.title')}</Text>
             <Pressable
               onPress={() => {
                 closePickerSheets();
@@ -2101,13 +2108,15 @@ export default function PlannerScreen() {
               }}
               hitSlop={10}
             >
-              <Text style={[styles.close, { color: theme.accent }]}>Sluiten</Text>
+              <Text style={[styles.close, { color: theme.accent }]}>
+                {t('planner.common.close')}
+              </Text>
             </Pressable>
           </View>
           <View style={styles.pickerSearchRow}>
             <TextInput
               style={[styles.searchInput, styles.pickerSearchInput]}
-              placeholder="Zoek recept… of typ een tekst (bijv. 'uit eten')"
+              placeholder={t('planner.picker.searchPlaceholder')}
               placeholderTextColor="#999"
               value={pickerQuery}
               onChangeText={setPickerQuery}
@@ -2123,7 +2132,7 @@ export default function PlannerScreen() {
               disabled={pickerQuery.trim().length === 0}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel="Zoektekst als tekstlabel voor deze dag gebruiken"
+              accessibilityLabel={t('planner.picker.useAsLabel')}
             >
               <MaterialIcons
                 name="arrow-forward"
@@ -2145,7 +2154,7 @@ export default function PlannerScreen() {
                     pickerFavoritesOnly ? pickerChipTextOnStyle : null,
                   ]}
                 >
-                  Favorieten
+                  {t('planner.picker.favorites')}
                 </Text>
               </Pressable>
               <Pressable
@@ -2158,7 +2167,7 @@ export default function PlannerScreen() {
                     pickerWantToTryOnly ? pickerChipTextOnStyle : null,
                   ]}
                 >
-                  Wil proberen
+                  {t('planner.picker.wantToTry')}
                 </Text>
               </Pressable>
               <Pressable
@@ -2172,7 +2181,7 @@ export default function PlannerScreen() {
                   <ActivityIndicator size="small" color={theme.accentSoftText} />
                 ) : (
                   <Text style={[styles.pickerChipText, pickerAiIds ? pickerChipTextOnStyle : null]}>
-                    AI zoeken
+                    {t('planner.picker.aiSearch')}
                   </Text>
                 )}
               </Pressable>
@@ -2193,8 +2202,8 @@ export default function PlannerScreen() {
                 numberOfLines={1}
               >
                 {pickerSecondaryFilterCount > 0
-                  ? `Filters · ${pickerSecondaryFilterCount}`
-                  : 'Filters'}
+                  ? t('planner.picker.filtersWithCount', { count: pickerSecondaryFilterCount })
+                  : t('planner.picker.filters')}
               </Text>
             </Pressable>
           </View>
@@ -2292,14 +2301,19 @@ export default function PlannerScreen() {
                       }}
                     >
                       <Text style={styles.pickerRowTitle} numberOfLines={2}>
-                        Restjes {opt.title}
+                        {t('planner.picker.leftoversTitle', { title: opt.title })}
                       </Text>
                       <Text
                         style={[styles.pickerRowMeta, { color: theme.accent }]}
                         numberOfLines={1}
                       >
-                        van {daysBefore(opt.sourceDate)} dag
-                        {daysBefore(opt.sourceDate) === 1 ? '' : 'en'} ervoor
+                        {daysBefore(opt.sourceDate) === 1
+                          ? t('planner.picker.leftoversMetaOne', {
+                              count: daysBefore(opt.sourceDate),
+                            })
+                          : t('planner.picker.leftoversMetaMany', {
+                              count: daysBefore(opt.sourceDate),
+                            })}
                       </Text>
                     </Pressable>
                   ))}
@@ -2307,7 +2321,9 @@ export default function PlannerScreen() {
               );
             }}
             ListEmptyComponent={
-              <Text style={styles.empty}>{pickerBusy ? 'Zoeken…' : 'Geen recepten gevonden.'}</Text>
+              <Text style={styles.empty}>
+                {pickerBusy ? t('planner.picker.searching') : t('planner.picker.noResults')}
+              </Text>
             }
           />
         </View>
@@ -2322,13 +2338,13 @@ export default function PlannerScreen() {
         <View style={styles.sheetRoot}>
           <Pressable style={styles.sheetDim} onPress={() => setPickerFiltersModalOpen(false)} />
           <View style={styles.pickerFiltersSheet}>
-            <Text style={styles.pickerFiltersSheetTitle}>Filters</Text>
+            <Text style={styles.pickerFiltersSheetTitle}>{t('planner.picker.filters')}</Text>
             <ScrollView
               style={styles.pickerFiltersSheetScroll}
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={styles.pickerFiltersSheetScrollInner}
             >
-              <Text style={styles.pickerFilterSubLabel}>Max. totale tijd (min.)</Text>
+              <Text style={styles.pickerFilterSubLabel}>{t('planner.filters.maxTotalTime')}</Text>
               <View style={styles.pickerTimeSliderRow}>
                 <View style={styles.pickerTimeSliderCol}>
                   <Slider
@@ -2347,8 +2363,8 @@ export default function PlannerScreen() {
                   />
                   <Text style={styles.pickerTimeSliderValue}>
                     {pickerMaxTotalTimeMin == null
-                      ? 'Geen maximum'
-                      : `Max. ${pickerMaxTotalTimeMin} min`}
+                      ? t('planner.filters.noMaximum')
+                      : t('planner.filters.maxMinutes', { count: pickerMaxTotalTimeMin })}
                   </Text>
                 </View>
                 <Pressable
@@ -2365,12 +2381,12 @@ export default function PlannerScreen() {
                       pickerMaxTotalTimeMin == null ? styles.pickerTimeSliderResetTextOff : null,
                     ]}
                   >
-                    Reset
+                    {t('planner.filters.reset')}
                   </Text>
                 </Pressable>
               </View>
 
-              <Text style={styles.pickerFilterSubLabel}>Dieet</Text>
+              <Text style={styles.pickerFilterSubLabel}>{t('planner.filters.diet')}</Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -2397,7 +2413,7 @@ export default function PlannerScreen() {
                           : null,
                       ]}
                     >
-                      Alle
+                      {t('planner.filters.all')}
                     </Text>
                   </Pressable>
                   {['vegetarian', 'vegan', 'keto', ...pickerCustomDiets].map((k) => {
@@ -2407,11 +2423,11 @@ export default function PlannerScreen() {
                       : pickerSelectedCustomDietSet.has(k);
                     const label =
                       k === 'vegetarian'
-                        ? 'Vega'
+                        ? t('planner.filters.vegetarian')
                         : k === 'vegan'
-                          ? 'Vegan'
+                          ? t('planner.filters.vegan')
                           : k === 'keto'
-                            ? 'Keto'
+                            ? t('planner.filters.keto')
                             : k;
                     return (
                       <Pressable
@@ -2436,7 +2452,7 @@ export default function PlannerScreen() {
 
               {pickerCategories.length > 0 ? (
                 <>
-                  <Text style={styles.pickerFilterSubLabel}>Categorie</Text>
+                  <Text style={styles.pickerFilterSubLabel}>{t('planner.filters.category')}</Text>
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
@@ -2456,7 +2472,7 @@ export default function PlannerScreen() {
                             pickerCategoryKey === null ? pickerChipTextOnStyle : null,
                           ]}
                         >
-                          Alle
+                          {t('planner.filters.all')}
                         </Text>
                       </Pressable>
                       {pickerCategories.map((c) => (
@@ -2486,7 +2502,7 @@ export default function PlannerScreen() {
 
               {pickerRecipeTags.length > 0 ? (
                 <>
-                  <Text style={styles.pickerFilterSubLabel}>Tag</Text>
+                  <Text style={styles.pickerFilterSubLabel}>{t('planner.filters.tag')}</Text>
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
@@ -2506,7 +2522,7 @@ export default function PlannerScreen() {
                             pickerTagKeys.length === 0 ? pickerChipTextOnStyle : null,
                           ]}
                         >
-                          Alle
+                          {t('planner.filters.all')}
                         </Text>
                       </Pressable>
                       {pickerTagKeys.map((t) => (
@@ -2545,7 +2561,7 @@ export default function PlannerScreen() {
                               pickerTagKeyInExtra ? pickerChipTextOnStyle : null,
                             ]}
                           >
-                            + tags
+                            {t('planner.filters.moreTagsChip')}
                           </Text>
                         </Pressable>
                       ) : null}
@@ -2556,13 +2572,13 @@ export default function PlannerScreen() {
             </ScrollView>
             <View style={styles.pickerFiltersSheetActions}>
               <Pressable style={styles.pickerFilterClearAllBtn} onPress={clearPickerFilters}>
-                <Text style={styles.pickerFilterClearAllText}>Filters wissen</Text>
+                <Text style={styles.pickerFilterClearAllText}>{t('planner.filters.clearAll')}</Text>
               </Pressable>
               <Pressable
                 style={[styles.pickerFilterDoneBtn, { backgroundColor: theme.accent }]}
                 onPress={() => setPickerFiltersModalOpen(false)}
               >
-                <Text style={styles.pickerFilterDoneBtnText}>Klaar</Text>
+                <Text style={styles.pickerFilterDoneBtnText}>{t('planner.common.done')}</Text>
               </Pressable>
             </View>
           </View>
@@ -2577,8 +2593,8 @@ export default function PlannerScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.tagPickerCard}>
-            <Text style={styles.modalTitle}>Meer tags</Text>
-            <Text style={styles.tagPickerHint}>Tik op een tag om daarop te filteren.</Text>
+            <Text style={styles.modalTitle}>{t('planner.filters.moreTags')}</Text>
+            <Text style={styles.tagPickerHint}>{t('planner.filters.tapTagHint')}</Text>
             <FlatList
               data={pickerExtraTags}
               numColumns={2}
@@ -2610,7 +2626,7 @@ export default function PlannerScreen() {
               style={styles.tagPickerCloseBtn}
               onPress={() => setPickerTagsPickerOpen(false)}
             >
-              <Text style={styles.tagPickerCloseBtnText}>Klaar</Text>
+              <Text style={styles.tagPickerCloseBtnText}>{t('planner.common.done')}</Text>
             </Pressable>
           </View>
         </View>
@@ -2628,13 +2644,11 @@ export default function PlannerScreen() {
             onPress={() => setPendingReplaceOpen(false)}
           />
           <View style={styles.replaceCard}>
-            <Text style={styles.replaceTitle}>Iets anders</Text>
-            <Text style={styles.replaceHint}>
-              Wat wil je liever? (bijv. “geen vis”, “makkelijk”, “iets met aubergine”)
-            </Text>
+            <Text style={styles.replaceTitle}>{t('planner.replace.title')}</Text>
+            <Text style={styles.replaceHint}>{t('planner.replace.hint')}</Text>
             <TextInput
               style={styles.replaceInput}
-              placeholder="Typ je wensen…"
+              placeholder={t('planner.replace.placeholder')}
               placeholderTextColor="#999"
               value={pendingReplaceText}
               onChangeText={setPendingReplaceText}
@@ -2646,7 +2660,7 @@ export default function PlannerScreen() {
                 onPress={() => setPendingReplaceOpen(false)}
                 disabled={busyReplace}
               >
-                <Text style={styles.replaceCancelText}>Annuleren</Text>
+                <Text style={styles.replaceCancelText}>{t('planner.common.cancel')}</Text>
               </Pressable>
               <Pressable
                 style={[
@@ -2657,7 +2671,9 @@ export default function PlannerScreen() {
                 onPress={requestAlternativeRecipe}
                 disabled={busyReplace}
               >
-                <Text style={styles.replaceAskBtnText}>{busyReplace ? 'Bezig…' : 'Vraag AI'}</Text>
+                <Text style={styles.replaceAskBtnText}>
+                  {busyReplace ? t('planner.common.busy') : t('planner.replace.askAi')}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -2671,17 +2687,21 @@ export default function PlannerScreen() {
               <Text style={styles.previewTitle} numberOfLines={2}>
                 {previewTitle || 'Preview'}
               </Text>
-              <Text style={styles.previewMeta}>Voor {previewServings} p.</Text>
+              <Text style={styles.previewMeta}>
+                {t('planner.preview.meta', { count: previewServings })}
+              </Text>
             </View>
             <Pressable onPress={closeRecipePreview} hitSlop={10}>
-              <Text style={[styles.previewClose, { color: theme.accent }]}>Sluiten</Text>
+              <Text style={[styles.previewClose, { color: theme.accent }]}>
+                {t('planner.common.close')}
+              </Text>
             </Pressable>
           </View>
 
           {previewLoading ? (
             <View style={styles.previewLoadingRow}>
               <ActivityIndicator color={theme.accent} />
-              <Text style={styles.previewLoadingText}>Laden…</Text>
+              <Text style={styles.previewLoadingText}>{t('planner.common.loading')}</Text>
             </View>
           ) : previewError ? (
             <View style={styles.previewErrorWrap}>
@@ -2692,7 +2712,7 @@ export default function PlannerScreen() {
                   style={[styles.previewRetryBtn, { borderColor: theme.accent }]}
                 >
                   <Text style={[styles.previewRetryBtnText, { color: theme.accent }]}>
-                    Opnieuw proberen
+                    {t('planner.preview.retry')}
                   </Text>
                 </Pressable>
               ) : null}
@@ -2708,13 +2728,13 @@ export default function PlannerScreen() {
                   source={{ uri: previewImageUri }}
                   style={styles.previewImage}
                   resizeMode="cover"
-                  accessibilityLabel="Receptfoto"
+                  accessibilityLabel={t('planner.preview.photoLabel')}
                 />
               ) : null}
 
-              <Text style={styles.previewSectionTitle}>Ingrediënten</Text>
+              <Text style={styles.previewSectionTitle}>{t('planner.preview.ingredients')}</Text>
               {previewIngredients.length === 0 ? (
-                <Text style={styles.previewEmpty}>Geen ingrediënten.</Text>
+                <Text style={styles.previewEmpty}>{t('planner.preview.noIngredients')}</Text>
               ) : (
                 previewIngredients.map((g, gi) => (
                   <View key={`g-${gi}`} style={styles.previewGroup}>
@@ -2736,9 +2756,9 @@ export default function PlannerScreen() {
                 ))
               )}
 
-              <Text style={styles.previewSectionTitle}>Stappen</Text>
+              <Text style={styles.previewSectionTitle}>{t('planner.preview.steps')}</Text>
               {previewSteps.length === 0 ? (
-                <Text style={styles.previewEmpty}>Geen stappen.</Text>
+                <Text style={styles.previewEmpty}>{t('planner.preview.noSteps')}</Text>
               ) : (
                 previewSteps.map((s, si) => (
                   <View key={`s-${si}`} style={styles.previewGroup}>
@@ -2768,7 +2788,7 @@ export default function PlannerScreen() {
                 style={[styles.previewGoBtn, { borderColor: theme.accent }]}
               >
                 <Text style={[styles.previewGoBtnText, { color: theme.accent }]}>
-                  Volledig recept
+                  {t('planner.preview.fullRecipe')}
                 </Text>
               </Pressable>
             </View>

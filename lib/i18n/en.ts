@@ -3,6 +3,7 @@ import { settingsEn } from './keys/settings';
 import { shoppingEn } from './keys/shopping';
 import { cookEn } from './keys/cook';
 import { kennisEn } from './keys/kennis';
+import { plannerEn } from './keys/planner';
 
 /** English UI texts — must stay in sync with `nl.ts` (enforced bij typecheck). */
 export const en: Translations = {
@@ -36,4 +37,5 @@ export const en: Translations = {
   shopping: shoppingEn,
   cook: cookEn,
   kennis: kennisEn,
+  planner: plannerEn,
 };

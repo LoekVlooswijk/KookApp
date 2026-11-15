@@ -8,6 +8,7 @@ import { settingsNl } from './keys/settings';
 import { shoppingNl } from './keys/shopping';
 import { cookNl } from './keys/cook';
 import { kennisNl } from './keys/kennis';
+import { plannerNl } from './keys/planner';
 
 export const nl = {
   boot: {
@@ -41,6 +42,7 @@ export const nl = {
   shopping: shoppingNl,
   cook: cookNl,
   kennis: kennisNl,
+  planner: plannerNl,
 } as const;
 
 type WidenT<T> = {
